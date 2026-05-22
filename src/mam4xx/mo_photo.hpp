@@ -15,7 +15,7 @@ constexpr int pver = mam4::nlev;
 constexpr int pverm = pver - 1;
 
 // number of photolysis reactions
-constexpr int phtcnt = 1;
+constexpr int phtcnt = 22;
 
 using View5D = DeviceType::view_ND<Real, 5>;
 using View4D = DeviceType::view_ND<Real, 4>;
@@ -93,10 +93,9 @@ inline PhotoTableData create_photo_table_data(int nw, int nt, int np_xs,
   table_data.etfphot = View1D("photo_table_data.etfphot", table_data.nw);
   table_data.prs = View1D("photo_table_data.prs", table_data.np_xs);
   table_data.dprs = View1D("photo_table_data.dprs", table_data.np_xs - 1);
-  table_data.pht_alias_mult_1 =
-      View1D("photo_table_data.pht_alias_mult_1", phtcnt);
+  table_data.pht_alias_mult_1 = View1D("photo_table_data.pht_alias_mult_1", phtcnt);
   Kokkos::deep_copy(table_data.pht_alias_mult_1, 1.0);
-  table_data.lng_indexer = ViewInt1D("photo_table_data.lng_indexer", 1);
+  table_data.lng_indexer = ViewInt1D("photo_table_data.lng_indexer", phtcnt);
 
   return table_data;
 }
@@ -879,19 +878,27 @@ void table_photo(const ThreadTeam &team, const View2D &photo, // out
           work_arrays.rsf, work_arrays.xswk, work_arrays.psum_l,
           work_arrays.psum_u);
     team.team_barrier();
-    Kokkos::parallel_for(
-        Kokkos::TeamVectorRange(team, pver_local), [&](const int kk) {
-          for (int mm = 0; mm < phtcnt; ++mm) {
+
+   Kokkos::parallel_for(
+    Kokkos::TeamVectorRange(team, pver_local), [&](const int kk) {
+        for (int mm = 0; mm < phtcnt; ++mm) {
             const int ind = table_data.lng_indexer(mm);
-            if (ind > -1) {
-              const Real alias_factor = table_data.pht_alias_mult_1(
-                  mm); // 0-indexed, col 2 -> index 1
-              photo(kk, mm) = (photo(kk, mm) +
-                               alias_factor * work_arrays.lng_prates(ind, kk)) *
-                              cld_mult(kk);
+            if (ind > 0) {
+                const Real alias_factor = table_data.pht_alias_mult_1(mm); // 0-indexed, col 2 -> index 1
+                if (alias_factor == 1.0) {
+                    photo(kk, mm) =
+                        (photo(kk, mm) + work_arrays.lng_prates(ind, kk)) *
+                        cld_mult(kk);
+                } else {
+                    photo(kk, mm) =
+                        (photo(kk, mm) + alias_factor *
+                        work_arrays.lng_prates(ind, kk)) *
+                        cld_mult(kk);
+                }
             }
-          }
-        });
+        }
+    });
+
   }
   team.team_barrier();
 }
