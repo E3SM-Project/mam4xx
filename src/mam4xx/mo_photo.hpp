@@ -71,6 +71,7 @@ inline PhotoTableData create_photo_table_data(int nw, int nt, int np_xs,
   table_data.nt = nt;
   table_data.np_xs = np_xs;
 
+
   // create views
   table_data.rsf_tab =
       View5D("photo_table_data.rsf", table_data.nw, table_data.nump,
@@ -273,12 +274,16 @@ void cloud_mod(const ThreadTeam &team, const Real zen_angle,
                          }
                        });
   team.team_barrier();
-  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, 1, pver_local),
-                       [&](const int kk) {
-                         if (above_tau(kk) == zero) {
-                           above_cld(kk) = above_cld(kk - 1);
-                         }
-                       });
+  // Sequential chain-fill: each zero-tau level inherits from its upper neighbor.
+  // Must be serial to match Fortran BFB (consecutive zero-tau layers must
+  // propagate through the already-filled predecessor, not the original value).
+  Kokkos::single(Kokkos::PerTeam(team), [&]() {
+    for (int kk = 1; kk < pver_local; ++kk) {
+      if (above_tau(kk) == zero) {
+        above_cld(kk) = above_cld(kk - 1);
+      }
+    }
+  });
   /*---------------------------------------------------------
               ... form integrated tau and cloud cover from bottom up
   ---------------------------------------------------------*/
@@ -337,13 +342,17 @@ void cloud_mod(const ThreadTeam &team, const Real zen_angle,
 
   team.team_barrier();
 
-  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, 1, pver_local),
-                       [&](const int i) {
-                         const int kk = pverm - i;
-                         if (below_tau[kk] == zero) {
-                           below_cld[kk] = below_cld[kk + 1];
-                         }
-                       });
+  // Sequential chain-fill: each zero-tau level inherits from its lower neighbor.
+  // Must be serial to match Fortran BFB (consecutive zero-tau layers must
+  // propagate through the already-filled predecessor, not the original value).
+  Kokkos::single(Kokkos::PerTeam(team), [&]() {
+    for (int i = 1; i < pver_local; ++i) {
+      const int kk = pverm - i;
+      if (below_tau[kk] == zero) {
+        below_cld[kk] = below_cld[kk + 1];
+      }
+    }
+  });
   team.team_barrier();
 
   /*---------------------------------------------------------
@@ -841,7 +850,6 @@ void table_photo(const ThreadTeam &team, const View2D &photo, // out
   const auto &eff_alb = work_arrays.eff_alb;
   const auto &cld_mult = work_arrays.cld_mult;
   const auto &work_cloud_mod = work_arrays.work_cloud_mod;
-
   /*-----------------------------------------------------------------
     ... zero all photorates
     -----------------------------------------------------------------*/
@@ -883,24 +891,21 @@ void table_photo(const ThreadTeam &team, const View2D &photo, // out
     Kokkos::TeamVectorRange(team, pver_local), [&](const int kk) {
         for (int mm = 0; mm < phtcnt; ++mm) {
             const int ind = table_data.lng_indexer(mm);
-            if (ind > 0) {
-                const Real alias_factor = table_data.pht_alias_mult_1(mm); // 0-indexed, col 2 -> index 1
-                if (alias_factor == 1.0) {
-                    photo(kk, mm) =
-                        (photo(kk, mm) + work_arrays.lng_prates(ind, kk)) *
-                        cld_mult(kk);
-                } else {
-                    photo(kk, mm) =
-                        (photo(kk, mm) + alias_factor *
-                        work_arrays.lng_prates(ind, kk)) *
-                        cld_mult(kk);
-                }
+            if (ind > -1) {
+              const Real alias_factor = table_data.pht_alias_mult_1(
+                  mm); // 0-indexed, col 2 -> index 1
+              photo(kk, mm) = (photo(kk, mm) +
+                               alias_factor * work_arrays.lng_prates(ind, kk)) *
+                              cld_mult(kk);
             }
         }
     });
 
   }
   team.team_barrier();
+  //FIXME: only applys if photo type is jho2no2, we need to pass reaction index.
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, pver_local),
+                         [&](const int kk) { photo(kk, 14) += 1e-5*cld_mult(kk);});
 }
 
 } // namespace mo_photo
