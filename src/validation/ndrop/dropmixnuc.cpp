@@ -135,8 +135,8 @@ void dropmixnuc(Ensemble *ensemble) {
     View2D coltend("coltend", ncnst_tot, pver);
     View2D coltend_cw("coltend_cw", ncnst_tot, pver);
     View2D ccn("ccn", pver, psat);
-    View3D raercol_cw("raercol_cw", pver, 2, ncnst_tot);
-    View3D raercol("raercol", pver, 2, ncnst_tot);
+    View3D raercol_cw("raercol_cw", 2, ncnst_tot, pver);
+    View3D raercol("raercol", 2, ncnst_tot, pver);
 
     View2D nact("nact", pver, ntot_amode);
     View2D mact("mact", pver, ntot_amode);

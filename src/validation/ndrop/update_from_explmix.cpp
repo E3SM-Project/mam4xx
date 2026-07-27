@@ -103,20 +103,20 @@ void update_from_explmix(Ensemble *ensemble) {
       }
     }
 
-    View3D raercol_cw("raercol_cw", pver, 2, ncnst_tot);
+    View3D raercol_cw("raercol_cw", 2, ncnst_tot, pver);
     ;
     auto raercol_cw_host = Kokkos::create_mirror_view(raercol_cw);
-    View3D raercol("raercol", pver, 2, ncnst_tot);
+    View3D raercol("raercol", 2, ncnst_tot, pver);
     ;
     auto raercol_host = Kokkos::create_mirror_view(raercol);
 
     for (int n = 0, counter = 0; n < ncnst_tot; n++) {
       for (int k = 0; k < pver; k++, ++counter) {
-        raercol_host(k, 0, n) = raercol_1[counter];
-        raercol_cw_host(k, 0, n) = raercol_cw_1[counter];
+        raercol_host(0, n, k) = raercol_1[counter];
+        raercol_cw_host(0, n, k) = raercol_cw_1[counter];
 
-        raercol_host(k, 1, n) = raercol_2[counter];
-        raercol_cw_host(k, 1, n) = raercol_cw_2[counter];
+        raercol_host(1, n, k) = raercol_2[counter];
+        raercol_cw_host(1, n, k) = raercol_cw_2[counter];
       }
     }
 
@@ -163,11 +163,11 @@ void update_from_explmix(Ensemble *ensemble) {
     nsav_out[0] = indexes_host(1) + 1;
     for (int n = 0, counter = 0; n < ncnst_tot; n++) {
       for (int k = 0; k < pver; k++, ++counter) {
-        raercol_1_out[counter] = raercol_host(k, 0, n);
-        raercol_cw_1_out[counter] = raercol_cw_host(k, 0, n);
+        raercol_1_out[counter] = raercol_host(0, n, k);
+        raercol_cw_1_out[counter] = raercol_cw_host(0, n, k);
 
-        raercol_2_out[counter] = raercol_host(k, 1, n);
-        raercol_cw_2_out[counter] = raercol_cw_host(k, 1, n);
+        raercol_2_out[counter] = raercol_host(1, n, k);
+        raercol_cw_2_out[counter] = raercol_cw_host(1, n, k);
       }
     }
 

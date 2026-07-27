@@ -668,6 +668,7 @@ void get_activate_frac(const Real state_q_kload[aero_model::pcnst],
 
 } // get_activate_frac
 
+template <class ViewType>
 KOKKOS_INLINE_FUNCTION
 void update_from_cldn_profile(
     const Real cldn_col_in, const Real cldn_col_in_kp1, const Real dtinv,
@@ -680,7 +681,7 @@ void update_from_cldn_profile(
     const Real voltonumblo_amode[AeroConfig::num_modes()],
     const Real exp45logsig[AeroConfig::num_modes()],
     const Real alogsig[AeroConfig::num_modes()], const Real aten,
-    View1D raercol_nsav, View1D raercol_nsav_kp1, View1D raercol_cw_nsav,
+    ViewType raercol_nsav, ViewType raercol_nsav_kp1, ViewType raercol_cw_nsav,
     Real &nsource_col, // inout
     Real &qcld, Real factnum_col[AeroConfig::num_modes()],
     Real &eddy_diff, // out
@@ -847,6 +848,7 @@ void update_from_cldn_profile(
   } // end cldn_col_in(kk) > cld_thresh
 } // end update_from_cldn_profile
 
+template <class ViewType>
 KOKKOS_INLINE_FUNCTION
 void update_from_newcld(const Real cldn_col_in, const Real cldo_col_in,
                         const Real dtinv, // in
@@ -857,8 +859,8 @@ void update_from_newcld(const Real cldn_col_in, const Real cldo_col_in,
                         const Real voltonumblo_amode[AeroConfig::num_modes()],
                         const Real exp45logsig[AeroConfig::num_modes()],
                         const Real alogsig[AeroConfig::num_modes()],
-                        const Real aten, Real &qcld, View1D raercol_nsav,
-                        View1D raercol_cw_nsav, // inout
+                        const Real aten, Real &qcld, ViewType raercol_nsav,
+                        ViewType raercol_cw_nsav, // inout
                         Real &nsource_col_out,
                         Real factnum_col_out[AeroConfig::num_modes()]) {
 
@@ -1121,9 +1123,9 @@ void update_from_explmix(
         const Real tinv = eddy_diff_kp(k) + eddy_diff_km(k);
 
         // rce-comment
-        // the activation source(k) = mact(k,m)*raercol(kp1,lmass)
+        // the activation source(k) = mact(k,m)*raercol(lmass, kp1)
         // should not exceed the rate of transfer of unactivated particles
-        // from kp1 to k which = eddy_diff_kp(k)*raercol(kp1,lmass)
+        // from kp1 to k which = eddy_diff_kp(k)*raercol(lmass, kp1)
         // however it might if things are not "just right" in subr activate
         // the following is a safety measure to avoid negatives in explmix
 
@@ -1180,16 +1182,16 @@ void update_from_explmix(
         Kokkos::TeamVectorRange(team, top_lev, pver_loc), [&](int k) {
           const int kp1 = mam4::min(k + 1, pver_loc - 1);
           const int km1 = mam4::max(k - 1, top_lev);
-          const View1D raercol_km1_nsav = ekat::subview(raercol, km1, nsav);
-          const View1D raercol_k_nsav = ekat::subview(raercol, k, nsav);
-          const View1D raercol_kp1_nsav = ekat::subview(raercol, kp1, nsav);
-          const View1D raercol_k_nnew = ekat::subview(raercol, k, nnew);
-          const View1D raercol_cw_km1_nsav =
-              ekat::subview(raercol_cw, km1, nsav);
-          const View1D raercol_cw_k_nsav = ekat::subview(raercol_cw, k, nsav);
-          const View1D raercol_cw_kp1_nsav =
-              ekat::subview(raercol_cw, kp1, nsav);
-          const View1D raercol_cw_k_nnew = ekat::subview(raercol_cw, k, nnew);
+          const auto raercol_km1_nsav = Kokkos::subview(raercol, nsav, Kokkos::ALL(), km1);
+          const auto raercol_k_nsav = Kokkos::subview(raercol, nsav, Kokkos::ALL(), k);
+          const auto raercol_kp1_nsav = Kokkos::subview(raercol, nsav, Kokkos::ALL(), kp1);
+          const auto raercol_k_nnew = Kokkos::subview(raercol, nnew, Kokkos::ALL(), k);
+          const auto raercol_cw_km1_nsav =
+              Kokkos::subview(raercol_cw, nsav, Kokkos::ALL(), km1);
+          const auto raercol_cw_k_nsav = Kokkos::subview(raercol_cw, nsav, Kokkos::ALL(), k);
+          const auto raercol_cw_kp1_nsav =
+              Kokkos::subview(raercol_cw, nsav, Kokkos::ALL(), kp1);
+          const auto raercol_cw_k_nnew = Kokkos::subview(raercol_cw, nnew, Kokkos::ALL(), k);
           // update droplet source
           // rce-comment- activation source in layer k involves particles from
           // k+1
@@ -1260,14 +1262,14 @@ void update_from_explmix(
           // convert activated aerosol to interstitial in decaying cloud
           for (int imode = 0; imode < ntot_amode; imode++) {
             const int mm = AeroConfig::mam_idx(imode, 0);
-            raercol(k, nnew, mm) += raercol_cw(k, nnew, mm);
-            raercol_cw(k, nnew, mm) = zero;
+            raercol(nnew, mm, k) += raercol_cw(nnew, mm, k);
+            raercol_cw(nnew, mm, k) = zero;
 
             for (int lspec = 1; lspec < AeroConfig::nspec_amode(imode) + 1;
                  lspec++) {
               const int mm = AeroConfig::mam_idx(imode, lspec);
-              raercol(k, nnew, mm) += raercol_cw(k, nnew, mm);
-              raercol_cw(k, nnew, mm) = zero;
+              raercol(nnew, mm, k) += raercol_cw(nnew, mm, k);
+              raercol_cw(nnew, mm, k) = zero;
             } // lspec
           }   // imode
         }     // if cldn(k) == 0
@@ -1364,9 +1366,9 @@ void dropmixnuc(
   // geometric thickness of layers [m]
   // dz
   // fractional aero. number  activation rate [/s]
-  // raercol[nlevels][2][ncnst_tot]
+  // raercol[2][ncnst_tot][nlevels]
   // same as raercol but for cloud-borne phase [#/kg or kg/kg]
-  // raercol_cw[nlevels][2][ncnst_tot]
+  // raercol_cw[2][ncnst_tot][nlevels]
 
   static constexpr int pver_loc = pver;
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, 1, pver_loc), [&](int k) {
@@ -1416,21 +1418,17 @@ void dropmixnuc(
   Kokkos::parallel_for(
       Kokkos::TeamVectorRange(team, top_lev, pver_loc), [&](int k) {
         for (int imode = 0; imode < ntot_amode; ++imode) {
-          // Fortran indexing to C++ indexing
           const int mm = AeroConfig::mam_idx(imode, 0);
-          raercol_cw(k, nsav, mm) = qqcw_fld(mm, k);
-          // Fortran indexing to C++ indexing
+          raercol_cw(nsav, mm, k) = qqcw_fld(mm, k);
           const int num_idx = AeroConfig::numptr_amode(imode);
-          raercol(k, nsav, mm) = state_q(k, num_idx);
+          raercol(nsav, mm, k) = state_q(k, num_idx);
           for (int lspec = 1; lspec < AeroConfig::nspec_amode(imode) + 1;
                ++lspec) {
-            // Fortran indexing to C++ indexing
             const int mm = AeroConfig::mam_idx(imode, lspec);
 
-            raercol_cw(k, nsav, mm) = qqcw_fld(mm, k);
-            // Fortran indexing to C++ indexing
+            raercol_cw(nsav, mm, k) = qqcw_fld(mm, k);
             const int spc_idx = AeroConfig::lmassptr_amode(lspec - 1, imode);
-            raercol(k, nsav, mm) = state_q(k, spc_idx);
+            raercol(nsav, mm, k) = state_q(k, spc_idx);
           } // lspec
         }   // imode
 
@@ -1446,14 +1444,16 @@ void dropmixnuc(
         // FIXME: It is dangerous to call data() on a view and expect the
         // resulting vector to be continuous in memory. Depending on the
         // 2D layout, the memory could be strided.
+	auto raercol_k = Kokkos::subview(raercol, nsav, Kokkos::ALL(),  k);
+	auto raercol_cw_k = Kokkos::subview(raercol_cw, nsav, Kokkos::ALL(),  k);
         update_from_newcld(cldn(k), cldo(k), dtinv, // in
                            wtke(k), temp(k),
                            conversions::density_of_ideal_gas(temp(k), pmid(k)),
                            state_q_k.data(), // in
                            voltonumbhi_amode, voltonumblo_amode, exp45logsig,
                            alogsig, aten, qcld(k),
-                           ekat::subview(raercol, k, nsav),    // inout
-                           ekat::subview(raercol_cw, k, nsav), // inout
+                           raercol_k,    // inout
+                           raercol_cw_k, // inout
                            nsource(k), factnum_k);             // inout
 
         for (int imode = 0; imode < ntot_amode; ++imode)
@@ -1475,6 +1475,9 @@ void dropmixnuc(
           factnum_k[imode] = factnum(imode, k);
         const auto nact_k = ekat::subview(nact, k);
         const auto mact_k = ekat::subview(mact, k);
+        const auto raercol_k    = Kokkos::subview(raercol, nsav, Kokkos::ALL(), k);
+	const auto raercol_kp1  = Kokkos::subview(raercol, nsav, Kokkos::ALL(), kp1);
+        const auto raercol_cw_k = Kokkos::subview(raercol_cw, nsav, Kokkos::ALL(), k);
         update_from_cldn_profile(
             cldn(k), cldn(kp1), dtinv, wtke(k), zs(k), dz(k), // in
             temp(k), conversions::density_of_ideal_gas(temp(k), pmid(k)),
@@ -1482,8 +1485,7 @@ void dropmixnuc(
             csbot_cscen(k),
             state_q_kp1.data(), // in
             voltonumbhi_amode, voltonumblo_amode, exp45logsig, alogsig, aten,
-            ekat::subview(raercol, k, nsav), ekat::subview(raercol, kp1, nsav),
-            ekat::subview(raercol_cw, k, nsav),
+            raercol_k, raercol_kp1, raercol_cw_k,
             nsource(k), // inout
             qcld(k), factnum_k,
             eddy_diff(k), // out
@@ -1540,21 +1542,21 @@ void dropmixnuc(
             const int mm = AeroConfig::mam_idx(imode, lspec);
             // Fortran indexing to C++ indexing
             const int lptr = AeroConfig::mam_cnst_idx(imode, lspec);
-            qqcwtend(k) = (raercol_cw(k, nnew, mm) - qqcw_fld(mm, k)) * dtinv;
-            qqcw_fld(mm, k) = mam4::max(raercol_cw(k, nnew, mm),
+            qqcwtend(k) = (raercol_cw(nnew, mm, k) - qqcw_fld(mm, k)) * dtinv;
+            qqcw_fld(mm, k) = mam4::max(raercol_cw(nnew, mm, k),
                                         zero); // update cloud-borne aerosol
 
             if (lspec == 0) {
               // Fortran indexing to C++ indexing
               const int num_idx = AeroConfig::numptr_amode(imode);
               raertend(k) =
-                  (raercol(k, nnew, mm) - state_q(k, num_idx)) * dtinv;
+                  (raercol(nnew, mm, k) - state_q(k, num_idx)) * dtinv;
               qcldbrn_num[imode] = qqcw_fld(mm, k);
             } else {
               // Fortran indexing to C++ indexing
               const int spc_idx = AeroConfig::lmassptr_amode(lspec - 1, imode);
               raertend(k) =
-                  (raercol(k, nnew, mm) - state_q(k, spc_idx)) * dtinv;
+                  (raercol(nnew, mm, k) - state_q(k, spc_idx)) * dtinv;
               // Extract cloud borne MMRs from qqcw pointer
               qcldbrn[lspec][imode] = qqcw_fld(mm, k);
             } // end if
