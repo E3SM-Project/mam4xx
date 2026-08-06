@@ -669,8 +669,7 @@ void get_activate_frac(const Real state_q_kload[aero_model::pcnst],
 } // get_activate_frac
 
 template <class ViewType>
-KOKKOS_INLINE_FUNCTION
-void update_from_cldn_profile(
+KOKKOS_INLINE_FUNCTION void update_from_cldn_profile(
     const Real cldn_col_in, const Real cldn_col_in_kp1, const Real dtinv,
     const Real wtke_col_in, const Real zs,
     const Real dz, // in
@@ -849,20 +848,18 @@ void update_from_cldn_profile(
 } // end update_from_cldn_profile
 
 template <class ViewType>
-KOKKOS_INLINE_FUNCTION
-void update_from_newcld(const Real cldn_col_in, const Real cldo_col_in,
-                        const Real dtinv, // in
-                        const Real wtke_col_in, const Real temp_col_in,
-                        const Real air_density,
-                        const Real state_q_col_in[aero_model::pcnst], // in
-                        const Real voltonumbhi_amode[AeroConfig::num_modes()],
-                        const Real voltonumblo_amode[AeroConfig::num_modes()],
-                        const Real exp45logsig[AeroConfig::num_modes()],
-                        const Real alogsig[AeroConfig::num_modes()],
-                        const Real aten, Real &qcld, ViewType raercol_nsav,
-                        ViewType raercol_cw_nsav, // inout
-                        Real &nsource_col_out,
-                        Real factnum_col_out[AeroConfig::num_modes()]) {
+KOKKOS_INLINE_FUNCTION void update_from_newcld(
+    const Real cldn_col_in, const Real cldo_col_in,
+    const Real dtinv, // in
+    const Real wtke_col_in, const Real temp_col_in, const Real air_density,
+    const Real state_q_col_in[aero_model::pcnst], // in
+    const Real voltonumbhi_amode[AeroConfig::num_modes()],
+    const Real voltonumblo_amode[AeroConfig::num_modes()],
+    const Real exp45logsig[AeroConfig::num_modes()],
+    const Real alogsig[AeroConfig::num_modes()], const Real aten, Real &qcld,
+    ViewType raercol_nsav,
+    ViewType raercol_cw_nsav, // inout
+    Real &nsource_col_out, Real factnum_col_out[AeroConfig::num_modes()]) {
 
   // input arguments
   // real(r8), intent(in) :: cldn_col_in       cloud fraction [fraction]
@@ -1182,16 +1179,22 @@ void update_from_explmix(
         Kokkos::TeamVectorRange(team, top_lev, pver_loc), [&](int k) {
           const int kp1 = mam4::min(k + 1, pver_loc - 1);
           const int km1 = mam4::max(k - 1, top_lev);
-          const auto raercol_km1_nsav = Kokkos::subview(raercol, nsav, Kokkos::ALL(), km1);
-          const auto raercol_k_nsav = Kokkos::subview(raercol, nsav, Kokkos::ALL(), k);
-          const auto raercol_kp1_nsav = Kokkos::subview(raercol, nsav, Kokkos::ALL(), kp1);
-          const auto raercol_k_nnew = Kokkos::subview(raercol, nnew, Kokkos::ALL(), k);
+          const auto raercol_km1_nsav =
+              Kokkos::subview(raercol, nsav, Kokkos::ALL(), km1);
+          const auto raercol_k_nsav =
+              Kokkos::subview(raercol, nsav, Kokkos::ALL(), k);
+          const auto raercol_kp1_nsav =
+              Kokkos::subview(raercol, nsav, Kokkos::ALL(), kp1);
+          const auto raercol_k_nnew =
+              Kokkos::subview(raercol, nnew, Kokkos::ALL(), k);
           const auto raercol_cw_km1_nsav =
               Kokkos::subview(raercol_cw, nsav, Kokkos::ALL(), km1);
-          const auto raercol_cw_k_nsav = Kokkos::subview(raercol_cw, nsav, Kokkos::ALL(), k);
+          const auto raercol_cw_k_nsav =
+              Kokkos::subview(raercol_cw, nsav, Kokkos::ALL(), k);
           const auto raercol_cw_kp1_nsav =
               Kokkos::subview(raercol_cw, nsav, Kokkos::ALL(), kp1);
-          const auto raercol_cw_k_nnew = Kokkos::subview(raercol_cw, nnew, Kokkos::ALL(), k);
+          const auto raercol_cw_k_nnew =
+              Kokkos::subview(raercol_cw, nnew, Kokkos::ALL(), k);
           // update droplet source
           // rce-comment- activation source in layer k involves particles from
           // k+1
@@ -1444,17 +1447,17 @@ void dropmixnuc(
         // FIXME: It is dangerous to call data() on a view and expect the
         // resulting vector to be continuous in memory. Depending on the
         // 2D layout, the memory could be strided.
-	auto raercol_k = Kokkos::subview(raercol, nsav, Kokkos::ALL(),  k);
-	auto raercol_cw_k = Kokkos::subview(raercol_cw, nsav, Kokkos::ALL(),  k);
+        auto raercol_k = Kokkos::subview(raercol, nsav, Kokkos::ALL(), k);
+        auto raercol_cw_k = Kokkos::subview(raercol_cw, nsav, Kokkos::ALL(), k);
         update_from_newcld(cldn(k), cldo(k), dtinv, // in
                            wtke(k), temp(k),
                            conversions::density_of_ideal_gas(temp(k), pmid(k)),
                            state_q_k.data(), // in
                            voltonumbhi_amode, voltonumblo_amode, exp45logsig,
                            alogsig, aten, qcld(k),
-                           raercol_k,    // inout
-                           raercol_cw_k, // inout
-                           nsource(k), factnum_k);             // inout
+                           raercol_k,              // inout
+                           raercol_cw_k,           // inout
+                           nsource(k), factnum_k); // inout
 
         for (int imode = 0; imode < ntot_amode; ++imode)
           factnum(imode, k) = factnum_k[imode];
@@ -1475,9 +1478,11 @@ void dropmixnuc(
           factnum_k[imode] = factnum(imode, k);
         const auto nact_k = ekat::subview(nact, k);
         const auto mact_k = ekat::subview(mact, k);
-        const auto raercol_k    = Kokkos::subview(raercol, nsav, Kokkos::ALL(), k);
-	const auto raercol_kp1  = Kokkos::subview(raercol, nsav, Kokkos::ALL(), kp1);
-        const auto raercol_cw_k = Kokkos::subview(raercol_cw, nsav, Kokkos::ALL(), k);
+        const auto raercol_k = Kokkos::subview(raercol, nsav, Kokkos::ALL(), k);
+        const auto raercol_kp1 =
+            Kokkos::subview(raercol, nsav, Kokkos::ALL(), kp1);
+        const auto raercol_cw_k =
+            Kokkos::subview(raercol_cw, nsav, Kokkos::ALL(), k);
         update_from_cldn_profile(
             cldn(k), cldn(kp1), dtinv, wtke(k), zs(k), dz(k), // in
             temp(k), conversions::density_of_ideal_gas(temp(k), pmid(k)),
