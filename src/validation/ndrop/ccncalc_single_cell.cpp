@@ -66,8 +66,7 @@ void ccncalc_single_cell(Ensemble *ensemble) {
     std::vector<Real> ccn(psat, zero);
     mam4::ndrop::ccncalc(state_q, tair, qcldbrn, qcldbrn_num.data(),
                          air_density, num2vol_ratio_min_nmodes,
-                         num2vol_ratio_max_nmodes, exp45logsig, alogsig,
-                         ccn);
+                         num2vol_ratio_max_nmodes, exp45logsig, alogsig, ccn);
 
     output.set("ccn", ccn);
   });
