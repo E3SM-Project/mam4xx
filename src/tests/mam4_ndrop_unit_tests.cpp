@@ -91,6 +91,7 @@ TEST_CASE("test_ndrop_init", "mam4_ndrop_unit_tests") {
 }
 
 TEST_CASE("test_get_aer_num", "mam4_ndrop_unit_tests") {
+  using View1D = mam4::DeviceType::view_1d<Real>;
   ekat::Comm comm;
   ekat::logger::Logger<> logger("ndrop unit tests",
                                 ekat::logger::LogLevel::debug, comm);
@@ -112,7 +113,7 @@ TEST_CASE("test_get_aer_num", "mam4_ndrop_unit_tests") {
   // and then work backward to get state_q
   // span the orders of magnitude with the top and bottom outside the interval
   const Real test_num[4] = {1.2e18, 3.4e19, 5.6e20, 7.9e21};
-  Real state_q[mam4::aero_model::pcnst];
+  View1D state_q("state_q", mam4::aero_model::pcnst);
   Real naerosol;
   const Real ans[4] = {voltonumbhi_amode, test_num[1], test_num[2],
                        voltonumblo_amode};
@@ -120,7 +121,7 @@ TEST_CASE("test_get_aer_num", "mam4_ndrop_unit_tests") {
 
   for (int i = 0; i < 4; ++i) {
     ans_i = ans[i] * vaerosol;
-    state_q[num_idx] = ((test_num[i] * vaerosol) / air_density - qcldbrn1d_num);
+    state_q(num_idx) = ((test_num[i] * vaerosol) / air_density - qcldbrn1d_num);
     mam4::ndrop::get_aer_num(voltonumbhi_amode, voltonumblo_amode, num_idx,
                              state_q, air_density, vaerosol, qcldbrn1d_num,
                              naerosol);

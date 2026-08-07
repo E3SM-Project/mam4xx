@@ -29,14 +29,14 @@ void ccncalc(Ensemble *ensemble) {
     using View2D = mam4::ndrop::View2D;
     using View1DHost = typename mam4::HostType::view_1d<Real>;
 
-    View2D state_q("state_q", pver, pcnst);
+    View2D state_q("state_q", pcnst, pver);
     auto state_host = Kokkos::create_mirror_view(state_q);
 
     int count = 0;
     for (int i = 0; i < pcnst; ++i) {
       // input data is store on the cpu.
       for (int kk = 0; kk < pver; ++kk) {
-        state_host(kk, i) = state_q_db[count];
+        state_host(i, kk) = state_q_db[count];
         count++;
       }
     }
@@ -54,7 +54,7 @@ void ccncalc(Ensemble *ensemble) {
     Kokkos::deep_copy(tair, tair_host);
     Kokkos::deep_copy(pmid, pmid_host);
 
-    View2D ccn("ccn", pver, psat);
+    View2D ccn("ccn", psat, pver);
 
     Kokkos::parallel_for(
         "ccncalc", pver - top_lev, KOKKOS_LAMBDA(int k) {
@@ -62,7 +62,7 @@ void ccncalc(Ensemble *ensemble) {
           Real qcldbrn_num[ntot_amode] = {zero};
 
           const int kk = k + top_lev;
-          const auto state_q_k = Kokkos::subview(state_q, kk, Kokkos::ALL());
+          const auto state_q_k = Kokkos::subview(state_q, Kokkos::ALL(), kk);
           const Real air_density =
               mam4::conversions::density_of_ideal_gas(tair(kk), pmid(kk));
 
@@ -78,11 +78,11 @@ void ccncalc(Ensemble *ensemble) {
               num2vol_ratio_min_nmodes,  // voltonumbhi_amode
               num2vol_ratio_max_nmodes); // voltonumblo_amode
 
-          const auto ccn_k = Kokkos::subview(ccn, kk, Kokkos::ALL());
-          mam4::ndrop::ccncalc(state_q_k.data(), tair(kk), qcldbrn, qcldbrn_num,
+          const auto ccn_k = Kokkos::subview(ccn, Kokkos::ALL(), kk);
+          mam4::ndrop::ccncalc(state_q_k, tair(kk), qcldbrn, qcldbrn_num,
                                air_density, num2vol_ratio_min_nmodes,
                                num2vol_ratio_max_nmodes, exp45logsig, alogsig,
-                               ccn_k.data());
+                               ccn_k);
         });
 
     auto ccn_host = Kokkos::create_mirror_view(ccn);
@@ -90,7 +90,7 @@ void ccncalc(Ensemble *ensemble) {
     for (int i = 0; i < psat; ++i) {
       std::vector<Real> ccn_v(pver);
       for (int kk = 0; kk < pver; ++kk) {
-        ccn_v[kk] = ccn_host(kk, i);
+        ccn_v[kk] = ccn_host(i, kk);
       }
       output.set("ccn_" + std::to_string(i + 1), ccn_v);
     }

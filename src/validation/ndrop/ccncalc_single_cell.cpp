@@ -64,10 +64,10 @@ void ccncalc_single_cell(Ensemble *ensemble) {
       nspec_amode[i] = nspec_amode_db[i];
     }
     std::vector<Real> ccn(psat, zero);
-    mam4::ndrop::ccncalc(state_q.data(), tair, qcldbrn, qcldbrn_num.data(),
+    mam4::ndrop::ccncalc(state_q, tair, qcldbrn, qcldbrn_num.data(),
                          air_density, num2vol_ratio_min_nmodes,
                          num2vol_ratio_max_nmodes, exp45logsig, alogsig,
-                         ccn.data());
+                         ccn);
 
     output.set("ccn", ccn);
   });

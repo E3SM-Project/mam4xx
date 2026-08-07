@@ -104,7 +104,7 @@ void update_from_cldn_profile(Ensemble *ensemble) {
               nsource_col_view[0], // inout
               qcld_view[0], factnum_col_view.data(),
               ekd_view[0], // out
-              nact_view.data(), mact_view.data());
+              nact_view, mact_view);
         });
 
     Kokkos::deep_copy(qcld_host, qcld_view);
