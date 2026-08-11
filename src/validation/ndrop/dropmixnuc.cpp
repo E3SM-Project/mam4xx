@@ -176,6 +176,7 @@ void dropmixnuc(Ensemble *ensemble) {
               num2vol_ratio_max_nmodes[mam4::AeroConfig::num_modes()] = {};
 
           Real aten = zero;
+          int nsubmix = 0;
 
           mam4::ndrop::ndrop_init(
               exp45logsig, alogsig, aten,
@@ -192,9 +193,9 @@ void dropmixnuc(Ensemble *ensemble) {
               wsub,
               cldo, // in
               qqcw, // inout
-              ptend_q, tendnd, factnum, ndropcol, ndropmix, nsource, wtke, ccn,
-              coltend, coltend_cw, top_lev, raercol_cw, raercol, nact, mact,
-              ekd,
+              ptend_q, tendnd, factnum, ndropcol, ndropmix, nsource, nsubmix,
+              wtke, ccn, coltend, coltend_cw, top_lev, raercol_cw, raercol,
+              nact, mact, ekd,
               // work arrays
               zn, csbot, zs, overlapp, overlapm, ekkp, ekkm, qncld, srcn,
               source, dz, csbot_cscen, raertend, qqcwtend);

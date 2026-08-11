@@ -1,11 +1,19 @@
 #include <mam4xx/mam4.hpp>
 
+#include "testing.hpp"
+
 #include <catch2/catch.hpp>
 #include <ekat_comm.hpp>
 #include <ekat_logger.hpp>
 #include <ekat_pack_kokkos.hpp>
 
 using mam4::Real;
+
+#ifdef MAM4XX_ENABLE_GPU
+constexpr int team_size = mam4::nlev;
+#else
+constexpr int team_size = 1;
+#endif
 
 // NOTE: other than the nonnegative-ish requirements, this test is basically
 // vacuous, since it mostly does the same thing as the function, but I suppose
@@ -205,6 +213,61 @@ TEST_CASE("test_explmix", "mam4_ndrop") {
 
   logger.info("q = {}", q);
   REQUIRE(mam4::FloatingPoint<Real>::equiv(q, 0.9));
+}
+
+TEST_CASE("test_update_from_explmix_reports_nsubmix", "mam4_ndrop") {
+  constexpr int pver = mam4::ndrop::pver;
+  constexpr int nmodes = mam4::AeroConfig::num_modes();
+  constexpr int ncnst_tot = mam4::ndrop::ncnst_tot;
+  constexpr int top_lev = 1;
+
+  auto csbot = mam4::testing::create_column_view(pver);
+  auto cldn = mam4::testing::create_column_view(pver);
+  auto zn = mam4::testing::create_column_view(pver);
+  auto zs = mam4::testing::create_column_view(pver);
+  auto eddy_diff = mam4::testing::create_column_view(pver);
+  auto qcld = mam4::testing::create_column_view(pver);
+  auto overlapp = mam4::testing::create_column_view(pver);
+  auto overlapm = mam4::testing::create_column_view(pver);
+  auto eddy_diff_kp = mam4::testing::create_column_view(pver);
+  auto eddy_diff_km = mam4::testing::create_column_view(pver);
+  auto qncld = mam4::testing::create_column_view(pver);
+  mam4::ndrop::View2D nact("nact", pver, nmodes);
+  mam4::ndrop::View2D mact("mact", pver, nmodes);
+  mam4::ndrop::View3D raercol("raercol", pver, 2, ncnst_tot);
+  mam4::ndrop::View3D raercol_cw("raercol_cw", pver, 2, ncnst_tot);
+  mam4::DeviceType::view_1d<int> nsubmix_device("nsubmix", 1);
+
+  Kokkos::deep_copy(csbot, 1.0);
+  Kokkos::deep_copy(cldn, 1.0);
+  Kokkos::deep_copy(zn, 1.0);
+  Kokkos::deep_copy(zs, 1.0);
+  Kokkos::deep_copy(eddy_diff, 0.01);
+  Kokkos::deep_copy(qcld, 0.0);
+  Kokkos::deep_copy(nact, 0.0);
+  Kokkos::deep_copy(mact, 0.0);
+  Kokkos::deep_copy(raercol, 0.0);
+  Kokkos::deep_copy(raercol_cw, 0.0);
+
+  const Real dtmicro = 100.0;
+  auto team_policy = mam4::ThreadTeamPolicy(1u, team_size);
+  Kokkos::parallel_for(
+      "update_from_explmix_nsubmix", team_policy,
+      KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
+        int nsav = 0;
+        int nnew = 1;
+        int nsubmix = 0;
+        mam4::ndrop::update_from_explmix(
+            team, dtmicro, csbot, cldn, zn, zs, eddy_diff, nact, mact, qcld,
+            raercol, raercol_cw, nsav, nnew, nsubmix, top_lev, overlapp,
+            overlapm, eddy_diff_kp, eddy_diff_km, qncld);
+        Kokkos::single(Kokkos::PerTeam(team),
+                       [&]() { nsubmix_device(0) = nsubmix; });
+      });
+
+  auto nsubmix_host = Kokkos::create_mirror_view(nsubmix_device);
+  Kokkos::deep_copy(nsubmix_host, nsubmix_device);
+  REQUIRE(nsubmix_host(0) == 3);
 }
 
 TEST_CASE("test_maxsat", "mam4_ndrop") {

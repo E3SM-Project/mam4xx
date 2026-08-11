@@ -1068,6 +1068,7 @@ void update_from_explmix(
     const View3D raercol_cw,
     int &nsav, // indices for old, new time levels in substepping
     int &nnew, // indices for old, new time levels in substepping
+    int &nsubmix, // number of explicit vertical-mixing substeps [count]
     const int top_lev,
     // work vars
     const ColumnView &overlapp, // cloud overlap involving level kk+1 [fraction]
@@ -1153,7 +1154,7 @@ void update_from_explmix(
   //  BAD CONSTANT
   Real dtmix = 0.9 * dtmin;
   // number of substeps and bound
-  const int nsubmix = dtmicro / dtmix + 1;
+  nsubmix = dtmicro / dtmix + 1;
 
   dtmix = dtmicro / nsubmix;
 
@@ -1291,8 +1292,9 @@ void dropmixnuc(
     const View2D qqcw_fld,  // inout
     const View2D ptend_q, const ColumnView &tendnd, const View2D &factnum,
     const ColumnView &ndropcol, const ColumnView &ndropmix,
-    const ColumnView &nsource, const ColumnView &wtke, const View2D &ccn,
-    const View2D coltend, const View2D coltend_cw, const int top_lev,
+    const ColumnView &nsource, int &nsubmix, const ColumnView &wtke,
+    const View2D &ccn, const View2D coltend, const View2D coltend_cw,
+    const int top_lev,
     // work arrays
     const View3D raercol_cw, const View3D raercol, const View2D &nact,
     const View2D &mact, const ColumnView &eddy_diff, const ColumnView &zn,
@@ -1334,6 +1336,7 @@ void dropmixnuc(
   // factnum(:,:,:)     activation fraction for aerosol number [fraction]
   // nsource            droplet number mixing ratio source tendency [#/kg/s]
   // ndropmix           droplet number mixing ratio tendency due to mixing [#/kg/s]
+  // nsubmix            explicit vertical-mixing substeps [count]
   // ccn                number conc of aerosols activated at supersat [#/m^3]
   //      note:  activation fraction fluxes are defined as
   //     fluxn = [flux of activated aero. number into cloud [#/m^2/s]]
@@ -1498,7 +1501,7 @@ void dropmixnuc(
 
   int nnew = 1;
   update_from_explmix(team, dtmicro, csbot, cldn, zn, zs, eddy_diff, nact, mact,
-                      qcld, raercol, raercol_cw, nsav, nnew, top_lev,
+                      qcld, raercol, raercol_cw, nsav, nnew, nsubmix, top_lev,
                       // work vars
                       overlapp, overlapm, eddy_diff_kp, eddy_diff_km, qncld);
 
