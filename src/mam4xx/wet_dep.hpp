@@ -9,6 +9,7 @@
 #include "aero_config.hpp"
 #include "aero_model.hpp"
 #include "atmosphere.hpp"
+#include "convproc.hpp"
 #include "mam4_constants.hpp"
 #include "mam4_math.hpp"
 #include "modal_aero_calcsize.hpp"
@@ -1824,7 +1825,25 @@ void aero_model_wetdep(
     const View2D &wetdens,
     // output
     const View1D &aerdepwetis, const View1D &aerdepwetcw, const View1D &work,
-    const Int1D &isprx) {
+    const Int1D &isprx,
+    // Convection mass flux parameters (from zm_conv or equivalent)
+    Kokkos::View<Real *> scratch1Dviews[ConvProc::Col1DViewInd::NumScratch], // Scratch arrays
+    const ConstColumnView &mu,              // Updraft mass flux [mb/s]
+    const ConstColumnView &md,              // Downdraft mass flux [mb/s]
+    const ConstColumnView &du,              // Detrainment from updraft [1/s]
+    const ConstColumnView &eu,              // Entrainment into updraft [1/s]
+    const ConstColumnView &ed,              // Entrainment into downdraft [1/s]
+    const ConstColumnView &dp,              // Layer pressure thickness [mb]
+    const ConstColumnView &dpdry,           // Dry pressure thickness [mb]
+    const ConstColumnView &dlfsh,           // Shallow conv cldwtr detrainment [kg/kg/s]
+    const ConstColumnView &sh_e_ed_ratio,   // Shallow conv [ent/(ent+det)] ratio
+    const int ktop,                         // Cloud top level index
+    const int kbot,                         // Cloud base level index
+    const bool convproc_do_aer,             // Flag to process aerosols
+    const bool convproc_do_gas,             // Flag to process gases
+    const int species_class[aero_model::pcnst],      // Species classification
+    const int mmtoo_prevap_resusp[aero_model::pcnst], // Resuspension mapping
+    const AeroConfig &aero_config) {        // Aerosol configuration
   // cldn layer cloud fraction [fraction]; CLD
 
   // FIXME: do we need to set the variables inside of set_srf_wetdep ?
@@ -2310,6 +2329,62 @@ void aero_model_wetdep(
               qsrflx_mzaer2cnvpr(mm, 1) = sflxecdp;
             }
 #endif
+
+            // Call ma_convproc_intr for convective aerosol processing
+            // This processes convective transport, activation, and wet removal
+            // Only process when convection is active and for interstitial aerosols
+            if ((convproc_do_aer || convproc_do_gas) && lphase == 1 && 
+                ktop < kbot) {
+              team.team_barrier();
+              
+              // Get aerosol species view from config
+              const auto aero_species = aero_config.aero_species;
+              
+              // Initialize ptend_lq based on species to process
+              // NOTE: species_class is static configuration, but convproc_do_aer/gas
+              // are runtime flags, so this must be computed each call. For better
+              // performance, the caller could pre-compute this based on flags and
+              // pass it as a parameter if the flags don't change during simulation.
+              bool ptend_lq[aero_model::pcnst];
+              for (int i = 0; i < aero_model::pcnst; ++i) {
+                ptend_lq[i] = (species_class[i] == ConvProc::species_class::aerosol && 
+                              convproc_do_aer) ||
+                             (species_class[i] == ConvProc::species_class::gas && 
+                              convproc_do_gas);
+              }
+              
+              // Local array for aerosol deposition from convproc
+              Real aerdepwetis_convproc[aero_model::pcnst];
+              for (int i = 0; i < aero_model::pcnst; ++i) {
+                aerdepwetis_convproc[i] = 0.0;
+              }
+              
+              // Call ma_convproc_intr with data pointers
+              convproc::ma_convproc_intr(
+                  team, aero_species, scratch1Dviews,
+                  convproc_do_aer, convproc_do_gas, nlev,
+                  atm.temperature.data(), atm.pressure.data(),
+                  dpdry.data(), atm.hydrostatic_dp.data(), dt,
+                  dp_frac.data(), icwmrdp.data(),
+                  rprddp.data(), evapcdp.data(),
+                  sh_frac.data(), icwmrsh.data(),
+                  rprdsh.data(), evapcsh.data(),
+                  dlf.data(), dlfsh.data(),
+                  sh_e_ed_ratio.data(), du.data(),
+                  eu.data(), ed.data(), dp.data(),
+                  ktop, kbot,
+                  species_class, mmtoo_prevap_resusp,
+                  state_q, ptend_q, ptend_lq, aerdepwetis_convproc);
+              
+              // Update aerdepwetis with convective wet deposition results
+              Kokkos::parallel_for(
+                  Kokkos::TeamVectorRange(team, aero_model::pcnst),
+                  [&](int i) { 
+                    aerdepwetis(i) += aerdepwetis_convproc[i];
+                  });
+              
+              team.team_barrier();
+            }
           }
         }
       }
