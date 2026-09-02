@@ -63,7 +63,7 @@ Real local_precip_production(Real pdel, Real source_term, Real sink_term,
 inline void init_scavimptbl(const AeroConfig &aero_config,
                             View2DHost scavimptblvol,
                             View2DHost scavimptblnum) {
-  const int num_modes = aero_config.num_modes();
+  constexpr int num_modes = AeroConfig::num_modes();
   Real dgnum_amode[num_modes];
   Real sigmag_amode[num_modes];
   Real aerosol_dry_density[num_modes];
