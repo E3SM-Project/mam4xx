@@ -2333,6 +2333,7 @@ void aero_model_wetdep(
             // Call ma_convproc_intr for convective aerosol processing
             // This processes convective transport, activation, and wet removal
             // Only process when convection is active and for interstitial aerosols
+            const pcnst_local = aero_model::pcnst;
             if ((convproc_do_aer || convproc_do_gas) && lphase == 1 && 
                 ktop < kbot) {
               // Get aerosol species view from config
@@ -2369,7 +2370,7 @@ void aero_model_wetdep(
               
               // Update aerdepwetis with convective wet deposition results
               Kokkos::parallel_for(
-                  Kokkos::TeamVectorRange(team, aero_model::pcnst),
+                  Kokkos::TeamVectorRange(team, pcnst_local),
                   [&](int i) { 
                     aerdepwetis(i) += aerdepwetis_convproc[i];
                   });
