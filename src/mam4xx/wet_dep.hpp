@@ -1843,7 +1843,6 @@ void aero_model_wetdep(
     const bool convproc_do_gas,             // Flag to process gases
     const int species_class[aero_model::pcnst],      // Species classification
     const int mmtoo_prevap_resusp[aero_model::pcnst], // Resuspension mapping
-    const bool ptend_lq[aero_model::pcnst],           // Species tendency flags
     const AeroConfig &aero_config) {        // Aerosol configuration
   // cldn layer cloud fraction [fraction]; CLD
 
@@ -2338,7 +2337,13 @@ void aero_model_wetdep(
                 ktop < kbot) {
               // Get aerosol species view from config
               const auto aero_species = aero_config.aero_species;
-              
+              bool ptend_lq[aero_model::pcnst];
+              for (int i = 0; i < aero_model::pcnst; ++i) {
+                ptend_lq[i] = (species_class[i] == ConvProc::species_class::aerosol && 
+                              convproc_do_aer) ||
+                             (species_class[i] == ConvProc::species_class::gas && 
+                              convproc_do_gas);
+              }
               // Local array for aerosol deposition from convproc
               Real aerdepwetis_convproc[aero_model::pcnst];
               for (int i = 0; i < aero_model::pcnst; ++i) {
