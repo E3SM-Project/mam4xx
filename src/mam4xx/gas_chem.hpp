@@ -17,6 +17,34 @@ const Real rel_err = 1.0e-3;
 // const Real high_rel_err = 1.0e-4;
 const int max_time_steps = 1000;
 
+enum class ImpSolOutcome {
+  Converged,
+  ConvergedAfterRetry,
+  InvalidInput,
+  NonfiniteIterate,
+  CutLimitExhausted,
+  MaximumStepsExhausted
+};
+
+struct ImpSolResult {
+  ImpSolOutcome outcome = ImpSolOutcome::InvalidInput;
+  int failed_attempts = 0;
+  int cut_count = 0;
+  int accepted_steps = 0;
+  Real requested_interval = 0;
+  Real accepted_interval = 0;
+
+  KOKKOS_INLINE_FUNCTION
+  bool success() const {
+    const bool converged = outcome == ImpSolOutcome::Converged ||
+                           outcome == ImpSolOutcome::ConvergedAfterRetry;
+    return converged && Kokkos::isfinite(requested_interval) &&
+           requested_interval > 0 && Kokkos::isfinite(accepted_interval) &&
+           accepted_interval >= 0 &&
+           mam4::abs(requested_interval - accepted_interval) <= 1.0e-4;
+  }
+};
+
 KOKKOS_INLINE_FUNCTION
 void usrrxt(Real rxt[rxntot], // inout
             const Real temperature, const Real invariants[nfs], const Real mtot,
@@ -229,12 +257,14 @@ KOKKOS_INLINE_FUNCTION void newton_raphson_iter(
     } // end if (nr_iter > 0)
   }   // end nr_iter loop
 } // newton_raphson_iter() function
+namespace detail {
 template <typename VectorType>
-KOKKOS_INLINE_FUNCTION void
-imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
-        const Real reaction_rates[rxntot], const Real het_rates[gas_pcnst],
-        const Real extfrc[extcnt], const Real &delt, const bool factor[itermax],
-        Real epsilon[clscnt4], Real prod_out[clscnt4], Real loss_out[clscnt4]) {
+KOKKOS_INLINE_FUNCTION void imp_sol_impl(
+    VectorType &base_sol, // inout - species mixing ratios [vmr]
+    const Real reaction_rates[rxntot], const Real het_rates[gas_pcnst],
+    const Real extfrc[extcnt], const Real &delt, const bool factor[itermax],
+    Real epsilon[clscnt4], Real prod_out[clscnt4], Real loss_out[clscnt4],
+    ImpSolResult &result) {
 
   constexpr auto clsmap_4 = gas_chemistry::clsmap_4;
   constexpr auto permute_4 = gas_chemistry::permute_4;
@@ -259,6 +289,34 @@ imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
 
   const int cut_limit = 5;
 
+  result = ImpSolResult{};
+  result.requested_interval = delt;
+  for (int kk = 0; kk < clscnt4; ++kk) {
+    prod_out[kk] = zero;
+    loss_out[kk] = zero;
+  }
+
+  bool input_is_finite = Kokkos::isfinite(delt) && delt > zero;
+  for (int mm = 0; mm < gas_pcnst; ++mm) {
+    input_is_finite = input_is_finite && Kokkos::isfinite(base_sol[mm]) &&
+                      Kokkos::isfinite(het_rates[mm]);
+  }
+  for (int mm = 0; mm < rxntot; ++mm) {
+    input_is_finite =
+        input_is_finite && Kokkos::isfinite(reaction_rates[mm]);
+  }
+  for (int mm = 0; mm < extcnt; ++mm) {
+    input_is_finite = input_is_finite && Kokkos::isfinite(extfrc[mm]);
+  }
+  for (int kk = 0; kk < clscnt4; ++kk) {
+    input_is_finite = input_is_finite && Kokkos::isfinite(epsilon[kk]) &&
+                      epsilon[kk] >= zero;
+  }
+  if (!input_is_finite) {
+    result.outcome = ImpSolOutcome::InvalidInput;
+    return;
+  }
+
   Real ind_prd[clscnt4] = {};
   Real lin_jac[nzcnt] = {};
   bool converged[clscnt4] = {};
@@ -278,24 +336,32 @@ imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
 
   Real solution[clscnt4] = {};
   Real iter_invariant[clscnt4] = {};
+  Real lsol[gas_pcnst] = {};
 
   // !-----------------------------------------------------------------------
   //       ! ... time step loop
   //       !-----------------------------------------------------------------------
   Real dt = delt;
   int cut_cnt = 0;
-  int fail_cnt = 0;
   int stp_con_cnt = 0;
   // track how much of the outer time step = delt (interval) has been completed
   // during Newton-Raphson iteration
   Real interval_done = zero;
   // time_step_loop
   for (int i = 0; i < max_time_steps; ++i) {
+    const Real attempted_dt = dt;
     const Real dti = one / dt;
     // -----------------------------------------------------------------------
     //  ... transfer from base to local work arrays
     // -----------------------------------------------------------------------
-    auto &lsol = base_sol;
+    for (int mm = 0; mm < gas_pcnst; ++mm) {
+      lsol[mm] = base_sol[mm];
+    }
+    convergence = false;
+    for (int kk = 0; kk < clscnt4; ++kk) {
+      converged[kk] = false;
+      max_delta[kk] = zero;
+    }
     // -----------------------------------------------------------------------
     //  ... transfer from base to class array
     // -----------------------------------------------------------------------
@@ -337,6 +403,22 @@ imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
                         converged, convergence,          // out
                         prod, loss, max_delta, epsilon); // out
 
+    bool trial_is_finite = true;
+    for (int mm = 0; mm < gas_pcnst; ++mm) {
+      trial_is_finite = trial_is_finite && Kokkos::isfinite(lsol[mm]);
+    }
+    for (int kk = 0; kk < clscnt4; ++kk) {
+      trial_is_finite = trial_is_finite && Kokkos::isfinite(solution[kk]) &&
+                        Kokkos::isfinite(prod[kk]) &&
+                        Kokkos::isfinite(loss[kk]);
+    }
+
+    if (!trial_is_finite) {
+      result.failed_attempts += 1;
+      result.outcome = ImpSolOutcome::NonfiniteIterate;
+      return;
+    }
+
     // -----------------------------------------------------------------------
     //  ... check for newton-raphson convergence
     // -----------------------------------------------------------------------
@@ -344,56 +426,53 @@ imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
       // -----------------------------------------------------------------------
       //            ... non-convergence
       // -----------------------------------------------------------------------
-      fail_cnt += fail_cnt;
-
+      result.failed_attempts += 1;
       stp_con_cnt = 0;
 
       if (cut_cnt < cut_limit) {
         cut_cnt += 1;
+        result.cut_count = cut_cnt;
         if (cut_cnt < cut_limit) {
           dt *= half;
         } else {
           dt *= 0.1;
         } // cut_cnt < cut_limit
-        // FIXME: figure out how we want to do error handling/logging
-        // break;
-        // cycle time_step_loop
+        // Retry this same physical interval from the last accepted state.
+        continue;
       } else {
-        // write(iulog,'('' imp_sol: Failed to converge @
-        // (lchnk,lev,col,nstep,dt,time) = '',4i6,1p,2e21.13)') &
-        //                   lchnk,lev,icol,nstep,dt,interval_done+dt
-        // do mm = 1,clscnt4
-        //                 if( .not. converged(mm) ) then
-        //                    write(iulog,'(1x,a8,1x,1pe10.3)')
-        //                    solsym(clsmap(mm,4)), max_delta(mm)
-        //                 endif
-        //              enddo
+        result.outcome = ImpSolOutcome::CutLimitExhausted;
+        return;
       } //  cut_cnt < cut_limit
     }   // non-convergence
 
     // -----------------------------------------------------------------------
-    // ... check for interval done
+    // ... commit the converged trial and check for interval done
     // -----------------------------------------------------------------------
 
-    interval_done += dt;
+    for (int mm = 0; mm < gas_pcnst; ++mm) {
+      base_sol[mm] = lsol[mm];
+    }
+    result.accepted_steps += 1;
+    interval_done += attempted_dt;
+    result.accepted_interval = interval_done;
 
     // BAD CONSTANT
     if (mam4::abs(delt - interval_done) <= 0.0001) {
-      if (fail_cnt > 0) {
-        // FIXME: probably handle this more gracefully via error logging?
-        EKAT_KERNEL_ERROR_MSG("ERROR: imp_sol failure @ (lchnk,lev,col) = \n");
+      for (int kk = 0; kk < clscnt4; ++kk) {
+        const int mm = permute_4[kk];
+        prod_out[kk] = prod[mm] + ind_prd[mm];
+        loss_out[kk] = loss[mm];
       }
-      break;
+      result.outcome = result.failed_attempts == 0
+                           ? ImpSolOutcome::Converged
+                           : ImpSolOutcome::ConvergedAfterRetry;
+      return;
     } else {
       // -----------------------------------------------------------------------
       //  ... transfer latest solution back to base array
       // -----------------------------------------------------------------------
       if (convergence) {
         stp_con_cnt += 1;
-      }
-
-      for (int mm = 0; mm < gas_pcnst; ++mm) {
-        base_sol[mm] = lsol[mm];
       }
 
       if (stp_con_cnt >= 2) {
@@ -406,22 +485,37 @@ imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
     } // abs( delt - interval_done ) <= .0001
   }   // time_step_loop
 
-  //-----------------------------------------------------------------------
-  // ... Transfer latest solution back to base array
-  //     and calculate Prod/Loss history buffers
-  //-----------------------------------------------------------------------
+  result.outcome = ImpSolOutcome::MaximumStepsExhausted;
+} // imp_sol_impl
+} // namespace detail
 
-  for (int kk = 0; kk < clscnt4; ++kk) {
-    const int jj = clsmap_4[kk];
-    const int mm = permute_4[kk];
-    //  ... Transfer latest solution back to base array
-    base_sol[jj] = solution[mm];
-    //  ... Prod/Loss history buffers...
-    prod_out[kk] = prod[mm] + ind_prd[mm];
-    loss_out[kk] = loss[mm];
+template <typename VectorType>
+KOKKOS_INLINE_FUNCTION void
+imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
+        const Real reaction_rates[rxntot], const Real het_rates[gas_pcnst],
+        const Real extfrc[extcnt], const Real &delt, const bool factor[itermax],
+        Real epsilon[clscnt4], Real prod_out[clscnt4], Real loss_out[clscnt4],
+        ImpSolResult &result) {
+  detail::imp_sol_impl(base_sol, reaction_rates, het_rates, extfrc, delt,
+                       factor, epsilon, prod_out, loss_out, result);
+}
 
-  } // cls_loop
-} // imp_sol
+// Backward-compatible production entry point. A terminal solver outcome must
+// never be silently consumed by aqueous chemistry or aerosol microphysics.
+template <typename VectorType>
+KOKKOS_INLINE_FUNCTION void
+imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
+        const Real reaction_rates[rxntot], const Real het_rates[gas_pcnst],
+        const Real extfrc[extcnt], const Real &delt, const bool factor[itermax],
+        Real epsilon[clscnt4], Real prod_out[clscnt4], Real loss_out[clscnt4]) {
+  ImpSolResult result;
+  imp_sol(base_sol, reaction_rates, het_rates, extfrc, delt, factor, epsilon,
+          prod_out, loss_out, result);
+  if (!result.success()) {
+    EKAT_KERNEL_ERROR_MSG(
+        "ERROR: imp_sol did not complete the requested chemistry interval.\n");
+  }
+}
 } // namespace gas_chemistry
 } // namespace mam4
 #endif
