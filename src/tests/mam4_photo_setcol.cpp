@@ -688,7 +688,6 @@ TEST_CASE("jlong", "mo_photo") {
   View2D j_long_par("j_long_par", test_numj, pver);
   {
     View2D rsf_work("rsf_work", test_nw, pver);
-    View3D xswk_d("xswk", pver, test_numj, test_nw);
     View2D psum_l_d("psum_l", pver, test_nw);
     View2D psum_u_d("psum_u", pver, test_nw);
 
@@ -716,7 +715,7 @@ TEST_CASE("jlong", "mo_photo") {
               sza_d, del_sza_d, alb_d, press_d, del_p_d, colo3_d, o3rat_d,
               del_alb_d, del_o3rat_d, etfphot_d, rsf_tab_d, prs_d, dprs_d,
               test_nw, test_nump, test_numsza, test_numcolo3, test_numalb,
-              test_np_xs, test_numj, j_long_par, rsf_work, xswk_d, psum_l_d,
+              test_np_xs, test_numj, j_long_par, rsf_work, psum_l_d,
               psum_u_d);
         });
     Kokkos::fence();

@@ -105,7 +105,6 @@ inline PhotoTableData create_photo_table_data(int nw, int nt, int np_xs,
 struct PhotoTableWorkArrays {
   View2D lng_prates;
   View2D rsf;
-  View3D xswk;   // per-level scratch: (pver, numj, nw)
   View2D psum_l; // per-level scratch: (pver, nw)
   View2D psum_u; // per-level scratch: (pver, nw)
 
@@ -118,7 +117,6 @@ struct PhotoTableWorkArrays {
 inline int get_photo_table_work_len(const PhotoTableData &photo_table_data) {
   return pver * photo_table_data.numj +                       /*lng_prates*/
          pver * photo_table_data.nw +                         /*rsf*/
-         pver * photo_table_data.numj * photo_table_data.nw + /*xswk*/
          2 * pver * photo_table_data.nw /*psum_l + psum_u*/ +
          8 * nlev /*parg + eff_alb + cld_mult + work_cloud_mod*/;
 } // get_photo_table_work_len
@@ -132,9 +130,6 @@ void set_photo_table_work_arrays(const PhotoTableData &photo_table_data,
   work_ptr += pver * photo_table_data.numj;
   photo_table_work.rsf = View2D(work_ptr, photo_table_data.nw, pver);
   work_ptr += pver * photo_table_data.nw;
-  photo_table_work.xswk =
-      View3D(work_ptr, pver, photo_table_data.numj, photo_table_data.nw);
-  work_ptr += pver * photo_table_data.numj * photo_table_data.nw;
   photo_table_work.psum_l = View2D(work_ptr, pver, photo_table_data.nw);
   work_ptr += pver * photo_table_data.nw;
   photo_table_work.psum_u = View2D(work_ptr, pver, photo_table_data.nw);
@@ -667,7 +662,7 @@ void jlong(const ThreadTeam &team, const Real sza_in, const View1D &alb_in,
            const int numj,
            const View2D &j_long, // output
            // work arrays
-           const View2D &rsf, const View3D &xswk, const View2D &psum_l,
+           const View2D &rsf, const View2D &psum_l,
            const View2D &psum_u)
 // out
 {
@@ -740,66 +735,51 @@ void jlong(const ThreadTeam &team, const Real sza_in, const View1D &alb_in,
   ------------------------------------------------------------------------------*/
   // To avoid the 'pver is undefined' error during CUDA code compilation.
   constexpr int pver_local = pver;
-  // Each level is processed independently; xswk is now per-level (View3D).
+  // Each level is processed independently; xswk eliminated by fusing
+  // cross-section interpolation with the rsf dot-product accumulation.
   Kokkos::parallel_for(
       Kokkos::TeamVectorRange(team, pver_local), [&](const int kk) {
-        /*----------------------------------------------------------------------
-          ... get index into xsqy
-         ----------------------------------------------------------------------*/
-
-        // Fortran indexing to C++ indexing
-        // number of temperatures in xsection table
         // BAD CONSTANT for 201 and 148.5
         const int t_index = mam4::min(201, mam4::max(t_in[kk] - 148.5, 1)) - 1;
 
-        /*----------------------------------------------------------------------
-                   ... find pressure level
-         ----------------------------------------------------------------------*/
         const Real ptarget = p_in[kk];
+        // Determine pressure interpolation parameters once per level.
+        int pndx = 0;
+        Real delp = zero;
+        // 0 = use index 0, 1 = use index np_xs-1, 2 = interpolate
+        int p_case = 0;
         if (ptarget >= prs[0]) {
-          for (int wn = 0; wn < nw; wn++) {
-            for (int i = 0; i < numj; i++) {
-              xswk(kk, i, wn) = xsqy(i, wn, t_index, 0);
-            } // end for i
-          }   // end for wn
-          // Fortran to C++ indexing conversion
+          p_case = 0;
         } else if (ptarget <= prs[np_xs - 1]) {
-          for (int wn = 0; wn < nw; wn++) {
-            for (int i = 0; i < numj; i++) {
-              // Fortran to C++ indexing conversion
-              xswk(kk, i, wn) = xsqy(i, wn, t_index, np_xs - 1);
-            } // end for i
-          }   // end for wn
-
+          p_case = 1;
         } else {
-          Real delp = zero;
-          int pndx = 0;
-          // Question: delp is not initialized in fortran code. What if the
-          // following code does not satify this if condition: ptarget >=
-          // prs[km] Conversion indexing from Fortran to C++
+          p_case = 2;
           for (int km = 1; km < np_xs; km++) {
             if (ptarget >= prs[km]) {
               pndx = km - 1;
               delp = (prs[pndx] - ptarget) * dprs[pndx];
               break;
-            } // end if
-          }   // end for km
-          for (int wn = 0; wn < nw; wn++) {
-            for (int i = 0; i < numj; i++) {
-              xswk(kk, i, wn) = xsqy(i, wn, t_index, pndx) +
-                                delp * (xsqy(i, wn, t_index, pndx + 1) -
-                                        xsqy(i, wn, t_index, pndx));
-
-            } // end for i
-          }   // end for wn
-        }     // end if
+            }
+          }
+        }
+        // Fused xswk computation + rsf dot product (eliminates xswk scratch).
         for (int i = 0; i < numj; ++i) {
           Real suma = zero;
           for (int wn = 0; wn < nw; wn++) {
-            suma += xswk(kk, i, wn) * rsf(wn, kk);
+            Real xswk_val;
+            if (p_case == 0) {
+              xswk_val = xsqy(i, wn, t_index, 0);
+            } else if (p_case == 1) {
+              xswk_val = xsqy(i, wn, t_index, np_xs - 1);
+            } else {
+              xswk_val = xsqy(i, wn, t_index, pndx) +
+                         delp * (xsqy(i, wn, t_index, pndx + 1) -
+                                 xsqy(i, wn, t_index, pndx));
+            }
+            suma += xswk_val * rsf(wn, kk);
           }
           j_long(i, kk) = suma;
-        } // i
+        }
       }); // end TeamVectorRange
 } // jlong
 
@@ -883,7 +863,7 @@ void table_photo(const ThreadTeam &team, const View2D &photo, // out
           table_data.np_xs, table_data.numj,
           work_arrays.lng_prates, // output
           // work arrays
-          work_arrays.rsf, work_arrays.xswk, work_arrays.psum_l,
+          work_arrays.rsf, work_arrays.psum_l,
           work_arrays.psum_u);
     team.team_barrier();
 
