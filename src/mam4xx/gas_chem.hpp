@@ -289,7 +289,11 @@ KOKKOS_INLINE_FUNCTION void imp_sol_impl(
 
   const int cut_limit = 5;
 
-  // result is initialized by caller
+  result.outcome = ImpSolOutcome::InvalidInput;
+  result.failed_attempts = 0;
+  result.cut_count = 0;
+  result.accepted_steps = 0;
+  result.accepted_interval = 0;
   result.requested_interval = delt;
   for (int kk = 0; kk < clscnt4; ++kk) {
     prod_out[kk] = zero;
