@@ -259,12 +259,13 @@ KOKKOS_INLINE_FUNCTION void newton_raphson_iter(
 } // newton_raphson_iter() function
 namespace detail {
 template <typename VectorType>
-KOKKOS_INLINE_FUNCTION void imp_sol_impl(
-    VectorType &base_sol, // inout - species mixing ratios [vmr]
-    const Real reaction_rates[rxntot], const Real het_rates[gas_pcnst],
-    const Real extfrc[extcnt], const Real &delt, const bool factor[itermax],
-    Real epsilon[clscnt4], Real prod_out[clscnt4], Real loss_out[clscnt4],
-    ImpSolResult &result) {
+KOKKOS_INLINE_FUNCTION void
+imp_sol_impl(VectorType &base_sol, // inout - species mixing ratios [vmr]
+             const Real reaction_rates[rxntot], const Real het_rates[gas_pcnst],
+             const Real extfrc[extcnt], const Real &delt,
+             const bool factor[itermax], Real epsilon[clscnt4],
+             Real prod_out[clscnt4], Real loss_out[clscnt4],
+             ImpSolResult &result) {
 
   constexpr auto clsmap_4 = gas_chemistry::clsmap_4;
   constexpr auto permute_4 = gas_chemistry::permute_4;
@@ -306,15 +307,14 @@ KOKKOS_INLINE_FUNCTION void imp_sol_impl(
                       Kokkos::isfinite(het_rates[mm]);
   }
   for (int mm = 0; mm < rxntot; ++mm) {
-    input_is_finite =
-        input_is_finite && Kokkos::isfinite(reaction_rates[mm]);
+    input_is_finite = input_is_finite && Kokkos::isfinite(reaction_rates[mm]);
   }
   for (int mm = 0; mm < extcnt; ++mm) {
     input_is_finite = input_is_finite && Kokkos::isfinite(extfrc[mm]);
   }
   for (int kk = 0; kk < clscnt4; ++kk) {
-    input_is_finite = input_is_finite && Kokkos::isfinite(epsilon[kk]) &&
-                      epsilon[kk] >= zero;
+    input_is_finite =
+        input_is_finite && Kokkos::isfinite(epsilon[kk]) && epsilon[kk] >= zero;
   }
   if (!input_is_finite) {
     result.outcome = ImpSolOutcome::InvalidInput;
