@@ -43,8 +43,7 @@ KOKKOS_INLINE_FUNCTION void gas_phase_chemistry(
     const Real photo_rates[mam4::mo_photo::phtcnt], const Real extfrc[extcnt],
     const Real invariants[nfs], const Real het_rates[gas_pcnst],
     // out
-    VectorType &qq,
-    gas_chemistry::ImpSolResult &result) {
+    VectorType &qq, gas_chemistry::ImpSolResult &result) {
 
   //=====================================================================
   // ... set rates for "tabular" and user specified reactions
