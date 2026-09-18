@@ -500,22 +500,6 @@ imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
                        factor, epsilon, prod_out, loss_out, result);
 }
 
-// Backward-compatible production entry point. A terminal solver outcome must
-// never be silently consumed by aqueous chemistry or aerosol microphysics.
-template <typename VectorType>
-KOKKOS_INLINE_FUNCTION void
-imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
-        const Real reaction_rates[rxntot], const Real het_rates[gas_pcnst],
-        const Real extfrc[extcnt], const Real &delt, const bool factor[itermax],
-        Real epsilon[clscnt4], Real prod_out[clscnt4], Real loss_out[clscnt4]) {
-  ImpSolResult result;
-  imp_sol(base_sol, reaction_rates, het_rates, extfrc, delt, factor, epsilon,
-          prod_out, loss_out, result);
-  if (!result.success()) {
-    EKAT_KERNEL_ERROR_MSG(
-        "ERROR: imp_sol did not complete the requested chemistry interval.\n");
-  }
-}
 } // namespace gas_chemistry
 } // namespace mam4
 #endif
