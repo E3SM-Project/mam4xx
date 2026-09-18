@@ -1068,7 +1068,9 @@ void update_from_explmix(
     const View3D raercol_cw,
     int &nsav, // indices for old, new time levels in substepping
     int &nnew, // indices for old, new time levels in substepping
-    int &nsubmix, // number of explicit vertical-mixing substeps [count]
+#ifdef MAM4XX_EVAL_DIAGNOSTICS
+    int &nsubmix_out, // number of explicit vertical-mixing substeps [count]
+#endif
     const int top_lev,
     // work vars
     const ColumnView &overlapp, // cloud overlap involving level kk+1 [fraction]
@@ -1154,7 +1156,10 @@ void update_from_explmix(
   //  BAD CONSTANT
   Real dtmix = 0.9 * dtmin;
   // number of substeps and bound
-  nsubmix = dtmicro / dtmix + 1;
+  const int nsubmix = dtmicro / dtmix + 1;
+#ifdef MAM4XX_EVAL_DIAGNOSTICS
+  nsubmix_out = nsubmix;
+#endif
 
   dtmix = dtmicro / nsubmix;
 
@@ -1292,8 +1297,12 @@ void dropmixnuc(
     const View2D qqcw_fld,  // inout
     const View2D ptend_q, const ColumnView &tendnd, const View2D &factnum,
     const ColumnView &ndropcol, const ColumnView &ndropmix,
-    const ColumnView &nsource, int &nsubmix, const ColumnView &wtke,
-    const View2D &ccn, const View2D coltend, const View2D coltend_cw,
+    const ColumnView &nsource,
+#ifdef MAM4XX_EVAL_DIAGNOSTICS
+    int &nsubmix, // number of explicit vertical-mixing substeps [count]
+#endif
+    const ColumnView &wtke, const View2D &ccn, const View2D coltend,
+    const View2D coltend_cw,
     const int top_lev,
     // work arrays
     const View3D raercol_cw, const View3D raercol, const View2D &nact,
@@ -1501,7 +1510,11 @@ void dropmixnuc(
 
   int nnew = 1;
   update_from_explmix(team, dtmicro, csbot, cldn, zn, zs, eddy_diff, nact, mact,
-                      qcld, raercol, raercol_cw, nsav, nnew, nsubmix, top_lev,
+                      qcld, raercol, raercol_cw, nsav, nnew,
+#ifdef MAM4XX_EVAL_DIAGNOSTICS
+                      nsubmix,
+#endif
+                      top_lev,
                       // work vars
                       overlapp, overlapm, eddy_diff_kp, eddy_diff_km, qncld);
 

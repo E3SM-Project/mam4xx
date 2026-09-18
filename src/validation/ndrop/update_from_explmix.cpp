@@ -131,10 +131,16 @@ void update_from_explmix(Ensemble *ensemble) {
         team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           int nnew = 1;
           int nsav = 0;
+#ifdef MAM4XX_EVAL_DIAGNOSTICS
           int nsubmix = 0;
+#endif
           mam4::ndrop::update_from_explmix(
               team, dtmicro, csbot, cldn, zn, zs, ekd, nact, mact, qcld,
-              raercol, raercol_cw, nsav, nnew, nsubmix, top_lev, overlapp,
+              raercol, raercol_cw, nsav, nnew,
+#ifdef MAM4XX_EVAL_DIAGNOSTICS
+              nsubmix,
+#endif
+              top_lev, overlapp,
               overlapm, ekkp, ekkm, qncld);
           indexes(0) = nnew;
           indexes(1) = nsav;
