@@ -257,15 +257,13 @@ KOKKOS_INLINE_FUNCTION void newton_raphson_iter(
     } // end if (nr_iter > 0)
   }   // end nr_iter loop
 } // newton_raphson_iter() function
-namespace detail {
 template <typename VectorType>
 KOKKOS_INLINE_FUNCTION void
-imp_sol_impl(VectorType &base_sol, // inout - species mixing ratios [vmr]
-             const Real reaction_rates[rxntot], const Real het_rates[gas_pcnst],
-             const Real extfrc[extcnt], const Real &delt,
-             const bool factor[itermax], Real epsilon[clscnt4],
-             Real prod_out[clscnt4], Real loss_out[clscnt4],
-             ImpSolResult &result) {
+imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
+        const Real reaction_rates[rxntot], const Real het_rates[gas_pcnst],
+        const Real extfrc[extcnt], const Real &delt, const bool factor[itermax],
+        Real epsilon[clscnt4], Real prod_out[clscnt4], Real loss_out[clscnt4],
+        ImpSolResult &result) {
 
   constexpr auto clsmap_4 = gas_chemistry::clsmap_4;
   constexpr auto permute_4 = gas_chemistry::permute_4;
@@ -490,19 +488,7 @@ imp_sol_impl(VectorType &base_sol, // inout - species mixing ratios [vmr]
   }   // time_step_loop
 
   result.outcome = ImpSolOutcome::MaximumStepsExhausted;
-} // imp_sol_impl
-} // namespace detail
-
-template <typename VectorType>
-KOKKOS_INLINE_FUNCTION void
-imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
-        const Real reaction_rates[rxntot], const Real het_rates[gas_pcnst],
-        const Real extfrc[extcnt], const Real &delt, const bool factor[itermax],
-        Real epsilon[clscnt4], Real prod_out[clscnt4], Real loss_out[clscnt4],
-        ImpSolResult &result) {
-  detail::imp_sol_impl(base_sol, reaction_rates, het_rates, extfrc, delt,
-                       factor, epsilon, prod_out, loss_out, result);
-}
+} // imp_sol
 
 } // namespace gas_chemistry
 } // namespace mam4
