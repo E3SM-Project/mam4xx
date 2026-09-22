@@ -140,8 +140,7 @@ void update_from_explmix(Ensemble *ensemble) {
 #ifdef MAM4XX_EVAL_DIAGNOSTICS
               nsubmix,
 #endif
-              top_lev, overlapp,
-              overlapm, ekkp, ekkm, qncld);
+              top_lev, overlapp, overlapm, ekkp, ekkm, qncld);
           indexes(0) = nnew;
           indexes(1) = nsav;
         });

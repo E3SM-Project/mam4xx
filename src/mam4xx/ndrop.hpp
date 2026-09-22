@@ -1302,8 +1302,7 @@ void dropmixnuc(
     int &nsubmix, // number of explicit vertical-mixing substeps [count]
 #endif
     const ColumnView &wtke, const View2D &ccn, const View2D coltend,
-    const View2D coltend_cw,
-    const int top_lev,
+    const View2D coltend_cw, const int top_lev,
     // work arrays
     const View3D raercol_cw, const View3D raercol, const View2D &nact,
     const View2D &mact, const ColumnView &eddy_diff, const ColumnView &zn,
