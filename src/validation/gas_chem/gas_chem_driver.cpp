@@ -81,6 +81,8 @@ int main(int argc, char **argv) {
 
   } catch (std::exception &e) {
     std::cerr << argv[0] << ": Error: " << e.what() << std::endl;
+    mam4::validation::finalize(ensemble);
+    return 1;
   }
 
   // Write out a Python module.

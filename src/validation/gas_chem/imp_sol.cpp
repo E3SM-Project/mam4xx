@@ -35,6 +35,10 @@ void imp_sol(Ensemble *ensemble) {
             reaction_rates.data(), het_rates.data(), extfrc.data(), delt,
             factor, epsilon, prod_out.data(), loss_out.data(), result);
 
+    EKAT_REQUIRE_MSG(
+        result.success(),
+        "imp_sol validation did not complete the requested interval");
+
     output.set("base_sol", base_sol);
   });
 }
