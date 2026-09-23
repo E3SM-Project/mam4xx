@@ -61,8 +61,9 @@ void compute_ent_det_dp(Ensemble *ensemble) {
     eddp_dev = mam4::validation::create_column_view(nlev);
     dddp_dev = mam4::validation::create_column_view(nlev);
     ntsub_dev = mam4::validation::create_column_view(1);
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "compute_ent_det_dp", 1, KOKKOS_LAMBDA(int) {
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           Real dpdry_i[nlev];
           for (int i = 0; i < nlev; ++i)
             dpdry_i[i] = dpdry_i_dev[i];
@@ -83,7 +84,7 @@ void compute_ent_det_dp(Ensemble *ensemble) {
             ed[i] = ed_dev[i];
           int ntsub = 0;
           Real eudp[nlev], dudp[nlev], eddp[nlev], dddp[nlev];
-          mam4::convproc::compute_ent_det_dp(nlev, ktop, kbot, dt, dpdry_i,
+          mam4::convproc::compute_ent_det_dp(team, nlev, ktop, kbot, dt, dpdry_i,
                                              mu_i, md_i, du, eu, ed, ntsub,
                                              eudp, dudp, eddp, dddp);
           for (int i = 0; i < nlev; ++i)
