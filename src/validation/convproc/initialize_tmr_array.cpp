@@ -86,12 +86,13 @@ void initialize_tmr_array(Ensemble *ensemble) {
     Kokko2DView conu_dev(col_view.data(), nlev + 1, pcnst_extd);
     col_view = mam4::validation::create_column_view(pcnst_extd * (nlev + 1));
     Kokko2DView cond_dev(col_view.data(), nlev + 1, pcnst_extd);
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "initialize_tmr_array", 1, KOKKOS_LAMBDA(int) {
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           bool doconvproc_extd[pcnst_extd];
           for (int i = 0; i < pcnst_extd; ++i)
             doconvproc_extd[i] = doconvproc_extd_dev[i];
-          mam4::convproc::initialize_tmr_array(nlev, iconvtype, doconvproc_extd,
+          mam4::convproc::initialize_tmr_array(team, nlev, iconvtype, doconvproc_extd,
                                                q_i_dev, gath_dev, chat_dev,
                                                conu_dev, cond_dev);
         });
