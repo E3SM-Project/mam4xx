@@ -131,8 +131,9 @@ void update_tendency_final(Ensemble *ensemble) {
     get_input(input, "qsrflx", ncnst, nsrflx, col_major, qsrflx_host,
               qsrflx_dev);
 
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "update_tendency_diagnostics", 1, KOKKOS_LAMBDA(int) {
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           bool doconvproc[pcnst] = {};
           for (int n = 0; n < pcnst; ++n)
             doconvproc[n] = doconvproc_dev[n];
@@ -147,7 +148,7 @@ void update_tendency_final(Ensemble *ensemble) {
           for (int i = 0; i < ncnst; ++i)
             for (int j = 0; j < nsrflx; ++j)
               qsrflx[i][j] = qsrflx_dev(i, j);
-          mam4::convproc::update_tendency_diagnostics(
+          mam4::convproc::update_tendency_diagnostics(team,
               ntsub, ncnst, doconvproc, sumactiva, sumaqchem, sumwetdep,
               sumresusp, sumprevap, sumprevap_hist, qsrflx);
           for (int i = 0; i < ncnst; ++i)
