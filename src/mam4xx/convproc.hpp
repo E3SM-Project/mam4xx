@@ -1850,7 +1850,7 @@ update_qnew_ptend(const bool dotend[aero_model::pcnst],
   */
   // clang-format on 
   for (int ll = 0; ll < aero_model::pcnst; ++ll) {
-    // calc new q (after ma_convproc_sh_intr)
+    // calc new q (after convproc tendency)
     if (dotend[ll]) qnew[ll] = mam4::max(0.0, qnew[ll] + dt*dqdt[ll]);
   }
   for (int ll = 0; ll < aero_model::pcnst; ++ll) {
@@ -2856,75 +2856,6 @@ ma_convproc_dp_intr(const AeroSpeciesView &aero_species,
 }
 
 // =========================================================================================
-template <typename SubView, typename ConstSubView>
-KOKKOS_INLINE_FUNCTION void
-ma_convproc_sh_intr(const int nlev, const Real temperature[/* nlev */],
-                    const Real pmid[/* nlev */], const Real dpdry[/* nlev */],
-                    const Real pdel[/* nlev */], const Real dt,
-                    const Real cldfrac[/* nlev */],
-                    const Real icwmr[/* nlev */], const Real rprddp[/* nlev */],
-                    const Real evapcdp[/* nlev */], ConstSubView qnew,
-                    const int species_class[/* aero_model::pcnst */],
-                    SubView dqdt, Real qsrflx[/* aero_model::pcnst */][nsrflx],
-                    bool dotend[aero_model::pcnst]) {
-  // clang-format off
-  // ----------------------------------------------------------------------- 
-  //  
-  //  Purpose: 
-  //  Convective cloud processing (transport, activation/resuspension,
-  //     wet removal) of aerosols and trace gases.
-  //     (Currently no aqueous chemistry and no trace-gas wet removal)
-  //  Does aerosols    when convproc_do_aer is .true.
-  //  Does trace gases when convproc_do_gas is .true.
-  // 
-  //  This routine does shallow convection
-  //  Uses mass fluxes, cloud water, precip production from the
-  //     convective cloud routines
-  //  
-  //  Author: R. Easter
-  //  
-  // -----------------------------------------------------------------------
-
-  //  Arguments
-  /*   
-  in    :: dpdry[pver]           ! layer delta-p-dry [mb]
-  in    :: pdel[pver]            ! layer delta-p [mb]
-  in    :: temperature[pver]     ! Temperature [K]
-  in    :: pmid[pver]            ! Pressure at model levels [Pa]
-
-  in    :: dt                    ! delta t (model time increment) [s]
-  in    :: qnew[pver][pcnst]      ! tracer mixing ratio (TMR) including water vapor [kg/kg]
-
-  in    :: sh_frac[pver]         ! Shallow conv cloud frac [0-1]
-  in    :: icwmrsh[pver]         ! Shallow conv cloud condensate (in cloud) [kg/kg]
-  in    :: rprddp[pver]          ! Shallow conv precip production (grid avg) [kg/kg/s]
-  in    :: evapcdp[pver]         ! Shallow conv precip evaporation (grid avg) [kg/kg/s]
-  in    :: species_class[:]      ! species index
-
-  out   :: dotend[pcnst]         ! flag if do tendency
-  inout :: dqdt[pver][pcnst]     ! time tendency of TMR [kg/kg/s]
-  inout :: qsrflx[pcnst][nsrflx] ! process-specific column tracer tendencies  (see ma_convproc_intr for more information) [kg/m2/s] 
-  */
-  // clang-format on
-
-  // the original FORTRAN code has code to calculate mass fluxes from shallow
-  // convection, but the mass flux from CLUBB is currently set as zero,
-  // (see subroutine convect_shallow_tend in physics/cam/convect_shallow.F90)
-  // Therefore, we remove the calculation of the following variables and simply
-  // set them in default values for C++ porting.   - Shuaiqi Tang 2023.2.25
-  // =========================================================================================
-  for (int i = 0; i < nlev; ++i)
-    for (int j = 0; j < aero_model::pcnst; ++j)
-      dqdt(i, j) = 0;
-
-  for (int i = 0; i < aero_model::pcnst; ++i)
-    for (int j = 0; j < nsrflx; ++j)
-      qsrflx[i][j] = 0;
-  for (int i = 0; i < aero_model::pcnst; ++i)
-    dotend[i] = false;
-}
-
-// =========================================================================================
 KOKKOS_INLINE_FUNCTION
 void ma_convproc_intr(
     const ThreadTeam &team, const AeroSpeciesView &aero_species,
@@ -2932,14 +2863,12 @@ void ma_convproc_intr(
         scratch1Dviews[ConvProc::Col1DViewInd::NumScratch],
     const bool convproc_do_aer, const bool convproc_do_gas, const int nlev,
     const Real temperature[/* nlev */], const Real pmid[/* nlev */],
-    const Real dpdry[/* nlev */], const Real pdel[/* nlev */], const Real dt,
+    const Real dpdry[/* nlev */], const Real dt,
     const Real dp_frac[/* nlev */], const Real icwmrdp[/* nlev */],
     const Real rprddp[/* nlev */], const Real evapcdp[/* nlev */],
-    const Real sh_frac[/* nlev */], const Real icwmrsh[/* nlev */],
-    const Real rprdsh[/* nlev */], const Real evapcsh[/* nlev */],
-    const Real dlf[/* nlev */], const Real dlfsh[/* nlev */],
-    const Real sh_e_ed_ratio[/* nlev */], const Real du[/* nlev */],
-    const Real eu[/* nlev */], const Real ed[/* nlev */],
+    const Real dlf[/* nlev */],
+    const Real du[/* nlev */], const Real eu[/* nlev */],
+    const Real ed[/* nlev */],
     const Real dp[/* nlev */], const int ktop, const int kbot,
     const int species_class[aero_model::pcnst],
     const int mmtoo_prevap_resusp[aero_model::pcnst],
@@ -2956,7 +2885,7 @@ void ma_convproc_intr(
   // Does aerosols    when convproc_do_aer is .true.
   // Does trace gases when convproc_do_gas is .true.
   //
-  // Does deep and shallow convection
+  // Does deep convection
   // Uses mass fluxes, cloud water, precip production from the
   //    convective cloud routines
   //
@@ -2968,7 +2897,6 @@ void ma_convproc_intr(
   // Arguments
   /*  
   in    :: dpdry[nlev]           ! layer delta-p-dry [mb]
-  in    :: pdel[nlev]            ! layer delta-p [mb]
   in    :: temperature[nlev]     ! Temperature [K]
   in    :: pmid[nlev]            ! Pressure at model levels [Pa]
 
@@ -2979,13 +2907,7 @@ void ma_convproc_intr(
   in    :: icwmrdp[nlev]         ! Deep conv cloud condensate (in cloud) [kg/kg]
   in    :: rprddp[nlev]        ! Deep conv precip production (grid avg) [kg/kg/s]
   in    :: evapcdp[nlev]       ! Deep conv precip evaporation (grid avg) [kg/kg/s]
-  in    :: sh_frac[nlev]       ! Shal conv cloud frac [fraction]
-  in    :: icwmrsh[nlev]       ! Shal conv cloud condensate (in cloud) [kg/kg]
-  in    :: rprdsh[nlev]        ! Shal conv precip production (grid avg) [kg/kg/s]
-  in    :: evapcsh[nlev]       ! Shal conv precip evaporation (grid avg) [kg/kg/s]
   in    :: dlf[nlev]           ! Tot  conv cldwtr detrainment (grid avg) [kg/kg/s]
-  in    :: dlfsh[nlev]         ! Shal conv cldwtr detrainment (grid avg) [kg/kg/s]
-  in    :: sh_e_ed_ratio[nlev] ! shallow conv [ent/(ent+det)] ratio [fraction]
   inout :: aerdepwetis[pcnst]  ! aerosol wet deposition (interstitial) [kg/m2/s]
                        ! eu, ed, du are "d(massflux)/dp" and are all positive
   in    :: eu[nlev]    ! Mass entrain rate into updraft [1/s]
@@ -3057,13 +2979,12 @@ void ma_convproc_intr(
       for (int i = 0; i < aero_model::pcnst; ++i)
         dqdt(j, i) = 0;
     for (int j = 0; j < nlev; ++j)
-      dlfdp[j] = mam4::max((dlf[j] - dlfsh[j]), 0.0);
+      dlfdp[j] = mam4::max((dlf[j]), 0.0);
     ma_convproc_dp_intr(aero_species, scratch1Dviews, nlev, temperature, pmid,
                         dpdry, dt, dp_frac, icwmrdp, rprddp, evapcdp, du, eu,
                         ed, dp, ktop, kbot, qnew, species_class,
                         mmtoo_prevap_resusp, dqdt, qsrflx, dotend);
-    // apply deep conv processing tendency and prepare for shallow conv
-    // processing
+    // apply deep conv processing tendency
     for (int kk = 0; kk < nlev; ++kk)
       update_qnew_ptend(dotend, true, Kokkos::subview(dqdt, kk, Kokkos::ALL()),
                         dt, ptend_lq,
@@ -3072,35 +2993,6 @@ void ma_convproc_intr(
     // update variables for output
     for (int icnst = 0; icnst < aero_model::pcnst; ++icnst) {
       // this used for surface coupling:
-      //  4 = wet removal
-      //  5 = actual precip-evap resuspension (what actually is applied to a
-      //  species)
-      if (dotend[icnst] &&
-          species_class[icnst] == ConvProc::species_class::aerosol)
-        aerdepwetis[icnst] += qsrflx[icnst][4] + qsrflx[icnst][5];
-    }
-    //
-    // do shallow conv processing
-    //
-    for (int j = 0; j < nlev; ++j)
-      for (int i = 0; i < aero_model::pcnst; ++i)
-        dqdt(j, i) = 0;
-    for (int j = 0; j < nsrflx; ++j)
-      for (int i = 0; i < aero_model::pcnst; ++i)
-        qsrflx[i][j] = 0;
-    ma_convproc_sh_intr(nlev, temperature, pmid, dpdry, pdel, dt, sh_frac,
-                        icwmrsh, rprdsh, evapcsh, qnew, species_class, dqdt,
-                        qsrflx, dotend);
-
-    // apply shallow conv processing tendency
-    for (int kk = 0; kk < nlev; ++kk)
-      update_qnew_ptend(dotend, true, Kokkos::subview(dqdt, kk, Kokkos::ALL()),
-                        dt, ptend_lq,
-                        Kokkos::subview(ptend_q, kk, Kokkos::ALL()),
-                        Kokkos::subview(qnew, kk, Kokkos::ALL()));
-    // update variables for output
-    for (int icnst = 0; icnst < aero_model::pcnst; ++icnst) {
-      // this used for surface coupling
       //  4 = wet removal
       //  5 = actual precip-evap resuspension (what actually is applied to a
       //  species)
@@ -3140,37 +3032,20 @@ void ConvProc::compute_tendencies(const AeroConfig &config,
   const int nlev = atmosphere.num_levels();
   const Real *temperature = atmosphere.temperature.data();
   const Real *pmid = atmosphere.pressure.data();
-  // pdel = Delta pressure between interfaces [mb]
-  const Real *pdel = atmosphere.hydrostatic_dp.data();
   // dpdry =  Delta dry-pressure [mb]
   const Real *dpdry = diagnostics.hydrostatic_dry_dp.data();
   // dp_frac = Deep conv cloud frac [fraction]
   const Real *dp_frac = diagnostics.deep_convective_cloud_fraction.data();
-  // sh_frac = Shallow conv cloud frac [fraction]
-  const Real *sh_frac = diagnostics.shallow_convective_cloud_fraction.data();
   // Deep cloud convective condensate [kg/kg]
   const Real *icwmrdp = diagnostics.deep_convective_cloud_condensate.data();
-  // Shallow cloud convective condensate [kg/kg]
-  const Real *icwmrsh = diagnostics.shallow_convective_cloud_condensate.data();
   // Deep convective precipitation production (grid avg) [kg/kg/s]
   const Real *rprddp =
       diagnostics.deep_convective_precipitation_production.data();
-  // Shallow convective precipitation production (grid avg) [kg/kg/s]
-  const Real *rprdsh =
-      diagnostics.shallow_convective_precipitation_production.data();
   // Deep convective precipitation evaporation (grid avg) [kg/kg/s]
   const Real *evapcdp =
       diagnostics.deep_convective_precipitation_evaporation.data();
-  // Shallow convective precipitation evaporation (grid avg) [kg/kg/s]
-  const Real *evapcsh =
-      diagnostics.shallow_convective_precipitation_evaporation.data();
   // Shallow+Deep convective detrainment [kg/kg/s]
   const Real *dlftot = diagnostics.total_convective_detrainment.data();
-  // Shallow convective detrainment [kg/kg/s]
-  const Real *dlfsh = diagnostics.shallow_convective_detrainment.data();
-  // Shallow convective ratio: [entrainment/(entrainment+detrainment)]
-  // [fraction]
-  const Real *sh_e_ed_ratio = diagnostics.shallow_convective_ratio.data();
 
   // Next three are "d(massflux)/dp" and are all positive [1/s]
   const Real *eu = diagnostics.mass_entrain_rate_into_updraft.data();
@@ -3192,9 +3067,9 @@ void ConvProc::compute_tendencies(const AeroConfig &config,
   Real aerdepwetis[aero_model::pcnst] = {};
   convproc::ma_convproc_intr(
       team, config.aero_species, scratch1Dviews, convproc_do_aer,
-      convproc_do_gas, nlev, temperature, pmid, dpdry, pdel, dt, dp_frac,
-      icwmrdp, rprddp, evapcdp, sh_frac, icwmrsh, rprdsh, evapcsh, dlftot,
-      dlfsh, sh_e_ed_ratio, du, eu, ed, dp, ktop, kbot, species_class,
+      convproc_do_gas, nlev, temperature, pmid, dpdry, dt, dp_frac,
+      icwmrdp, rprddp, evapcdp, dlftot,
+      du, eu, ed, dp, ktop, kbot, species_class,
       mmtoo_prevap_resusp, state_q, ptend_q, ptend_lq, aerdepwetis);
 }
 } // namespace mam4

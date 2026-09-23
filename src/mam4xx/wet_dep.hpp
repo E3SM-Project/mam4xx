@@ -1835,8 +1835,6 @@ void aero_model_wetdep(
     const ConstColumnView &ed,              // Entrainment into downdraft [1/s]
     const ConstColumnView &dp,              // Layer pressure thickness [mb]
     const ConstColumnView &dpdry,           // Dry pressure thickness [mb]
-    const ConstColumnView &dlfsh,           // Shallow conv cldwtr detrainment [kg/kg/s]
-    const ConstColumnView &sh_e_ed_ratio,   // Shallow conv [ent/(ent+det)] ratio
     const int ktop,                         // Cloud top level index
     const int kbot,                         // Cloud base level index
     const bool convproc_do_aer,             // Flag to process aerosols
@@ -2356,14 +2354,11 @@ void aero_model_wetdep(
                   team, aero_species, scratch1Dviews,
                   convproc_do_aer, convproc_do_gas, nlev,
                   atm.temperature.data(), atm.pressure.data(),
-                  dpdry.data(), atm.hydrostatic_dp.data(), dt,
+                  dpdry.data(), dt,
                   dp_frac.data(), icwmrdp.data(),
                   rprddp.data(), evapcdp.data(),
-                  sh_frac.data(), icwmrsh.data(),
-                  rprdsh.data(), evapcsh.data(),
-                  dlf.data(), dlfsh.data(),
-                  sh_e_ed_ratio.data(), du.data(),
-                  eu.data(), ed.data(), dp.data(),
+                  dlf.data(),
+                  du.data(), eu.data(), ed.data(), dp.data(),
                   ktop, kbot,
                   species_class, mmtoo_prevap_resusp,
                   state_q, ptend_q, ptend_lq, aerdepwetis_convproc);
