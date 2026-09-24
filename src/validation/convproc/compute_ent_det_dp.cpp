@@ -84,9 +84,9 @@ void compute_ent_det_dp(Ensemble *ensemble) {
             ed[i] = ed_dev[i];
           int ntsub = 0;
           Real eudp[nlev], dudp[nlev], eddp[nlev], dddp[nlev];
-          mam4::convproc::compute_ent_det_dp(team, nlev, ktop, kbot, dt, dpdry_i,
-                                             mu_i, md_i, du, eu, ed, ntsub,
-                                             eudp, dudp, eddp, dddp);
+          mam4::convproc::compute_ent_det_dp(team, nlev, ktop, kbot, dt,
+                                             dpdry_i, mu_i, md_i, du, eu, ed,
+                                             ntsub, eudp, dudp, eddp, dddp);
           for (int i = 0; i < nlev; ++i)
             eudp_dev[i] = eudp[i];
           for (int i = 0; i < nlev; ++i)

@@ -185,11 +185,12 @@ void compute_updraft_mixing_ratio(Ensemble *ensemble) {
 
           Real wcldbase = xx_wcldbase;
           int kcldbase = xx_kcldbase;
-          mam4::convproc::compute_updraft_mixing_ratio(team,
-              aero_species, doconvproc_extd, nlev, ktop, kbot, iconvtype, dt,
-              dp_i, dpdry_i, cldfrac, rhoair_i, zmagl, dz, mu_i, eudp, gath_dev,
-              temperature, aqfrac, icwmr, rprd, fa_u, dconudt_wetdep_dev,
-              dconudt_activa_dev, conu_dev, wcldbase, kcldbase);
+          mam4::convproc::compute_updraft_mixing_ratio(
+              team, aero_species, doconvproc_extd, nlev, ktop, kbot, iconvtype,
+              dt, dp_i, dpdry_i, cldfrac, rhoair_i, zmagl, dz, mu_i, eudp,
+              gath_dev, temperature, aqfrac, icwmr, rprd, fa_u,
+              dconudt_wetdep_dev, dconudt_activa_dev, conu_dev, wcldbase,
+              kcldbase);
           scalars_dev(0) = wcldbase;
           scalars_dev(1) = kcldbase;
           for (int i = 0; i < nlev; ++i)

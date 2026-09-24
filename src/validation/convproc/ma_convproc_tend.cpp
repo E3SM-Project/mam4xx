@@ -218,9 +218,9 @@ void ma_convproc_tend(Ensemble *ensemble) {
               &dqdt[0][0], nlev, pcnst);
           Real xx_mfup_max, xx_wcldbase;
           int xx_kcldbase;
-          mam4::convproc::ma_convproc_tend(team,
-              aero_species, scratch1Dviews, nlev, convtype, dt, temperature,
-              pmid, qnew_dev, du, eu, ed, dp, dpdry, ktop, kbot,
+          mam4::convproc::ma_convproc_tend(
+              team, aero_species, scratch1Dviews, nlev, convtype, dt,
+              temperature, pmid, qnew_dev, du, eu, ed, dp, dpdry, ktop, kbot,
               mmtoo_prevap_resusp, cldfrac, icwmr, rprd, evapc, dqdt_view,
               doconvproc, qsrflx, species_class, xx_mfup_max, xx_wcldbase,
               xx_kcldbase);
