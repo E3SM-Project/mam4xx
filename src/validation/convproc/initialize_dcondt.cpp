@@ -130,9 +130,9 @@ void initialize_dcondt(Ensemble *ensemble) {
                                 Kokkos::MemoryUnmanaged>(
         col_view_2.data(), nlev, mam4::ConvProc::pcnst_extd);
 
-        auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
-        Kokkos::parallel_for(
-           team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
+    Kokkos::parallel_for(
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           bool doconvproc_extd[mam4::ConvProc::pcnst_extd];
           Real dpdry_i[nlev];
           Real fa_u[nlev];
@@ -162,9 +162,9 @@ void initialize_dcondt(Ensemble *ensemble) {
           for (int i = 0; i < nlev; ++i)
             eddp[i] = eddp_dev(i);
 
-          mam4::convproc::initialize_dcondt(team,
-              doconvproc_extd, iflux_method, ktop, kbot, nlev, dpdry_i, fa_u,
-              mu_i, md_i, chat_dev, gath_dev, conu_dev, cond_dev,
+          mam4::convproc::initialize_dcondt(
+              team, doconvproc_extd, iflux_method, ktop, kbot, nlev, dpdry_i,
+              fa_u, mu_i, md_i, chat_dev, gath_dev, conu_dev, cond_dev,
               dconudt_activa_dev, dconudt_wetdep_dev, dudp, dddp, eudp, eddp,
               dcondt_dev);
 
@@ -172,9 +172,9 @@ void initialize_dcondt(Ensemble *ensemble) {
           // flip a bit to trip a check in initialize_dcondt
           mu_i[62] *= -1;
           md_i[62] *= -1;
-          mam4::convproc::initialize_dcondt(team,
-              doconvproc_extd, iflux_method_2, ktop, kbot, nlev, dpdry_i, fa_u,
-              mu_i, md_i, chat_dev, gath_dev, conu_dev, cond_dev,
+          mam4::convproc::initialize_dcondt(
+              team, doconvproc_extd, iflux_method_2, ktop, kbot, nlev, dpdry_i,
+              fa_u, mu_i, md_i, chat_dev, gath_dev, conu_dev, cond_dev,
               dconudt_activa_dev, dconudt_wetdep_dev, dudp, dddp, eudp, eddp,
               dcondt_dev_2);
         });
