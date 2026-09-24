@@ -148,8 +148,8 @@ void update_tendency_final(Ensemble *ensemble) {
           for (int i = 0; i < ncnst; ++i)
             for (int j = 0; j < nsrflx; ++j)
               qsrflx[i][j] = qsrflx_dev(i, j);
-          mam4::convproc::update_tendency_diagnostics(team,
-              ntsub, ncnst, doconvproc, sumactiva, sumaqchem, sumwetdep,
+          mam4::convproc::update_tendency_diagnostics(
+              team, ntsub, ncnst, doconvproc, sumactiva, sumaqchem, sumwetdep,
               sumresusp, sumprevap, sumprevap_hist, qsrflx);
           for (int i = 0; i < ncnst; ++i)
             for (int j = 0; j < nsrflx; ++j)
