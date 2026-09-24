@@ -75,8 +75,8 @@ void compute_massflux(Ensemble *ensemble) {
           Real mu_i[nlev + 1];
           Real md_i[nlev + 1];
           Real mfup_max = xx_mfup_max;
-          mam4::convproc::compute_massflux(team, nlev, ktop, kbot, dpdry_i, du, eu,
-                                           ed, mu_i, md_i, mfup_max);
+          mam4::convproc::compute_massflux(team, nlev, ktop, kbot, dpdry_i, du,
+                                           eu, ed, mu_i, md_i, mfup_max);
           for (int i = 0; i < nlev + 1; ++i)
             mu_i_dev[i] = mu_i[i];
           for (int i = 0; i < nlev + 1; ++i)
