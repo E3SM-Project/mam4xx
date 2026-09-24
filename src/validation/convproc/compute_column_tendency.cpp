@@ -124,11 +124,11 @@ void compute_column_tendency(Ensemble *ensemble) {
           Real *sumresusp = sumresusp_dev.data();
           Real *sumprevap = sumprevap_dev.data();
           Real *sumprevap_hist = sumprevap_hist_dev.data();
-          mam4::convproc::compute_column_tendency(team,
-              doconvproc_extd, ktop, kbot_prevap, dpdry_i, dcondt_resusp_dev,
-              dcondt_prevap_dev, dcondt_prevap_hist_dev, dconudt_activa_dev,
-              dconudt_wetdep_dev, fa_u, sumactiva, sumaqchem, sumwetdep,
-              sumresusp, sumprevap, sumprevap_hist);
+          mam4::convproc::compute_column_tendency(
+              team, doconvproc_extd, ktop, kbot_prevap, dpdry_i,
+              dcondt_resusp_dev, dcondt_prevap_dev, dcondt_prevap_hist_dev,
+              dconudt_activa_dev, dconudt_wetdep_dev, fa_u, sumactiva,
+              sumaqchem, sumwetdep, sumresusp, sumprevap, sumprevap_hist);
         });
     set_output(output, "sumactiva", pcnst_extd, sumactiva_host, sumactiva_dev);
     set_output(output, "sumaqchem", pcnst_extd, sumaqchem_host, sumaqchem_dev);

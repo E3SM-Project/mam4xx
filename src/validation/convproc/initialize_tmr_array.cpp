@@ -92,9 +92,9 @@ void initialize_tmr_array(Ensemble *ensemble) {
           bool doconvproc_extd[pcnst_extd];
           for (int i = 0; i < pcnst_extd; ++i)
             doconvproc_extd[i] = doconvproc_extd_dev[i];
-          mam4::convproc::initialize_tmr_array(team, nlev, iconvtype, doconvproc_extd,
-                                               q_i_dev, gath_dev, chat_dev,
-                                               conu_dev, cond_dev);
+          mam4::convproc::initialize_tmr_array(
+              team, nlev, iconvtype, doconvproc_extd, q_i_dev, gath_dev,
+              chat_dev, conu_dev, cond_dev);
         });
     // Check case of iflux_method == 2 which is not part of the e3sm tests.
     set_output(output, "const", nlev, pcnst_extd, gath_host, gath_dev);
