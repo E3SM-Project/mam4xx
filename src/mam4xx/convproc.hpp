@@ -1764,7 +1764,7 @@ void initialize_tmr_array(
                             c_above * c_below;
         } else {
           // Small diff, so just arithmetic mean
-          chat(kk, icnst) = 0.5 * (gath(kk, icnst) + gath(kk, icnst));
+          chat(kk, icnst) = 0.5 * (gath(kk, icnst) + gath(km1, icnst));
         }
         // Set provisional up and down draft values, and tendencies
         conu(kk, icnst) = chat(kk, icnst);
