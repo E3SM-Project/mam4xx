@@ -18,6 +18,7 @@ using Real = @MAM4XX_REAL_TYPE@;
 #endif
 
 #cmakedefine MAM4XX_ENABLE_GPU
+#cmakedefine MAM4XX_EVAL_DIAGNOSTICS
 
 // Number of vertical levels per column (must match the number in the
 // host model)
