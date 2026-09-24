@@ -53,7 +53,8 @@ void compute_midlev_height(Ensemble *ensemble) {
           for (int i = 0; i < nlev; ++i)
             rhoair_i[i] = rhoair_i_dev[i];
           Real zmagl[nlev];
-          mam4::convproc::compute_midlev_height(team, nlev, dpdry_i, rhoair_i, zmagl);
+          mam4::convproc::compute_midlev_height(team, nlev, dpdry_i, rhoair_i,
+                                                zmagl);
           for (int i = 0; i < nlev; ++i)
             zmagl_dev[i] = zmagl[i];
         });
