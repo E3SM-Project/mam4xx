@@ -1,0 +1,56 @@
+# simulation time stepping
+time:
+  dt:    120  # [s]
+  nstep: 15   # [-]
+
+microphys:
+  gas_chemistry: false
+  gas_aer_exch:  true
+  rename:        true
+  nucleation:    true
+  coagulation:   true
+
+# prevailing atmospheric conditions
+atmosphere:
+  temperature:       273   # [K]
+  pressure:          1.e5  # [Pa]
+  relative_humidity: 0.9   # [-]
+
+# aerosols, specified as modal mass fractions [-], along with total model number concentration
+# (numc, [m-3])
+aerosols:
+  accumulation:
+    numc: 1.e8
+    so4: 0.3
+    pom: 0.
+    soa: 0.3
+    bc:  0.
+    dst: 0.
+    ncl: 0.4
+    mom: 0.
+  aitken:
+    numc: 1.e8
+    so4: 0.3
+    soa2: 0.3
+    ncl2: 0.4
+    mom: 0.
+  coarse:
+    numc: 1.e5
+    dst: 0.
+    ncl: 0.4
+    so4: 0.3
+    bc:  0.
+    pom: 0.
+    soa: 0.3
+    mom: 0.
+  primary_carbon:
+    numc: 2.e8
+    pom: 0.
+    bc:  1.
+    mom: 0.
+
+# gas mass-mixing ratios [kg gas/kg air]
+gases:
+  so2:   1.e-4
+  h2so4: 1.e-13
+  soag:  5.e-10
