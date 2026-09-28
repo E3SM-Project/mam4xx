@@ -1826,6 +1826,8 @@ void aero_model_wetdep(
     // output
     const View1D &aerdepwetis, const View1D &aerdepwetcw, const View1D &work,
     const Int1D &isprx,
+    // output: convective aerosol wet deposition (interstitial) [kg/m2/s]
+    const View1D &aerdepwetis_convproc,
     // Convection mass flux parameters (from zm_conv or equivalent)
     Kokkos::View<Real *>
         scratch1Dviews[ConvProc::Col1DViewInd::NumScratch], // Scratch arrays
@@ -1982,6 +1984,7 @@ void aero_model_wetdep(
 
   wetdep::zero_values(team, aerdepwetis, pcnst);
   wetdep::zero_values(team, aerdepwetcw, pcnst);
+  wetdep::zero_values(team, aerdepwetis_convproc, pcnst);
 
   View2D qsrflx_mzaer2cnvpr(work_ptr, aero_model::pcnst, 2);
   work_ptr += aero_model::pcnst * 2;
@@ -2347,9 +2350,9 @@ void aero_model_wetdep(
                      convproc_do_gas);
               }
               // Local array for aerosol deposition from convproc
-              Real aerdepwetis_convproc[aero_model::pcnst];
+              Real aerdepwetis_convproc_local[aero_model::pcnst];
               for (int i = 0; i < aero_model::pcnst; ++i) {
-                aerdepwetis_convproc[i] = 0.0;
+                aerdepwetis_convproc_local[i] = 0.0;
               }
 
               // Call ma_convproc_intr with data pointers
@@ -2360,12 +2363,15 @@ void aero_model_wetdep(
                   icwmrdp.data(), rprddp.data(), evapcdp.data(), dlf.data(),
                   du.data(), eu.data(), ed.data(), dp.data(), ktop, kbot,
                   species_class, mmtoo_prevap_resusp, state_q, ptend_q,
-                  ptend_lq, aerdepwetis_convproc);
+                  ptend_lq, aerdepwetis_convproc_local);
 
-              // Update aerdepwetis with convective wet deposition results
+              // Update aerdepwetis and save convproc contribution to output
               Kokkos::parallel_for(
                   Kokkos::TeamVectorRange(team, pcnst_local),
-                  [&](int i) { aerdepwetis(i) += aerdepwetis_convproc[i]; });
+                  [&](int i) { 
+                    aerdepwetis(i) += aerdepwetis_convproc_local[i];
+                    aerdepwetis_convproc(i) = aerdepwetis_convproc_local[i];
+                  });
 
               team.team_barrier();
             }
