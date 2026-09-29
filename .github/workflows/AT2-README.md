@@ -103,3 +103,7 @@ There is a button to regenerate these tokens to a new value and to refresh the e
 *Issue:* "401 Bad Credentials" error being thrown on the `snl_verify` script
 
 - *Fix:* Update the tokens. As the `mam4xxSNL` account on GitHub, there are two PATs. Regenerate those and update their values on `blake`.
+
+
+
+
