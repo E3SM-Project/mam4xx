@@ -1838,10 +1838,10 @@ void aero_model_wetdep(
     const ConstColumnView &ed,    // Entrainment into downdraft [1/s]
     const ConstColumnView &dp,    // Layer pressure thickness [mb]
     const ConstColumnView &dpdry, // Dry pressure thickness [mb]
-    const int ktop,                       // Cloud top level index
-    const int kbot,                       // Cloud base level index
-    const bool convproc_do_aer,           // Flag to process aerosols
-    const bool convproc_do_gas,           // Flag to process gases
+    const int ktop,               // Cloud top level index
+    const int kbot,               // Cloud base level index
+    const bool convproc_do_aer,   // Flag to process aerosols
+    const bool convproc_do_gas,   // Flag to process gases
     const int species_class[aero_model::pcnst],       // Species classification
     const int mmtoo_prevap_resusp[aero_model::pcnst], // Resuspension mapping
     const AeroConfig &aero_config) {                  // Aerosol configuration
@@ -2367,8 +2367,7 @@ void aero_model_wetdep(
 
               // Update aerdepwetis and save convproc contribution to output
               Kokkos::parallel_for(
-                  Kokkos::TeamVectorRange(team, pcnst_local),
-                  [&](int i) { 
+                  Kokkos::TeamVectorRange(team, pcnst_local), [&](int i) {
                     aerdepwetis(i) += aerdepwetis_convproc_local[i];
                     aerdepwetis_convproc(i) = aerdepwetis_convproc_local[i];
                   });
