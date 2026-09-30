@@ -118,7 +118,8 @@ void aero_model_wetdep(Ensemble *ensemble) {
         mam4::validation::get_input_in_columnview(input, "dlf"); //
     mam4::wetdep::View1D aerdepwetcw("aerdepwetcw", mam4::aero_model::pcnst);
     mam4::wetdep::View1D aerdepwetis("aerdepwetis", mam4::aero_model::pcnst);
-    mam4::wetdep::View1D aerdepwetis_convproc("aerdepwetis_convproc", mam4::aero_model::pcnst);
+    mam4::wetdep::View1D aerdepwetis_convproc("aerdepwetis_convproc",
+                                              mam4::aero_model::pcnst);
     const int num_modes = aero_config.num_modes();
 
     Kokkos::View<int *> isprx("isprx", nlev);
@@ -221,9 +222,8 @@ void aero_model_wetdep(Ensemble *ensemble) {
               aerdepwetis, aerdepwetcw, work, isprx, aerdepwetis_convproc,
               // Convection mass flux parameters
               scratch1Dviews, mu_icol, md_icol, du_icol, eu_icol, ed_icol,
-              dp_icol, p_del_dry_icol, ktop, kbot,
-              convproc_do_aer, convproc_do_gas, species_class,
-              mmtoo_prevap_resusp, aero_config);
+              dp_icol, p_del_dry_icol, ktop, kbot, convproc_do_aer,
+              convproc_do_gas, species_class, mmtoo_prevap_resusp, aero_config);
 
           team.team_barrier();
           Kokkos::parallel_for(
