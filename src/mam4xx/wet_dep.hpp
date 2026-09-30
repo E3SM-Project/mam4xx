@@ -2126,7 +2126,6 @@ void aero_model_wetdep(
   if (nwetdep < 1)
     return;
   {
-
     // // change mode order as mmode_loop_aa loops in a different order
     const int mode_order_change[4] = {0, 1, 3, 2};
 
@@ -2268,7 +2267,7 @@ void aero_model_wetdep(
             if (lphase == 1) {
               // Update ptend_q from the tendency, scavt
               wetdep::update_q_tendencies(team,             // input
-                                          ptend_q,          // input
+                                          ptend_q,          // output
                                           scavt, mm, nlev); // inputs
             }
             if (lphase == 1) {
@@ -2286,98 +2285,47 @@ void aero_model_wetdep(
                   [&](int kk) { qqcw(kk, mm) += scavt(kk) * dt; });
             }
             team.team_barrier();
-#if 0
-            // Note: Commenting it out because it produces unused variable warnings.
-            Real rprdshsum = aero_model::calc_sfc_flux(team, rprdsh, pdel, nlev);
-            Real rprddpsum = aero_model::calc_sfc_flux(team, rprddp, pdel, nlev);
-            Real evapcdpsum = aero_model::calc_sfc_flux(team, evapcdp, pdel, nlev);
-            Real evapcshsum = aero_model::calc_sfc_flux(team, evapcsh, pdel, nlev);
-
-            // NOTE. Adding this team_barrier fixed one race condition.
-            team.team_barrier();
-            const Real sflxbc =
-                aero_model::calc_sfc_flux(team, bcscavt, pdel, nlev);
-            const Real sflxec =
-                aero_model::calc_sfc_flux(team, rcscavt, pdel, nlev);
-
-            // apportion convective surface fluxes to deep and shallow
-            // conv this could be done more accurately in subr wetdepa
-            // since deep and shallow rarely occur simultaneously, and
-            // these fields are just diagnostics, this approximate method
-            // is adequate only do this for interstitial aerosol, because
-            // conv clouds to not affect the stratiform-cloudborne
-            // aerosol.
-            // NOTE. Adding this team_barrier fixed one race condition.
-            team.team_barrier();
-
-            // FIXME: The following code is causing race condition errors in the
-            // computer-sanitizer.
-            //  I commented it out because we do not need it in the emaxx-mam4xx
-            //  interface.
-            {
-              Real sflxbcdp, sflxecdp;
-              aero_model::apportion_sfc_flux_deep(rprddpsum, rprdshsum,
-                                                evapcdpsum, evapcshsum, sflxbc,
-                                                sflxec, sflxbcdp, sflxecdp);
-
-              // when ma_convproc_intr is used, convective in-cloud wet
-              // removal is done there the convective (total and deep)
-              // precip-evap-resuspension includes in- and below-cloud
-              // contributions, so pass the below-cloud contribution to
-              // ma_convproc_intr
-              //
-              // NOTE: ma_convproc_intr no longer uses these
-              qsrflx_mzaer2cnvpr(mm, 0) = sflxec;
-              qsrflx_mzaer2cnvpr(mm, 1) = sflxecdp;
-            }
-#endif
-
-            // Call ma_convproc_intr for convective aerosol processing
-            // This processes convective transport, activation, and wet removal
-            // Only process when convection is active and for interstitial
-            // aerosols
-            const auto pcnst_local = aero_model::pcnst;
-            if ((convproc_do_aer || convproc_do_gas) && lphase == 1 &&
-                ktop < kbot) {
-              // Get aerosol species view from config
-              const auto aero_species = aero_config.aero_species;
-              bool ptend_lq[aero_model::pcnst];
-              for (int i = 0; i < aero_model::pcnst; ++i) {
-                ptend_lq[i] =
-                    (species_class[i] == ConvProc::species_class::aerosol &&
-                     convproc_do_aer) ||
-                    (species_class[i] == ConvProc::species_class::gas &&
-                     convproc_do_gas);
-              }
-              // Local array for aerosol deposition from convproc
-              Real aerdepwetis_convproc_local[aero_model::pcnst];
-              for (int i = 0; i < aero_model::pcnst; ++i) {
-                aerdepwetis_convproc_local[i] = 0.0;
-              }
-
-              // Call ma_convproc_intr with data pointers
-              convproc::ma_convproc_intr(
-                  team, aero_species, scratch1Dviews, convproc_do_aer,
-                  convproc_do_gas, nlev, atm.temperature.data(),
-                  atm.pressure.data(), dpdry.data(), dt, dp_frac.data(),
-                  icwmrdp.data(), rprddp.data(), evapcdp.data(), dlf.data(),
-                  du.data(), eu.data(), ed.data(), dp.data(), ktop, kbot,
-                  species_class, mmtoo_prevap_resusp, state_q, ptend_q,
-                  ptend_lq, aerdepwetis_convproc_local);
-
-              // Update aerdepwetis and save convproc contribution to output
-              Kokkos::parallel_for(
-                  Kokkos::TeamVectorRange(team, pcnst_local), [&](int i) {
-                    aerdepwetis(i) += aerdepwetis_convproc_local[i];
-                    aerdepwetis_convproc(i) = aerdepwetis_convproc_local[i];
-                  });
-
-              team.team_barrier();
-            }
           }
         }
       }
     }
+  }
+  // Call ma_convproc_intr for convective aerosol processing
+  // This processes convective transport, activation, and wet removal
+  // Only process when convection is active and for interstitial
+  // aerosols
+  const auto pcnst_local = aero_model::pcnst;
+  if ((convproc_do_aer || convproc_do_gas) && ktop < kbot) {
+    // Get aerosol species view from config
+    const auto aero_species = aero_config.aero_species;
+    bool ptend_lq[aero_model::pcnst];
+    for (int i = 0; i < aero_model::pcnst; ++i) {
+      ptend_lq[i] =
+          (species_class[i] == ConvProc::species_class::aerosol &&
+           convproc_do_aer) ||
+          (species_class[i] == ConvProc::species_class::gas && convproc_do_gas);
+    }
+    // Local array for aerosol deposition from convproc
+    Real aerdepwetis_convproc_local[aero_model::pcnst];
+    for (int i = 0; i < aero_model::pcnst; ++i) {
+      aerdepwetis_convproc_local[i] = 0.0;
+    }
+    // Call ma_convproc_intr with data pointers
+    convproc::ma_convproc_intr(
+        team, aero_species, scratch1Dviews, convproc_do_aer, convproc_do_gas,
+        nlev, atm.temperature.data(), atm.pressure.data(), dpdry.data(), dt,
+        dp_frac.data(), icwmrdp.data(), rprddp.data(), evapcdp.data(),
+        dlf.data(), du.data(), eu.data(), ed.data(), dp.data(), ktop, kbot,
+        species_class, mmtoo_prevap_resusp, state_q, ptend_q, ptend_lq,
+        aerdepwetis_convproc_local);
+    team.team_barrier();
+    // Update aerdepwetis and save convproc contribution to output
+    Kokkos::parallel_for(
+        Kokkos::TeamVectorRange(team, pcnst_local), [&](int i) {
+          aerdepwetis(i) += aerdepwetis_convproc_local[i];
+          aerdepwetis_convproc(i) = aerdepwetis_convproc_local[i];
+        });
+    team.team_barrier();
   }
   // make sure that ptend is updated in tendencies
   team.team_barrier();
