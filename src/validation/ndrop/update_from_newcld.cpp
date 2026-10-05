@@ -73,7 +73,7 @@ void update_from_newcld(Ensemble *ensemble) {
           update_from_newcld(
               cldn_col_in, cldo_col_in, dtinv, //& ! in
               wtke_col_in, temp_col_in, air_density,
-              state_q_view.data(), //& ! in
+              state_q_view, //& ! in
               num2vol_ratio_min_nmodes, num2vol_ratio_max_nmodes, exp45logsig,
               alogsig, aten, qcld_view[0], raercol_nsav_view,
               raercol_cw_nsav_view, //&      ! inout
