@@ -189,34 +189,19 @@ void ma_convproc_dp_intr(Ensemble *ensemble) {
     auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
         team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
-          Real cldfrac[nlev], icwmr[nlev], pmid[nlev], rprd[nlev], dpdry[nlev],
-              evapc[nlev], du[nlev], eu[nlev], ed[nlev], dp[nlev],
-              temperature[nlev], dqdt[nlev][pcnst], qsrflx[pcnst][nsrflx];
+          Real dqdt[nlev][pcnst], qsrflx[pcnst][nsrflx];
           int species_class[pcnst];
           bool dotend[pcnst];
-          for (int i = 0; i < nlev; ++i) {
-            cldfrac[i] = cldfrac_dev[i];
-            icwmr[i] = icwmr_dev[i];
-            temperature[i] = temperature_dev[i];
-            pmid[i] = pmid_dev[i];
-            rprd[i] = rprd_dev[i];
-            dpdry[i] = dpdry_dev[i];
-            evapc[i] = evapc_dev[i];
-            du[i] = du_dev[i];
-            eu[i] = eu_dev[i];
-            ed[i] = ed_dev[i];
-            dp[i] = dp_dev[i];
-          }
           for (int i = 0; i < pcnst; ++i) {
             species_class[i] = species_class_dev[i];
           }
           auto dqdt_view = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
               &dqdt[0][0], nlev, pcnst);
           mam4::convproc::ma_convproc_dp_intr(
-              team, aero_species, scratch1Dviews, nlev, temperature, pmid,
-              dpdry, dt, cldfrac, icwmr, rprd, evapc, du, eu, ed, dp, ktop,
-              kbot, qnew_dev, species_class, mmtoo_prevap_resusp, dqdt_view,
-              qsrflx, dotend);
+              team, aero_species, scratch1Dviews, nlev, temperature_dev,
+              pmid_dev, dpdry_dev, dt, cldfrac_dev, icwmr_dev, rprd_dev,
+              evapc_dev, du_dev, eu_dev, ed_dev, dp_dev, ktop, kbot, qnew_dev,
+              species_class, mmtoo_prevap_resusp, dqdt_view, qsrflx, dotend);
 
           for (int i = 0; i < nlev; ++i) {
             for (int j = 0; j < pcnst; ++j) {

@@ -91,6 +91,7 @@ TEST_CASE("test_ndrop_init", "mam4_ndrop_unit_tests") {
 }
 
 TEST_CASE("test_get_aer_num", "mam4_ndrop_unit_tests") {
+  using View1DHost = typename mam4::HostType::view_1d<Real>;
   ekat::Comm comm;
   ekat::logger::Logger<> logger("ndrop unit tests",
                                 ekat::logger::LogLevel::debug, comm);
@@ -118,11 +119,12 @@ TEST_CASE("test_get_aer_num", "mam4_ndrop_unit_tests") {
                        voltonumblo_amode};
   Real ans_i;
 
+  View1DHost state(state_q, mam4::aero_model::pcnst);
   for (int i = 0; i < 4; ++i) {
     ans_i = ans[i] * vaerosol;
-    state_q[num_idx] = ((test_num[i] * vaerosol) / air_density - qcldbrn1d_num);
+    state[num_idx] = ((test_num[i] * vaerosol) / air_density - qcldbrn1d_num);
     mam4::ndrop::get_aer_num(voltonumbhi_amode, voltonumblo_amode, num_idx,
-                             state_q, air_density, vaerosol, qcldbrn1d_num,
+                             state, air_density, vaerosol, qcldbrn1d_num,
                              naerosol);
     logger.debug("reference value and computed naerosol = {}, {}", ans_i,
                  naerosol);

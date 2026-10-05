@@ -87,19 +87,11 @@ void compute_downdraft_mixing_ratio(Ensemble *ensemble) {
     Kokkos::parallel_for(
         team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           bool doconvproc_extd[pcnst_extd];
-          Real md_i[nlev + 1];
-          Real eddp[nlev];
-
           for (int i = 0; i < pcnst_extd; ++i)
             doconvproc_extd[i] = doconvproc_extd_dev[i];
-          for (int i = 0; i < nlev + 1; ++i)
-            md_i[i] = md_i_dev(i);
-          for (int i = 0; i < nlev; ++i)
-            eddp[i] = eddp_dev(i);
-
-          mam4::convproc::compute_downdraft_mixing_ratio(team, doconvproc_extd,
-                                                         ktop, kbot, md_i, eddp,
-                                                         gath_dev, cond_dev);
+          mam4::convproc::compute_downdraft_mixing_ratio(
+              team, doconvproc_extd, ktop, kbot, md_i_dev, eddp_dev, gath_dev,
+              cond_dev);
         });
     set_output(output, "cond", nlev + 1, pcnst_extd, cond_host, cond_dev);
   });

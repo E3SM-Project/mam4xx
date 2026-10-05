@@ -151,50 +151,22 @@ void compute_updraft_mixing_ratio(Ensemble *ensemble) {
     Kokkos::parallel_for(
         team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           bool doconvproc_extd[pcnst_extd];
-          Real dp_i[nlev];
-          Real dpdry_i[nlev];
-          Real cldfrac[nlev];
-          Real rhoair_i[nlev];
-          Real zmagl[nlev];
-          Real mu_i[nlev + 1];
-          Real eudp[nlev + 1];
-          Real temperature[nlev];
           Real aqfrac[pcnst_extd];
-          Real icwmr[nlev];
-          Real rprd[nlev];
-          Real fa_u[nlev];
 
           for (int i = 0; i < pcnst_extd; ++i) {
-            doconvproc_extd[i] = doconvproc_extd_dev[i];
-            aqfrac[i] = aqfrac_dev[i];
-          }
-          for (int i = 0; i < nlev; ++i) {
-            dp_i[i] = dp_i_dev(i);
-            dpdry_i[i] = dpdry_i_dev(i);
-            cldfrac[i] = cldfrac_dev(i);
-            rhoair_i[i] = rhoair_i_dev(i);
-            zmagl[i] = zmagl_dev(i);
-            mu_i[i] = mu_i_dev(i);
-            eudp[i] = eudp_dev(i);
-            temperature[i] = temperature_dev(i);
             aqfrac[i] = aqfrac_dev(i);
-            icwmr[i] = icwmr_dev(i);
-            rprd[i] = rprd_dev(i);
-            fa_u[i] = 0;
+            doconvproc_extd[i] = doconvproc_extd_dev[i];
           }
-
           Real wcldbase = xx_wcldbase;
           int kcldbase = xx_kcldbase;
           mam4::convproc::compute_updraft_mixing_ratio(
               team, aero_species, doconvproc_extd, nlev, ktop, kbot, iconvtype,
-              dt, dp_i, dpdry_i, cldfrac, rhoair_i, zmagl, dz, mu_i, eudp,
-              gath_dev, temperature, aqfrac, icwmr, rprd, fa_u,
-              dconudt_wetdep_dev, dconudt_activa_dev, conu_dev, wcldbase,
-              kcldbase);
+              dt, dp_i_dev, dpdry_i_dev, cldfrac_dev, rhoair_i_dev, zmagl_dev,
+              dz, mu_i_dev, eudp_dev, gath_dev, temperature_dev, aqfrac,
+              icwmr_dev, rprd_dev, fa_u_dev, dconudt_wetdep_dev,
+              dconudt_activa_dev, conu_dev, wcldbase, kcldbase);
           scalars_dev(0) = wcldbase;
           scalars_dev(1) = kcldbase;
-          for (int i = 0; i < nlev; ++i)
-            fa_u_dev(i) = fa_u[i];
         });
     set_output(output, "dconudt_wetdep", nlev + 1, pcnst_extd,
                dconudt_wetdep_host, dconudt_wetdep_dev);

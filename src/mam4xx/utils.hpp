@@ -233,7 +233,7 @@ extract_stateq_from_prognostics(const mam4::Prognostics &progs,
   q[4] = atm.cloud_ice_number_mixing_ratio(klev);    // ni
   // FIXME: I do not have info for  :RAINQM, SNOWQM, NUMRAI, NUMSNO
 
-  if (progs.q_gas[0].data()) { // if gases are defined in dry_aero aerosol state
+  if (progs.q_gas[0].size()) { // if gases are defined in dry_aero aerosol state
     s_idx = gasses_start_ind(); // gases start at index 9 (index 10 in Fortran
                                 // version)
     for (int g = 0; g < AeroConfig::num_gas_ids(); ++g) {
@@ -266,7 +266,7 @@ extract_ptend_from_tendencies(const Tendencies &tends, VectorType &ptend,
   int s_idx = ekat::invalid<int>();
   // FIXME: tendencies for first five item (qv, qc, qi, nc, ni) should no be
   // modified by mam4xx is this correct ?
-  if (tends.q_gas[0].data()) { // if gases are defined in dry_aero aerosol state
+  if (tends.q_gas[0].size()) { // if gases are defined in dry_aero aerosol state
     s_idx = gasses_start_ind(); // gases start at index 9 (index 10 in Fortran
                                 // version)
     for (int g = 0; g < AeroConfig::num_gas_ids(); ++g) {
@@ -297,7 +297,7 @@ inject_stateq_to_prognostics(const VectorType &q, mam4::Prognostics &progs,
 
   int s_idx = ekat::invalid<int>();
 
-  if (progs.q_gas[0].data()) { // if gases are defined in dry_aero aerosol state
+  if (progs.q_gas[0].size()) { // if gases are defined in dry_aero aerosol state
     s_idx = gasses_start_ind(); // gases start at index 9 (index 10 in Fortran
                                 // version)
     for (int g = 0; g < AeroConfig::num_gas_ids(); ++g) {
@@ -314,7 +314,7 @@ inject_stateq_to_prognostics(const VectorType &q, mam4::Prognostics &progs,
   for (int m = 0; m < AeroConfig::num_modes(); ++m) {
     //   // First add the aerosol species mmr
     for (int a = 0; a < mam4::num_species_mode(m); ++a) {
-      if (progs.q_aero_i[m][a].data()) {
+      if (progs.q_aero_i[m][a].size()) {
         progs.q_aero_i[m][a](klev) = q[s_idx];
         s_idx++; // update index even if we lack some aerosol mmrs
       }          // end if
@@ -331,7 +331,7 @@ KOKKOS_INLINE_FUNCTION void inject_ptend_to_tendencies(const VectorType &ptend,
 
   int s_idx = ekat::invalid<int>();
 
-  if (tends.q_gas[0].data()) { // if gases are defined in dry_aero aerosol state
+  if (tends.q_gas[0].size()) { // if gases are defined in dry_aero aerosol state
     s_idx = gasses_start_ind(); // gases start at index 9 (index 10 in Fortran
                                 // version)
     for (int g = 0; g < AeroConfig::num_gas_ids(); ++g) {
@@ -348,7 +348,7 @@ KOKKOS_INLINE_FUNCTION void inject_ptend_to_tendencies(const VectorType &ptend,
   for (int m = 0; m < AeroConfig::num_modes(); ++m) {
     //   // First add the aerosol species mmr
     for (int a = 0; a < mam4::num_species_mode(m); ++a) {
-      if (tends.q_aero_i[m][a].data()) {
+      if (tends.q_aero_i[m][a].size()) {
         tends.q_aero_i[m][a](klev) = ptend[s_idx];
         s_idx++; // update index even if we lack some aerosol mmrs
       }          // end if
@@ -378,7 +378,7 @@ extract_qqcw_from_prognostics(const mam4::Prognostics &progs, VectorType &qqcw,
   for (int m = 0; m < AeroConfig::num_modes(); ++m) {
     // First add the aerosol species mmr
     for (int a = 0; a < mam4::num_species_mode(m); ++a) {
-      if (progs.q_aero_c[m][a].data()) {
+      if (progs.q_aero_c[m][a].size()) {
         qqcw[s_idx] = progs.q_aero_c[m][a](klev);
         s_idx++; // update index even if we lack some aerosol mmrs
       }
@@ -408,13 +408,13 @@ KOKKOS_INLINE_FUNCTION void inject_qqcw_to_prognostics(const VectorType &qqcw,
   for (int m = 0; m < AeroConfig::num_modes(); ++m) {
     // First add the aerosol species mmr
     for (int a = 0; a < mam4::num_species_mode(m); ++a) {
-      if (progs.q_aero_c[m][a].data()) {
+      if (progs.q_aero_c[m][a].size()) {
         progs.q_aero_c[m][a](klev) = qqcw[s_idx];
         s_idx++; // update index even if we lack some aerosol mmrs
       }
     }
     // Now add aerosol number mmr
-    EKAT_KERNEL_ASSERT_MSG(progs.n_mode_c[m].data(),
+    EKAT_KERNEL_ASSERT_MSG(progs.n_mode_c[m].size(),
                            "cld_aero_nmr not defined for dry aerosol state!");
     progs.n_mode_c[m](klev) = qqcw[s_idx];
     s_idx++; // update index
