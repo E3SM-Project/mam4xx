@@ -11,6 +11,8 @@
 using namespace skywalker;
 
 void test_wetdep_clddiag_process(const Input &input, Output &output) {
+  using View1DHost = mam4::HostType::view_1d<Real>;
+  using View1D = mam4::ndrop::View1D;
   // pver is constant and the size of our arrays
   const int pver = 72;
   int nlev = 72;
@@ -66,32 +68,22 @@ void test_wetdep_clddiag_process(const Input &input, Output &output) {
   EKAT_ASSERT(evapr.size() == pver);
   EKAT_ASSERT(prain.size() == pver);
 
-  // Create Real arrays for inputs
-  // std::vectors can't be copied directly to device memory by Kokkos
-  // Maybe this should be a unique_ptr..
-  // Since pver is actually hard coded, maybe this isn't necessary
-  Real temperature_arr[pver];
-  Real pmid_arr[pver];
-  Real pdel_arr[pver];
-  Real cmfdqr_arr[pver];
-  Real evapc_arr[pver];
-  Real cldt_arr[pver];
-  Real cldcu_arr[pver];
-  Real cldst_arr[pver];
-  Real evapr_arr[pver];
-  Real prain_arr[pver];
-
-  // Use std::copy to copy input arrays to Real arrays
-  std::copy(temperature.begin(), temperature.end(), temperature_arr);
-  std::copy(pmid.begin(), pmid.end(), pmid_arr);
-  std::copy(pdel.begin(), pdel.end(), pdel_arr);
-  std::copy(cmfdqr.begin(), cmfdqr.end(), cmfdqr_arr);
-  std::copy(evapc.begin(), evapc.end(), evapc_arr);
-  std::copy(cldt.begin(), cldt.end(), cldt_arr);
-  std::copy(cldcu.begin(), cldcu.end(), cldcu_arr);
-  std::copy(cldst.begin(), cldst.end(), cldst_arr);
-  std::copy(evapr.begin(), evapr.end(), evapr_arr);
-  std::copy(prain.begin(), prain.end(), prain_arr);
+  auto view = [](std::string n, auto v) {
+    View1DHost host(v.data(), pver);
+    View1D dev(n, pver);
+    Kokkos::deep_copy(dev, host);
+    return dev;
+  };
+  View1D temperature_view = view("temperature", temperature);
+  View1D pmid_view = view("pmid", pmid);
+  View1D pdel_view = view("pdel", pdel);
+  View1D cmfdqr_view = view("cmfdqr", cmfdqr);
+  View1D evapc_view = view("evapc", evapc);
+  View1D cldt_view = view("cldt", cldt);
+  View1D cldcu_view = view("cldcu", cldcu);
+  View1D cldst_view = view("cldst", cldst);
+  View1D evapr_view = view("evapr", evapr);
+  View1D prain_view = view("prain", prain);
 
   // Prepare device views for output arrays
   auto cldv_dev = mam4::validation::create_column_view(pver);
@@ -101,24 +93,10 @@ void test_wetdep_clddiag_process(const Input &input, Output &output) {
 
   Kokkos::parallel_for(
       "wetdep::clddiag", 1, KOKKOS_LAMBDA(const int) {
-        // On device, create Real arrays for outputs
-        Real cldv[pver];
-        Real cldvcu[pver];
-        Real cldvst[pver];
-        Real rain[pver];
-
-        mam4::wetdep::clddiag(pver, temperature_arr, pmid_arr, pdel_arr,
-                              cmfdqr_arr, evapc_arr, cldt_arr, cldcu_arr,
-                              cldst_arr, evapr_arr, prain_arr, cldv, cldvcu,
-                              cldvst, rain);
-
-        // Copy values back to host
-        for (size_t i = 0; i < pver; ++i) {
-          cldv_dev(i) = cldv[i];
-          cldvcu_dev(i) = cldvcu[i];
-          cldvst_dev(i) = cldvst[i];
-          rain_dev(i) = rain[i];
-        }
+        mam4::wetdep::clddiag(pver, temperature_view, pmid_view, pdel_view,
+                              cmfdqr_view, evapc_view, cldt_view, cldcu_view,
+                              cldst_view, evapr_view, prain_view, cldv_dev,
+                              cldvcu_dev, cldvst_dev, rain_dev);
       });
 
   // Create mirror views for output arrays
@@ -133,24 +111,11 @@ void test_wetdep_clddiag_process(const Input &input, Output &output) {
   Kokkos::deep_copy(cldvst_host, cldvst_dev);
   Kokkos::deep_copy(rain_host, rain_dev);
 
-  // Copy into a temporary real array before putting into std::vector
-  Real cldv_arr[pver];
-  Real cldvcu_arr[pver];
-  Real cldvst_arr[pver];
-  Real rain_arr[pver];
-
-  for (size_t i = 0; i < pver; ++i) {
-    cldv_arr[i] = cldv_host(i);
-    cldvcu_arr[i] = cldvcu_host(i);
-    cldvst_arr[i] = cldvst_host(i);
-    rain_arr[i] = rain_host(i);
-  }
-
   // Create Vectors for output arrays and copy in place
-  std::vector<Real> cldv(cldv_arr, cldv_arr + pver);
-  std::vector<Real> cldvcu(cldvcu_arr, cldvcu_arr + pver);
-  std::vector<Real> cldvst(cldvst_arr, cldvst_arr + pver);
-  std::vector<Real> rain(rain_arr, rain_arr + pver);
+  std::vector<Real> cldv(cldv_host.data(), cldv_host.data() + pver);
+  std::vector<Real> cldvcu(cldvcu_host.data(), cldvcu_host.data() + pver);
+  std::vector<Real> cldvst(cldvst_host.data(), cldvst_host.data() + pver);
+  std::vector<Real> rain(rain_host.data(), rain_host.data() + pver);
 
   // Set the output values
   output.set("cldv", cldv);
