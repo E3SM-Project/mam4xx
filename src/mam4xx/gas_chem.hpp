@@ -33,6 +33,8 @@ struct ImpSolResult {
   int accepted_steps = 0;
   Real requested_interval = 0;
   Real accepted_interval = 0;
+  int non_converged_species_idx = -1;
+  int non_converged_species_count = 0;
 
   KOKKOS_INLINE_FUNCTION
   bool success() const {
@@ -294,6 +296,8 @@ imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
   result.accepted_steps = 0;
   result.accepted_interval = 0;
   result.requested_interval = delt;
+  result.non_converged_species_idx = -1;
+  result.non_converged_species_count = 0;
   for (int kk = 0; kk < clscnt4; ++kk) {
     prod_out[kk] = zero;
     loss_out[kk] = zero;
@@ -418,6 +422,17 @@ imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
     if (!trial_is_finite) {
       result.failed_attempts += 1;
       result.outcome = ImpSolOutcome::NonfiniteIterate;
+      int non_conv_cnt = 0;
+      for (int kk = 0; kk < clscnt4; ++kk) {
+        if (!Kokkos::isfinite(solution[kk]) || !Kokkos::isfinite(prod[kk]) ||
+            !Kokkos::isfinite(loss[kk])) {
+          if (non_conv_cnt == 0) {
+            result.non_converged_species_idx = clsmap_4[kk];
+          }
+          non_conv_cnt++;
+        }
+      }
+      result.non_converged_species_count = non_conv_cnt;
       return;
     }
 
@@ -430,6 +445,17 @@ imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
       // -----------------------------------------------------------------------
       result.failed_attempts += 1;
       stp_con_cnt = 0;
+
+      int non_conv_cnt = 0;
+      for (int kk = 0; kk < clscnt4; ++kk) {
+        if (!converged[kk]) {
+          if (non_conv_cnt == 0) {
+            result.non_converged_species_idx = clsmap_4[kk];
+          }
+          non_conv_cnt++;
+        }
+      }
+      result.non_converged_species_count = non_conv_cnt;
 
       if (cut_cnt < cut_limit) {
         cut_cnt += 1;
@@ -457,6 +483,8 @@ imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
     result.accepted_steps += 1;
     interval_done += attempted_dt;
     result.accepted_interval = interval_done;
+    result.non_converged_species_idx = -1;
+    result.non_converged_species_count = 0;
 
     // BAD CONSTANT
     if (mam4::abs(delt - interval_done) <= 0.0001) {
@@ -488,6 +516,16 @@ imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
   }   // time_step_loop
 
   result.outcome = ImpSolOutcome::MaximumStepsExhausted;
+  int non_conv_cnt = 0;
+  for (int kk = 0; kk < clscnt4; ++kk) {
+    if (!converged[kk]) {
+      if (non_conv_cnt == 0) {
+        result.non_converged_species_idx = clsmap_4[kk];
+      }
+      non_conv_cnt++;
+    }
+  }
+  result.non_converged_species_count = non_conv_cnt;
 } // imp_sol
 
 } // namespace gas_chemistry
