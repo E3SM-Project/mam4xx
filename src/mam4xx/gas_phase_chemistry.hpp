@@ -91,7 +91,7 @@ KOKKOS_INLINE_FUNCTION void gas_phase_chemistry(
   using mam4::gas_chemistry::clscnt4;
   Real prod_out[clscnt4], loss_out[clscnt4];
 
-#if defined(MAM4XX_USE_IMPLICIT_GAS_SOLVER) || (defined(MAM4XX_USE_ANALYTICAL_GAS_SOLVER) && !MAM4XX_USE_ANALYTICAL_GAS_SOLVER)
+#ifdef MAM4XX_USE_IMPLICIT_GAS_SOLVER
   // Solve chemical system implicitly with iterative Newton-Raphson scheme
   using mam4::gas_chemistry::itermax;
   bool factor[itermax];
