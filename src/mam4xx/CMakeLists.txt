@@ -57,6 +57,9 @@ install(FILES
         DESTINATION include/mam4xx)
 
 add_library(mam4xx aero_modes.cpp aero_species.cpp gas_species.cpp)
+if (MAM4XX_USE_IMPLICIT_GAS_SOLVER)
+  target_compile_definitions(mam4xx PUBLIC MAM4XX_USE_IMPLICIT_GAS_SOLVER)
+endif()
 target_include_directories(mam4xx PUBLIC
   ${EKAT_INCLUDE_DIRS}
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
