@@ -9,6 +9,8 @@
 
 #include <catch2/catch.hpp>
 #include <cmath>
+#include <iomanip>
+#include <iostream>
 #include <vector>
 
 using mam4::DeviceType;
@@ -337,6 +339,14 @@ TEST_CASE("analytical_sol vs imp_sol on Device: Small timestep convergence",
     const Real rel_diff =
         std::abs(out_imp.base_sol[spc] - out_ana.base_sol[spc]) /
         std::abs(out_ana.base_sol[spc]);
+    if (rel_diff > tol) {
+      std::cout << "Species " << spc << " exceeded tolerance:\n"
+                << "  out_ana.base_sol[" << spc << "] = "
+                << std::setprecision(16) << out_ana.base_sol[spc] << "\n"
+                << "  out_imp.base_sol[" << spc << "] = "
+                << std::setprecision(16) << out_imp.base_sol[spc] << "\n"
+                << "  rel_diff = " << rel_diff << std::endl;
+    }
     REQUIRE(rel_diff < tol);
   }
 
@@ -344,6 +354,14 @@ TEST_CASE("analytical_sol vs imp_sol on Device: Small timestep convergence",
     const Real rel_diff =
         std::abs(out_imp.base_sol[spc] - out_ana.base_sol[spc]) /
         std::abs(out_ana.base_sol[spc]);
+    if (rel_diff > tol) {
+      std::cout << "Species " << spc << " exceeded tolerance:\n"
+                << "  out_ana.base_sol[" << spc << "] = "
+                << std::setprecision(16) << out_ana.base_sol[spc] << "\n"
+                << "  out_imp.base_sol[" << spc << "] = "
+                << std::setprecision(16) << out_imp.base_sol[spc] << "\n"
+                << "  rel_diff = " << rel_diff << std::endl;
+    }
     REQUIRE(rel_diff < tol);
   }
 }
