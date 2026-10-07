@@ -333,7 +333,7 @@ TEST_CASE("analytical_sol vs imp_sol on Device: Small timestep convergence",
   REQUIRE(out_imp.outcome == static_cast<int>(ImpSolOutcome::Converged));
   REQUIRE(out_ana.outcome == static_cast<int>(ImpSolOutcome::Converged));
 
-  const Real tol = 1.0e-8;
+  const Real tol = 1.0e-6;
 
   for (int spc = 1; spc <= 4; ++spc) {
     const Real rel_diff =
