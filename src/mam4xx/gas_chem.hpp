@@ -528,6 +528,187 @@ imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
   result.non_converged_species_count = non_conv_cnt;
 } // imp_sol
 
+// -----------------------------------------------------------------------------
+// Analytical integration helpers
+// -----------------------------------------------------------------------------
+
+// Helper for \int_0^dt exp(-lambda * t) dt = (1 - exp(-lambda * dt)) / lambda
+KOKKOS_INLINE_FUNCTION
+Real exp_decay_int(const Real lambda, const Real dt) {
+  const Real x = lambda * dt;
+  if (mam4::abs(x) < 1.0e-6) {
+    return dt * (1.0 - 0.5 * x + (1.0 / 6.0) * x * x);
+  }
+  return (1.0 - mam4::exp(-x)) / lambda;
+}
+
+// Helper for \int_0^dt exp(-lambda_a * (dt - t)) * exp(-lambda_b * t) dt
+//            = (exp(-lambda_b * dt) - exp(-lambda_a * dt)) / (lambda_a - lambda_b)
+KOKKOS_INLINE_FUNCTION
+Real exp_diff_int(const Real lambda_a, const Real lambda_b, const Real dt) {
+  const Real d = (lambda_a - lambda_b) * dt;
+  if (mam4::abs(d) < 1.0e-6) {
+    const Real avg_lambda = 0.5 * (lambda_a + lambda_b);
+    return dt * mam4::exp(-avg_lambda * dt) * (1.0 + (1.0 / 24.0) * d * d);
+  }
+  return (mam4::exp(-lambda_b * dt) - mam4::exp(-lambda_a * dt)) / (lambda_a - lambda_b);
+}
+
+// Helper for \int_0^dt exp(-lambda_a * (dt - t)) * (1 - exp(-lambda_b * t)) / lambda_b dt
+KOKKOS_INLINE_FUNCTION
+Real exp_decay_chain_int(const Real lambda_a, const Real lambda_b, const Real dt) {
+  const Real x = lambda_b * dt;
+  if (mam4::abs(x) < 1.0e-6) {
+    const Real i1_a = exp_decay_int(lambda_a, dt);
+    if (mam4::abs(lambda_a * dt) < 1.0e-6) {
+      return 0.5 * dt * dt;
+    }
+    return (dt - i1_a) / lambda_a;
+  }
+  const Real i1_a = exp_decay_int(lambda_a, dt);
+  const Real i2 = exp_diff_int(lambda_a, lambda_b, dt);
+  return (i1_a - i2) / lambda_b;
+}
+
+// -----------------------------------------------------------------------------
+// analytical_sol: Exact analytical solution for linear chemical ODE system:
+// dy/dt = A * y + b
+// -----------------------------------------------------------------------------
+template <typename VectorType>
+KOKKOS_INLINE_FUNCTION void
+analytical_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
+               const Real reaction_rates[rxntot], const Real het_rates[gas_pcnst],
+               const Real extfrc[extcnt], const Real &delt,
+               Real prod_out[clscnt4], Real loss_out[clscnt4],
+               ImpSolResult &result) {
+
+  constexpr auto clsmap_4 = gas_chemistry::clsmap_4;
+  constexpr auto permute_4 = gas_chemistry::permute_4;
+
+  const Real zero = 0;
+
+  result.outcome = ImpSolOutcome::InvalidInput;
+  result.failed_attempts = 0;
+  result.cut_count = 0;
+  result.accepted_steps = 0;
+  result.accepted_interval = 0;
+  result.requested_interval = delt;
+  result.non_converged_species_idx = -1;
+  result.non_converged_species_count = 0;
+  for (int kk = 0; kk < clscnt4; ++kk) {
+    prod_out[kk] = zero;
+    loss_out[kk] = zero;
+  }
+
+  bool input_is_finite = Kokkos::isfinite(delt) && delt > zero;
+  for (int mm = 0; mm < gas_pcnst; ++mm) {
+    input_is_finite = input_is_finite && Kokkos::isfinite(base_sol[mm]) &&
+                      Kokkos::isfinite(het_rates[mm]);
+  }
+  for (int mm = 0; mm < rxntot; ++mm) {
+    input_is_finite = input_is_finite && Kokkos::isfinite(reaction_rates[mm]);
+  }
+  for (int mm = 0; mm < extcnt; ++mm) {
+    input_is_finite = input_is_finite && Kokkos::isfinite(extfrc[mm]);
+  }
+  if (!input_is_finite) {
+    result.outcome = ImpSolOutcome::InvalidInput;
+    return;
+  }
+
+  // Independent forcing and rates
+  Real ind_prd[clscnt4] = {};
+  indprd(4, ind_prd, reaction_rates, extfrc);
+
+  // Initial concentrations for Class 4 species
+  // Index mapping in base_sol:
+  // base_sol[1] = H2O2  (clsmap_4[0])
+  // base_sol[2] = H2SO4 (clsmap_4[1])
+  // base_sol[3] = SO2   (clsmap_4[2])
+  // base_sol[4] = DMS   (clsmap_4[3])
+  // base_sol[5] = SOAG  (clsmap_4[4])
+  // base_sol[6..30] = Aerosols (clsmap_4[5..29])
+
+  // 1. H2O2 (index 1 in base_sol)
+  const Real lambda_h2o2 = het_rates[1] + reaction_rates[0] + reaction_rates[2];
+  const Real b_h2o2 = ind_prd[0]; // rxt[1]
+  const Real h2o2_0 = base_sol[1];
+  const Real h2o2_end = h2o2_0 * mam4::exp(-lambda_h2o2 * delt) + b_h2o2 * exp_decay_int(lambda_h2o2, delt);
+
+  // 2. Coupled sulfur network: DMS -> SO2 -> H2SO4
+  // DMS (index 4 in base_sol)
+  const Real lambda_dms = het_rates[4] + reaction_rates[4] + reaction_rates[5] + reaction_rates[6];
+  const Real dms_0 = base_sol[4];
+  const Real dms_end = dms_0 * mam4::exp(-lambda_dms * delt);
+
+  // SO2 (index 3 in base_sol)
+  const Real lambda_so2 = het_rates[3] + reaction_rates[3];
+  const Real k_dms_to_so2 = reaction_rates[4] + 0.5 * reaction_rates[5] + reaction_rates[6];
+  const Real b_so2 = ind_prd[2]; // extfrc[0]
+  const Real so2_0 = base_sol[3];
+  const Real so2_end = so2_0 * mam4::exp(-lambda_so2 * delt)
+                     + b_so2 * exp_decay_int(lambda_so2, delt)
+                     + k_dms_to_so2 * dms_0 * exp_diff_int(lambda_so2, lambda_dms, delt);
+
+  // H2SO4 (index 2 in base_sol)
+  const Real lambda_h2so4 = het_rates[2];
+  const Real k_so2_to_h2so4 = reaction_rates[3];
+  const Real h2so4_0 = base_sol[2];
+
+  // Integration of d(H2SO4)/dt = -lambda_h2so4 * H2SO4 + k_so2_to_h2so4 * SO2(t)
+  const Real term_so2_init = so2_0 * exp_diff_int(lambda_h2so4, lambda_so2, delt);
+  const Real term_so2_source = b_so2 * exp_decay_chain_int(lambda_h2so4, lambda_so2, delt);
+
+  Real term_dms_chain = zero;
+  const Real d_so2_dms = (lambda_so2 - lambda_dms) * delt;
+  if (mam4::abs(d_so2_dms) < 1.0e-6) {
+    const Real avg_lambda = 0.5 * (lambda_so2 + lambda_dms);
+    term_dms_chain = delt * exp_diff_int(lambda_h2so4, avg_lambda, delt);
+  } else {
+    const Real i2_h2so4_dms = exp_diff_int(lambda_h2so4, lambda_dms, delt);
+    const Real i2_h2so4_so2 = exp_diff_int(lambda_h2so4, lambda_so2, delt);
+    term_dms_chain = (i2_h2so4_dms - i2_h2so4_so2) / (lambda_so2 - lambda_dms);
+  }
+
+  const Real h2so4_end = h2so4_0 * mam4::exp(-lambda_h2so4 * delt)
+                       + k_so2_to_h2so4 * (term_so2_init + term_so2_source + k_dms_to_so2 * dms_0 * term_dms_chain);
+
+  // Update base_sol for sulfur and H2O2
+  base_sol[1] = mam4::max(zero, h2o2_end);
+  base_sol[2] = mam4::max(zero, h2so4_end);
+  base_sol[3] = mam4::max(zero, so2_end);
+  base_sol[4] = mam4::max(zero, dms_end);
+
+  // 3. Decoupled SOAG and aerosol species (Class 4 indices 4..29, base_sol indices 5..30)
+  for (int kk = 4; kk < clscnt4; ++kk) {
+    const int spc_idx = clsmap_4[kk];
+    const Real lambda_spc = het_rates[spc_idx];
+    const Real b_spc = ind_prd[kk];
+    const Real spc_0 = base_sol[spc_idx];
+    const Real spc_end = spc_0 * mam4::exp(-lambda_spc * delt) + b_spc * exp_decay_int(lambda_spc, delt);
+    base_sol[spc_idx] = mam4::max(zero, spc_end);
+  }
+
+  // Compute final production and loss diagnostic outputs
+  Real prod[clscnt4] = {};
+  Real loss[clscnt4] = {};
+  imp_prod_loss(prod, loss, base_sol, reaction_rates, het_rates);
+  for (int kk = 0; kk < clscnt4; ++kk) {
+    const int mm = permute_4[kk];
+    prod_out[kk] = prod[mm] + ind_prd[mm];
+    loss_out[kk] = loss[mm];
+  }
+
+  result.outcome = ImpSolOutcome::Converged;
+  result.failed_attempts = 0;
+  result.cut_count = 0;
+  result.accepted_steps = 1;
+  result.accepted_interval = delt;
+  result.non_converged_species_idx = -1;
+  result.non_converged_species_count = 0;
+}
+
+
 } // namespace gas_chemistry
 } // namespace mam4
 #endif
