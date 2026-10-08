@@ -811,13 +811,13 @@ void compute_column_tendency(
           // other sums
           for (int kk = ktop; kk < kbot_prevap; ++kk) {
             sumactiva[icnst] +=
-                dconudt_activa(kk, icnst) * dpdry[kk] * fa_u[kk];
+                dconudt_activa(icnst,kk) * dpdry[kk] * fa_u[kk];
             sumaqchem[icnst] += dconudt_aqchem * dpdry[kk] * fa_u[kk];
             sumwetdep[icnst] +=
-                dconudt_wetdep(kk, icnst) * dpdry[kk] * fa_u[kk];
-            sumresusp[icnst] += dcondt_resusp(kk, icnst) * dpdry[kk];
-            sumprevap[icnst] += dcondt_prevap(kk, icnst) * dpdry[kk];
-            sumprevap_hist[icnst] += dcondt_prevap_hist(kk, icnst) * dpdry[kk];
+                dconudt_wetdep(icnst,kk) * dpdry[kk] * fa_u[kk];
+            sumresusp[icnst] += dcondt_resusp(icnst,kk) * dpdry[kk];
+            sumprevap[icnst] += dcondt_prevap(icnst,kk) * dpdry[kk];
+            sumprevap_hist[icnst] += dcondt_prevap_hist(icnst,kk) * dpdry[kk];
           }
         }
       });
@@ -1183,11 +1183,11 @@ void ma_precpevap_convproc(const ThreadTeam &team, const int ktop,
                        [&](int i) { wd_flux[i] = 0; });
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int kk) {
     for (int i = 0; i < ConvProc::pcnst_extd; ++i)
-      dcondt_prevap(kk, i) = 0;
+      dcondt_prevap(i,kk) = 0;
   });
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int kk) {
     for (int i = 0; i < ConvProc::pcnst_extd; ++i)
-      dcondt_prevap_hist(kk, i) = 0;
+      dcondt_prevap_hist(i,kk) = 0;
   });
 
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, ktop, nlev), [&](int kk) {
@@ -1195,11 +1195,11 @@ void ma_precpevap_convproc(const ThreadTeam &team, const int ktop,
     ma_precpevap(dpdry[kk], evapc[kk], pr_flux, pr_flux_base, pr_flux_tmp,
                  x_ratio);
     // step 2 - precip production and aerosol scavenging
-    auto dcondt_wetdep_sub = Kokkos::subview(dcondt_wetdep, kk, Kokkos::ALL());
-    auto dcondt_sub = Kokkos::subview(dcondt, kk, Kokkos::ALL());
-    auto dcondt_prevap_sub = Kokkos::subview(dcondt_prevap, kk, Kokkos::ALL());
+    auto dcondt_wetdep_sub = Kokkos::subview(dcondt_wetdep, Kokkos::ALL(),kk);
+    auto dcondt_sub = Kokkos::subview(dcondt, Kokkos::ALL(),kk);
+    auto dcondt_prevap_sub = Kokkos::subview(dcondt_prevap, Kokkos::ALL(),kk);
     auto dcondt_prevap_hist_sub =
-        Kokkos::subview(dcondt_prevap_hist, kk, Kokkos::ALL());
+        Kokkos::subview(dcondt_prevap_hist, Kokkos::ALL(),kk);
     ma_precpprod(rprd[kk], dpdry[kk], doconvproc_extd, x_ratio, species_class,
                  mmtoo_prevap_resusp, pr_flux, pr_flux_tmp, pr_flux_base,
                  wd_flux, dcondt_wetdep_sub, dcondt_sub, dcondt_prevap_sub,
@@ -1258,7 +1258,7 @@ void initialize_dcondt(const ThreadTeam &team,
   // initialize variables
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int i) {
     for (int j = 0; j < ConvProc::pcnst_extd; ++j)
-      dcondt(i, j) = 0.;
+      dcondt(j,i) = 0.;
   });
   team.team_barrier();
   // loop from ktop to kbot
@@ -1277,31 +1277,31 @@ void initialize_dcondt(const ThreadTeam &team,
         // number limit of 1)
         Real fluxin = 0, fluxout = 0;
         if (iflux_method != 2) {
-          fluxin = mu[kp1] * conu(kp1, icnst) +
-                   mu[kk] * mam4::min(chat(kk, icnst), gath(km1x, icnst)) -
-                   (md[kk] * cond(kk, icnst) +
-                    md[kp1] * mam4::min(chat(kp1, icnst), gath(kp1x, icnst)));
-          fluxout = mu[kk] * conu(kk, icnst) +
-                    mu[kp1] * mam4::min(chat(kp1, icnst), gath(kk, icnst)) -
-                    (md[kp1] * cond(kp1, icnst) +
-                     md[kk] * mam4::min(chat(kk, icnst), gath(kk, icnst)));
+          fluxin = mu[kp1] * conu(icnst, kp1) +
+                   mu[kk] * mam4::min(chat(icnst,kk), gath( icnst,km1x)) -
+                   (md[kk] * cond(icnst, kk) +
+                    md[kp1] * mam4::min(chat(icnst, kp1), gath(icnst,kp1x)));
+          fluxout = mu[kk] * conu(icnst, kk) +
+                    mu[kp1] * mam4::min(chat(icnst, kp1), gath(icnst, kk)) -
+                    (md[kp1] * cond(icnst, kp1) +
+                     md[kk] * mam4::min(chat(icnst,kk), gath(icnst, kk)));
         } else {
           // new method -- simple upstream method for the env subsidence
           // tmpa = net env mass flux (positive up) at top of layer k
-          fluxin = mu[kp1] * conu(kp1, icnst) - md[kk] * cond(kk, icnst);
-          fluxout = mu[kk] * conu(kk, icnst) - md[kp1] * cond(kp1, icnst);
+          fluxin = mu[kp1] * conu(icnst, kp1) - md[kk] * cond(icnst, kk);
+          fluxout = mu[kk] * conu(icnst, kk) - md[kp1] * cond(icnst, kp1);
           Real tmpa = -(mu[kk] + md[kk]);
           if (tmpa <= 0.0) {
-            fluxin -= tmpa * gath(km1x, icnst);
+            fluxin -= tmpa * gath(icnst, km1x);
           } else {
-            fluxout += tmpa * gath(kk, icnst);
+            fluxout += tmpa * gath(icnst, kk);
           }
           // tmpa = net env mass flux (positive up) at base of layer k
           tmpa = -(mu[kp1] + md[kp1]);
           if (tmpa >= 0.0) {
-            fluxin += tmpa * gath(kp1x, icnst);
+            fluxin += tmpa * gath(icnst, kp1x);
           } else {
-            fluxout -= tmpa * gath(kk, icnst);
+            fluxout -= tmpa * gath(icnst, kk);
           }
         }
         //  net flux [kg/kg/s * mb]
@@ -1312,8 +1312,8 @@ void initialize_dcondt(const ThreadTeam &team,
         // into a subroutine, but for some reason it doesn't give consistent
         // dcondt values. have to leave them here.   Shuaiqi Tang, 2022
         const Real netsrce =
-            fa_u_dp * (dconudt_activa(kk, icnst) + dconudt_wetdep(kk, icnst));
-        dcondt(kk, icnst) = (netflux + netsrce) / dpdry[kk];
+            fa_u_dp * (dconudt_activa(icnst,kk) + dconudt_wetdep(icnst,kk));
+        dcondt(icnst,kk) = (netflux + netsrce) / dpdry[kk];
       }
     }
   });
@@ -1344,8 +1344,8 @@ void compute_downdraft_mixing_ratio(
    in kbot                     ! bottom level index
    in md_i[nlev+1]              ! md at current i (note nlev+1 dimension) [mb/s]
    in eddp[nlev]               ! ed(i,k)*dp(i,k) at current i [mb/s]
-   in gath[nlev,(pcnst_extd]  ! gathered tracer array [kg/kg]
-   inout  cond[nlev+1,pcnst_extd,nlev+1] ! mix ratio in downdraft at interfaces [kg/kg]
+   in gath[pcnst_extd,nlev]    ! gathered tracer array [kg/kg]
+   inout  cond[pcnst_extd,nlev+1] ! mix ratio in downdraft at interfaces [kg/kg]
   */
   // clang-format on
   // threshold below which we treat the mass fluxes as zero [mb/s]
@@ -1360,8 +1360,8 @@ void compute_downdraft_mixing_ratio(
           // k,kk+1
           const Real md_m_eddp = md_i[kk] - eddp[kk];
           if (md_m_eddp < -mbsth) {
-            cond(kk + 1, icnst) =
-                (md_i[kk] * cond(kk, icnst) - eddp[kk] * gath(kk, icnst)) /
+            cond(icnst, kk+1) =
+                (md_i[kk] * cond(icnst,kk) - eddp[kk] * gath(icnst,kk)) /
                 md_m_eddp;
           }
         }
@@ -1751,10 +1751,10 @@ void initialize_tmr_array(
   in :: doconvproc_extd[pcnst_extd] ! flag for doing convective transport
   in :: q[nlev][pcnst]          ! q[icol][kk][icnst] at current icol
 
-  out :: gath[nlev  ][pcnst_extd]   ! gathered tracer array [kg/kg]
-  out :: chat[nlev+1][pcnst_extd]   ! mix ratio in env at interfaces [kg/kg]
-  out :: conu[nlev+1][pcnst_extd]   ! mix ratio in updraft at interfaces [kg/kg]
-  out :: cond[nlev+1][pcnst_extd]   ! mix ratio in downdraft at interfaces [kg/kg]
+  out :: gath[pcnst_extd][nlev  ]   ! gathered tracer array [kg/kg]
+  out :: chat[pcnst_extd][nlev+1]   ! mix ratio in env at interfaces [kg/kg]
+  out :: conu[pcnst_extd][nlev+1]   ! mix ratio in updraft at interfaces [kg/kg]
+  out :: cond[pcnst_extd][nlev+1]   ! mix ratio in downdraft at interfaces [kg/kg]
   */
   // clang-format on
 
@@ -1770,7 +1770,7 @@ void initialize_tmr_array(
   // initiate variables
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int j) {
     for (int i = 0; i < pcnst_extd; ++i)
-      gath(j, i) = 0;
+      gath(i, j) = 0;
   });
   team.team_barrier();
   // The indexing started at 2 for Fortran, so 1 for C++
@@ -1778,14 +1778,14 @@ void initialize_tmr_array(
     if (doconvproc_extd[icnst]) {
       // Gather up the constituent
       Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev),
-                           [&](int kk) { gath(kk, icnst) = q(kk, icnst); });
+                           [&](int kk) { gath(icnst, kk) = q(kk, icnst); });
     }
   }
   team.team_barrier();
 
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev + 1), [&](int j) {
     for (int i = 0; i < pcnst_extd; ++i)
-      chat(j, i) = conu(j, i) = cond(j, i) = 0;
+      chat(i,j) = conu(i,j) = cond(i,j) = 0;
   });
 
   // The indexing started at 2 for Fortran, so 1 for C++
@@ -1797,14 +1797,14 @@ void initialize_tmr_array(
         // get relative difference between the two levels
 
         // min gath concentration at level kk and kk-1 [kg/kg]
-        const Real min_con = mam4::min(gath(km1, icnst), gath(kk, icnst));
+        const Real min_con = mam4::min(gath(icnst, km1), gath(icnst, kk));
         // max gath concentration at level kk and kk-1 [kg/kg]
-        const Real max_con = mam4::max(gath(km1, icnst), gath(kk, icnst));
+        const Real max_con = mam4::max(gath(icnst, km1), gath(icnst, kk));
 
         // relative difference between level kk and kk-1 [unitless]
         const Real c_dif_rel =
             min_con < 0 ? 0
-                        : mam4::abs(gath(kk, icnst) - gath(km1, icnst)) /
+                        : mam4::abs(gath(icnst, kk) - gath(icnst, km1)) /
                               mam4::max(max_con, small_con);
 
         // If the two layers differ significantly use a geometric averaging
@@ -1812,24 +1812,24 @@ void initialize_tmr_array(
         // simple averaging which is used in subr cmfmca
         if (iconvtype != 1) {
           // simple averaging for non-deep convection
-          chat(kk, icnst) = 0.5 * (gath(kk, icnst) + gath(km1, icnst));
+          chat(icnst, kk) = 0.5 * (gath(icnst, kk) + gath(icnst, km1));
         } else if (c_dif_rel > small_rel) {
           // deep convection using geometric averaging
 
           // gath at the above (kk-1 level) [kg/kg]
-          const Real c_above = mam4::max(gath(km1, icnst), max_con * 1.e-12);
+          const Real c_above = mam4::max(gath(icnst, km1), max_con * 1.e-12);
 
           // gath at the below (kk level) [kg/kg]
-          const Real c_below = mam4::max(gath(kk, icnst), max_con * 1.e-12);
-          chat(kk, icnst) = mam4::log(c_above / c_below) / (c_above - c_below) *
+          const Real c_below = mam4::max(gath(icnst,kk), max_con * 1.e-12);
+          chat(icnst, kk) = mam4::log(c_above / c_below) / (c_above - c_below) *
                             c_above * c_below;
         } else {
           // Small diff, so just arithmetic mean
-          chat(kk, icnst) = 0.5 * (gath(kk, icnst) + gath(km1, icnst));
+          chat(icnst, kk) = 0.5 * (gath(icnst, kk) + gath(icnst, km1));
         }
         // Set provisional up and down draft values, and tendencies
-        conu(kk, icnst) = chat(kk, icnst);
-        cond(kk, icnst) = chat(kk, icnst);
+        conu(icnst, kk) = chat(icnst, kk);
+        cond(icnst, kk) = chat(icnst, kk);
       });
     }
   }
@@ -1837,9 +1837,9 @@ void initialize_tmr_array(
   for (int icnst = 1; icnst < ncnst; ++icnst) {
     if (doconvproc_extd[icnst]) {
       // Values at surface inferface == values in lowest layer
-      chat(nlev, icnst) = gath(nlev - 1, icnst);
-      conu(nlev, icnst) = gath(nlev - 1, icnst);
-      cond(nlev, icnst) = gath(nlev - 1, icnst);
+      chat(icnst,nlev ) = gath(icnst, nlev-1);
+      conu(icnst,nlev ) = gath(icnst, nlev-1);
+      cond(icnst,nlev ) = gath(icnst, nlev-1);
     }
   }
 }
@@ -2331,7 +2331,7 @@ void compute_updraft_mixing_ratio(
   const int pcnst_extd = ConvProc::pcnst_extd;
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev + 1), [&](int i) {
     for (int j = 0; j < pcnst_extd; ++j)
-      dconudt_wetdep(i, j) = dconudt_activa(i, j) = 0.0;
+      dconudt_wetdep(j,i) = dconudt_activa(j,i) = 0.0;
   });
 
   Kokkos::pair<Real, int> xx_base;
@@ -2380,8 +2380,8 @@ void compute_updraft_mixing_ratio(
             // are not independent!
             for (int icnst = 1; icnst < pcnst_extd; ++icnst) {
               if (doconvproc_extd[icnst]) {
-                conu(kk, icnst) =
-                    (1.0 - f_ent) * conu(kp1, icnst) + f_ent * gath(kk, icnst);
+                conu(icnst,kk) =
+                    (1.0 - f_ent) * conu(icnst, kp1) + f_ent * gath(icnst, kk);
               }
             }
 
@@ -2404,8 +2404,8 @@ void compute_updraft_mixing_ratio(
 
             // aerosol activation - method 2
             auto dconudt_activa_sub =
-                Kokkos::subview(dconudt_activa, kk, Kokkos::ALL());
-            auto conu_sub = Kokkos::subview(conu, kk, Kokkos::ALL());
+                Kokkos::subview(dconudt_activa, Kokkos::ALL(), kk);
+            auto conu_sub = Kokkos::subview(conu, Kokkos::ALL(),kk);
             compute_activation_tend(
                 aero_species, f_ent, cldfrac_i, rhoair[kk], mu[kk], mu[kk + 1],
                 dt_u, wup_kk, icwmr[kk], temperature[kk], kk, kactcnt,
@@ -2417,7 +2417,7 @@ void compute_updraft_mixing_ratio(
             // effect the calculation of conu[kp1] in the next iteration through
             // the loop over levels. This loop can NOT be parallelized over kk!
             auto dconudt_wetdep_sub =
-                Kokkos::subview(dconudt_wetdep, kk, Kokkos::ALL());
+                Kokkos::subview(dconudt_wetdep, Kokkos::ALL(),kk);
             compute_wetdep_tend(doconvproc_extd, dt, dt_u, dp[kk], cldfrac_i,
                                 mu_p_eudp, aqfrac, icwmr[kk], rprd[kk],
                                 conu_sub, dconudt_wetdep_sub);
@@ -2580,32 +2580,32 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
   //  cond(nlev+1,pcnst_extd)   ! mix ratio in downdraft at interfaces [kg/kg]
   //  conu(nlev+1,pcnst_extd)   ! mix ratio in updraft at interfaces [kg/kg]
   Kokkos_2D_View gath =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::gath].data(), nlev,
-          pcnst_extd);
+      Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+          scratch1Dviews[ConvProc::Col1DViewInd::gath].data(), 
+          pcnst_extd,nlev);
   Kokkos_2D_View chat =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::chat].data(), nlev + 1,
-          pcnst_extd);
+      Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+          scratch1Dviews[ConvProc::Col1DViewInd::chat].data(), 
+          pcnst_extd, nlev + 1);
   Kokkos_2D_View cond =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::cond].data(), nlev + 1,
-          pcnst_extd);
+      Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+          scratch1Dviews[ConvProc::Col1DViewInd::cond].data(), 
+          pcnst_extd, nlev + 1);
   Kokkos_2D_View conu =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::conu].data(), nlev + 1,
-          pcnst_extd);
+      Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+          scratch1Dviews[ConvProc::Col1DViewInd::conu].data(), 
+          pcnst_extd, nlev + 1);
 
   // dconudt_activa(nlev+1,pcnst_extd) ! d(conu)/dt by activation [kg/kg/s]
   // dconudt_wetdep(nlev+1,pcnst_extd) ! d(conu)/dt by wet removal [kg/kg/s]
   Kokkos_2D_View dconudt_activa =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
+      Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
           scratch1Dviews[ConvProc::Col1DViewInd::dconudt_activa].data(),
-          nlev + 1, pcnst_extd);
+          pcnst_extd, nlev + 1);
   Kokkos_2D_View dconudt_wetdep =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
+      Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
           scratch1Dviews[ConvProc::Col1DViewInd::dconudt_wetdep].data(),
-          nlev + 1, pcnst_extd);
+          pcnst_extd, nlev + 1);
 
   // fa_u(nlev)           ! fractional area of in the updraft [fraction]
   Kokkos::View<Real *> fa_u = scratch1Dviews[ConvProc::Col1DViewInd::fa_u];
@@ -2613,9 +2613,9 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
   // dcondt(nlev,pcnst_extd)  ! grid-average TMR tendency for current column
   // [kg/kg/s]
   Kokkos_2D_View dcondt =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::dcondt].data(), nlev,
-          pcnst_extd);
+      Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+          scratch1Dviews[ConvProc::Col1DViewInd::dcondt].data(), 
+          pcnst_extd, nlev);
 
   // dcondt_wetdep(nlev,pcnst_extd) ! portion of dcondt from wet deposition
   // [kg/kg/s] dcondt_prevap(nlev, pcnst_extd) ! portion of dcondt from precip
@@ -2623,21 +2623,21 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
   // used for history output [kg/kg/s] dcondt_resusp(nlev, pcnst_extd) ! portion
   // of dcondt from resuspension [kg/kg/s]
   Kokkos_2D_View dcondt_wetdep =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::dcondt_wetdep].data(), nlev,
-          pcnst_extd);
+      Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+          scratch1Dviews[ConvProc::Col1DViewInd::dcondt_wetdep].data(), 
+          pcnst_extd, nlev);
   Kokkos_2D_View dcondt_prevap =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::dcondt_prevap].data(), nlev,
-          pcnst_extd);
+      Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+          scratch1Dviews[ConvProc::Col1DViewInd::dcondt_prevap].data(), 
+          pcnst_extd, nlev);
   Kokkos_2D_View dcondt_prevap_hist =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
+      Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
           scratch1Dviews[ConvProc::Col1DViewInd::dcondt_prevap_hist].data(),
-          nlev, pcnst_extd);
+          pcnst_extd, nlev);
   Kokkos_2D_View dcondt_resusp =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::dcondt_resusp].data(), nlev,
-          pcnst_extd);
+      Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+          scratch1Dviews[ConvProc::Col1DViewInd::dcondt_resusp].data(), 
+          pcnst_extd, nlev);
 
   // sumactiva(pcnst_extd)    ! sum (over layers) of dp*dconudt_activa [kg/kg/s]
   // sumaqchem(pcnst_extd)    ! sum (over layers) of dp*dconudt_aqchem [kg/kg/s]
@@ -2756,7 +2756,7 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
     // compute dcondt_wetdep for next subroutine
     Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int i) {
       for (int j = 0; j < pcnst_extd; ++j)
-        dcondt_wetdep(i, j) = 0.0;
+        dcondt_wetdep(j,i) = 0.0;
     });
     team.team_barrier();
     Kokkos::parallel_for(
@@ -2766,8 +2766,8 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
           // The indexing started at 2 for Fortran, so 1 for C++
           for (int icnst = 1; icnst < pcnst_extd; ++icnst) {
             if (doconvproc_extd[icnst]) {
-              dcondt_wetdep(kk, icnst) =
-                  fa_u_dp * dconudt_wetdep(kk, icnst) / dpdry[kk];
+              dcondt_wetdep(icnst,kk) =
+                  fa_u_dp * dconudt_wetdep(icnst, kk) / dpdry[kk];
             }
           }
         });
@@ -2798,8 +2798,8 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
     Kokkos::parallel_for(
         Kokkos::TeamVectorRange(team, ktop, kbot_prevap), [&](int kk) {
           ma_resuspend_convproc(
-              Kokkos::subview(dcondt, kk, Kokkos::ALL()),
-              Kokkos::subview(dcondt_resusp, kk, Kokkos::ALL()));
+              Kokkos::subview(dcondt, Kokkos::ALL(), kk),
+              Kokkos::subview(dcondt_resusp, Kokkos::ALL()), kk);
         });
     team.team_barrier();
 
@@ -2821,7 +2821,7 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
     Kokkos::parallel_for(
         Kokkos::TeamVectorRange(team, ktop, kbot_prevap), [&](int kk) {
           update_tendency_final(ntsub, jtsub, pcnst, dt,
-                                Kokkos::subview(dcondt, kk, Kokkos::ALL()),
+                                Kokkos::subview(dcondt, Kokkos::ALL(),kk),
                                 doconvproc,
                                 Kokkos::subview(dqdt, kk, Kokkos::ALL()),
                                 Kokkos::subview(q, kk, Kokkos::ALL()));
