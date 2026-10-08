@@ -55,7 +55,7 @@ struct AerosolState {
 
 struct GasState {
   // mapping of gas names to their mass mixing ratios (column data)
-  std::map<std::string, std::vector<Real>> gases;
+  std::map<std::string, std::vector<Real>> mass_mixing_ratios;
 };
 
 struct Config {

@@ -46,6 +46,9 @@ int main(int argc, char *argv[]) {
   }
 
   auto config = mamboxx::read_config(args.filename);
+  auto result = mamboxx::run(config);
+
+  // TODO: show results!
 
   return 0;
 }

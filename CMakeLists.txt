@@ -22,7 +22,7 @@ endif()
 # are we building as part of EAMxx, or in standalone mode?
 if (NOT DEFINED EAMXX_VERSION_MAJOR)
   set(MAM4XX_STANDALONE ON)
-  set(CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD 17)
   set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # emit compile_commands.json for use with clangd
 else()
   set(MAM4XX_STANDALONE OFF)
@@ -185,6 +185,12 @@ if (MAM4XX_STANDALONE)
     ${ekat_SOURCE_DIR}/extern/kokkos/core/src
     ${ekat_SOURCE_DIR}/extern/Catch2/single_include
   )
+  if (MAM4XX_ENABLE_BOXMODEL)
+    set(EKAT_INCLUDE_DIRS ${EKAT_INCLUDE_DIRS}
+      ${ekat_SOURCE_DIR}/src/core
+      ${ekat_SOURCE_DIR}/src/parser
+    )
+  endif()
   set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ekat_SOURCE_DIR}/cmake/")
   if (MAM4XX_ENABLE_GPU)
     if ("${MAM4XX_DEVICE_ARCH}" MATCHES "AMD")
@@ -202,7 +208,6 @@ if (MAM4XX_STANDALONE)
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --expt-extended-lambda --expt-relaxed-constexpr")
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xcudafe --diag_suppress=esa_on_defaulted_function_ignored")
     endif()
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DKokkos_CXX_STANDARD=C++17")
   endif()
 endif()
 
