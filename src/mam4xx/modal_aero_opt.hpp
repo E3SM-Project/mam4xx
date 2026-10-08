@@ -518,7 +518,7 @@ KOKKOS_INLINE_FUNCTION void compute_calcsize_and_water_uptake_dr(
                                                  dgnumwet_m_kk, qaerwat_m_kk);
 } // compute_calcsize_water_uptake_dr
 
-template <typename VectorType>
+template <typename VectorType, typename View2DType>
 KOKKOS_INLINE_FUNCTION void modal_aero_sw_wo_diagnostics_k(
     const Real &pdeldry, const Real &pmid, const Real &temperature, Real &cldn,
     const VectorType &state_q_kk, // in
@@ -526,8 +526,8 @@ KOKKOS_INLINE_FUNCTION void modal_aero_sw_wo_diagnostics_k(
     const Real &dt, const AerosolOpticsDeviceData &aersol_optics_data,
     const CalcsizeData &calcsizedata,
     // outputs
-    const View2D &tauxar, const View2D &wa, const View2D &ga,
-    const View2D &fa) {
+    const View2DType &tauxar, const View2DType &wa, const View2DType &ga,
+    const View2DType &fa) {
 
   const Real xrmax = mam4::log(rmmax);
   //  calculates aerosol sw radiative properties
