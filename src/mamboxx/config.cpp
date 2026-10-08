@@ -3,11 +3,15 @@
 // National Technology & Engineering Solutions of Sandia, LLC (NTESS)
 // SPDX-License-Identifier: BSD-3-Clause
 
+#include "ekat_assert.hpp"
+#include "ekat_parameter_list.hpp"
 #include "mamboxx.hpp"
 #include <mam4xx/mam4_math.hpp>
 
 #include <ekat_assert.hpp>
 #include <ekat_parameter_list.hpp>
+#include <ekat_yaml.hpp>
+
 #include <ekat_yaml.hpp>
 
 namespace mamboxx {
