@@ -604,9 +604,8 @@ public:
 
 namespace convproc {
 using Const_Kokkos_2D_View =
-    Kokkos::View<const Real * [ConvProc::pcnst_extd], Kokkos::MemoryUnmanaged>;
-using Kokkos_2D_View =
-    Kokkos::View<Real * [ConvProc::pcnst_extd], Kokkos::MemoryUnmanaged>;
+    Kokkos::View<const Real **, Kokkos::MemoryUnmanaged>;
+using Kokkos_2D_View = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>;
 
 KOKKOS_INLINE_FUNCTION
 void assign_la_lc(const int imode, const int ispec, int &la, int &lc) {
@@ -633,15 +632,16 @@ static constexpr int nsrflx = 6;
 // clang-format off
 KOKKOS_INLINE_FUNCTION
 void update_tendency_diagnostics(
+    const ThreadTeam &team,
     const int ntsub,   // IN  number of sub timesteps
     const int ncnst,   // IN  number of tracers to transport
     const bool doconvproc[], // IN  flag for doing convective transport
-    Real sumactiva[ConvProc::pcnst_extd], // INOUT sum (over layers) of dp*dconudt_activa [kg/kg/s * mb]
-    Real sumaqchem[ConvProc::pcnst_extd], // INOUT sum (over layers) of dp*dconudt_aqchem [kg/kg/s * mb]
-    Real sumwetdep[ConvProc::pcnst_extd], // INOUT sum (over layers) of dp*dconudt_wetdep [kg/kg/s * mb]
-    Real sumresusp[ConvProc::pcnst_extd], // INOUT sum (over layers) of dp*dcondt_resusp [kg/kg/s * mb]
-    Real sumprevap[ConvProc::pcnst_extd], // INOUT sum (over layers) of dp*dcondt_prevap [kg/kg/s * mb]
-    Real sumprevap_hist[ConvProc::pcnst_extd],// INOUT sum (over layers) of dp*dcondt_prevap_hist [kg/kg/s * mb]
+    const ColumnView &sumactiva, // INOUT sum (over layers) of dp*dconudt_activa [kg/kg/s * mb]
+    const ColumnView &sumaqchem, // INOUT sum (over layers) of dp*dconudt_aqchem [kg/kg/s * mb]
+    const ColumnView &sumwetdep, // INOUT sum (over layers) of dp*dconudt_wetdep [kg/kg/s * mb]
+    const ColumnView &sumresusp, // INOUT sum (over layers) of dp*dcondt_resusp [kg/kg/s * mb]
+    const ColumnView &sumprevap, // INOUT sum (over layers) of dp*dcondt_prevap [kg/kg/s * mb]
+    const ColumnView &sumprevap_hist,// INOUT sum (over layers) of dp*dcondt_prevap_hist [kg/kg/s * mb]
     Real qsrflx[/* aero_model::pcnst */][nsrflx]) // INOUT process-specific column tracer tendencies [kg/m2/s]
 {
 
@@ -664,22 +664,26 @@ void update_tendency_diagnostics(
 
   EKAT_KERNEL_REQUIRE(aero_model::pcnst == ncnst);
   const int ntot_amode = AeroConfig::num_modes();
-  int la = 0, lc = 0;
   // update diagnostic variables
-  for (int imode = 0; imode < ntot_amode; ++imode) {
-    for (int ispec = -1; ispec < num_species_mode(imode); ++ispec) {
-      // cloudborne aerosols are appended after intersitial
-      assign_la_lc(imode, ispec, la, lc);
-      if (doconvproc[la]) {
-        sumactiva[la] += sumactiva[lc];
-        sumresusp[la] += sumresusp[lc];
-        sumaqchem[la] += sumaqchem[lc];
-        sumwetdep[la] += sumwetdep[lc];
-        sumprevap[la] += sumprevap[lc];
-        sumprevap_hist[la] += sumprevap_hist[lc];
-      }
-    }
-  }
+  Kokkos::parallel_for(
+      Kokkos::TeamVectorRange(team, ntot_amode), [&](int imode) {
+        for (int ispec = -1; ispec < num_species_mode(imode); ++ispec) {
+          int la = 0, lc = 0;
+          // cloudborne aerosols are appended after intersitial
+          assign_la_lc(imode, ispec, la, lc);
+          if (doconvproc[la]) {
+            // Note: la < lc and there is no overlap so these can be done in
+            // parallel
+            sumactiva[la] += sumactiva[lc];
+            sumresusp[la] += sumresusp[lc];
+            sumaqchem[la] += sumaqchem[lc];
+            sumwetdep[la] += sumwetdep[lc];
+            sumprevap[la] += sumprevap[lc];
+            sumprevap_hist[la] += sumprevap_hist[lc];
+          }
+        }
+      });
+  team.team_barrier();
   // scatter overall tendency back to full array
   // The indexing started at 2 for Fortran, so 1 for C++
   const Real hund_ovr_g = 100.0 / Constants::gravity;
@@ -766,50 +770,57 @@ void update_tendency_final(
 //
 KOKKOS_INLINE_FUNCTION
 void compute_column_tendency(
+  const ThreadTeam &team,
   const bool doconvproc_extd[ConvProc::pcnst_extd],  // IN flag for doing convective transport
   const int ktop,                                    // IN top level index
   const int kbot_prevap,                             // IN bottom level index, for resuspension and evaporation only
-  const Real dpdry[/*nlev*/],                        // IN dp [mb]
+  const ConstColumnView &dpdry,                        // IN dp [mb]
   Const_Kokkos_2D_View dcondt_resusp,      // IN nlev - portion of TMR tendency due to resuspension [kg/kg/s]
   Const_Kokkos_2D_View dcondt_prevap,      // IN nlev - portion of TMR tendency due to precip evaporation [kg/kg/s]
   Const_Kokkos_2D_View dcondt_prevap_hist, // IN nlev - portion of TMR tendency due to precip evaporation, goes into the history [kg/kg/s]
   Const_Kokkos_2D_View dconudt_activa,     // IN nlevp- d(conu)/dt by activation [kg/kg/s]
   Const_Kokkos_2D_View dconudt_wetdep,     // IN nlevp- d(conu)/dt by wet removal[kg/kg/s]
-  const Real fa_u[/*nlev*/],                       //  IN  fractional area of the updraft [fraction]
-  Real sumactiva[ConvProc::pcnst_extd],  //  IN/OUT sum (over layers) of dp*dconudt_activa [kg/kg/s * mb] 
-  Real sumaqchem[ConvProc::pcnst_extd],  //  IN/OUT sum (over layers) of dp*dconudt_aqchem [kg/kg/s * mb]
-  Real sumwetdep[ConvProc::pcnst_extd],  //  IN/OUT sum (over layers) of dp*dconudt_wetdep [kg/kg/s * mb]
-  Real sumresusp[ConvProc::pcnst_extd],  //  IN/OUT sum (over layers) of dp*dconudt_resusp [kg/kg/s * mb]
-  Real sumprevap[ConvProc::pcnst_extd],  //  IN/OUT sum (over layers) of dp*dconudt_prevap [kg/kg/s * mb]
-  Real sumprevap_hist[ConvProc::pcnst_extd]) // IN/OUT sum (over layers) of dp*dconudt_prevap_hist [kg/kg/s * mb]
+  const ConstColumnView &fa_u,                       //  IN  fractional area of the updraft [fraction]
+  const ColumnView &sumactiva,  //  IN/OUT sum (over layers) of dp*dconudt_activa [kg/kg/s * mb] 
+  const ColumnView &sumaqchem,  //  IN/OUT sum (over layers) of dp*dconudt_aqchem [kg/kg/s * mb]
+  const ColumnView &sumwetdep,  //  IN/OUT sum (over layers) of dp*dconudt_wetdep [kg/kg/s * mb]
+  const ColumnView &sumresusp,  //  IN/OUT sum (over layers) of dp*dconudt_resusp [kg/kg/s * mb]
+  const ColumnView &sumprevap,  //  IN/OUT sum (over layers) of dp*dconudt_prevap [kg/kg/s * mb]
+  const ColumnView &sumprevap_hist) // IN/OUT sum (over layers) of dp*dconudt_prevap_hist [kg/kg/s * mb]
 {
   // clang-format on
   const Real dconudt_aqchem = 0; // aqueous chemistry is ignored in current code
   // initialize variables
-  for (int i = 0; i < ConvProc::pcnst_extd; ++i) {
+  const int pcnst_extd = ConvProc::pcnst_extd;
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, pcnst_extd), [&](int i) {
     sumactiva[i] = 0;
     sumaqchem[i] = 0;
     sumwetdep[i] = 0;
     sumresusp[i] = 0;
     sumprevap[i] = 0;
     sumprevap_hist[i] = 0;
-  }
+  });
+  team.team_barrier();
 
   // The indexing started at 2 for Fortran, so 1 for C++
-  for (int icnst = 1; icnst < ConvProc::pcnst_extd; ++icnst) {
-    if (doconvproc_extd[icnst]) {
-      // should go to kk=nlev for dcondt_prevap, and this should be safe for
-      // other sums
-      for (int kk = ktop; kk < kbot_prevap; ++kk) {
-        sumactiva[icnst] += dconudt_activa(kk, icnst) * dpdry[kk] * fa_u[kk];
-        sumaqchem[icnst] += dconudt_aqchem * dpdry[kk] * fa_u[kk];
-        sumwetdep[icnst] += dconudt_wetdep(kk, icnst) * dpdry[kk] * fa_u[kk];
-        sumresusp[icnst] += dcondt_resusp(kk, icnst) * dpdry[kk];
-        sumprevap[icnst] += dcondt_prevap(kk, icnst) * dpdry[kk];
-        sumprevap_hist[icnst] += dcondt_prevap_hist(kk, icnst) * dpdry[kk];
-      }
-    }
-  }
+  Kokkos::parallel_for(
+      Kokkos::TeamVectorRange(team, 1, pcnst_extd), [&](int icnst) {
+        if (doconvproc_extd[icnst]) {
+          // should go to kk=nlev for dcondt_prevap, and this should be safe for
+          // other sums
+          for (int kk = ktop; kk < kbot_prevap; ++kk) {
+            sumactiva[icnst] +=
+                dconudt_activa(icnst, kk) * dpdry[kk] * fa_u[kk];
+            sumaqchem[icnst] += dconudt_aqchem * dpdry[kk] * fa_u[kk];
+            sumwetdep[icnst] +=
+                dconudt_wetdep(icnst, kk) * dpdry[kk] * fa_u[kk];
+            sumresusp[icnst] += dcondt_resusp(icnst, kk) * dpdry[kk];
+            sumprevap[icnst] += dcondt_prevap(icnst, kk) * dpdry[kk];
+            sumprevap_hist[icnst] += dcondt_prevap_hist(icnst, kk) * dpdry[kk];
+          }
+        }
+      });
+  team.team_barrier();
 }
 // =========================================================================================
 template <typename SubView>
@@ -1064,11 +1075,11 @@ ma_precpprod(const Real rprd, const Real dpdry,
 }
 // =========================================================================================
 KOKKOS_INLINE_FUNCTION
-void ma_precpevap_convproc(const int ktop, const int nlev,
-                           Const_Kokkos_2D_View dcondt_wetdep,
-                           const Real rprd[/* nlev */],
-                           const Real evapc[/* nlev */],
-                           const Real dpdry[/* nlev */],
+void ma_precpevap_convproc(const ThreadTeam &team, const int ktop,
+                           const int nlev, Const_Kokkos_2D_View dcondt_wetdep,
+                           const ConstColumnView &rprd,
+                           const ConstColumnView &evapc,
+                           const ConstColumnView &dpdry,
                            const bool doconvproc_extd[ConvProc::pcnst_extd],
                            const int species_class[aero_model::pcnst],
                            const int mmtoo_prevap_resusp[aero_model::pcnst],
@@ -1166,30 +1177,33 @@ void ma_precpevap_convproc(const int ktop, const int nlev,
   Real x_ratio = 0;
 
   // tracer wet deposition flux at base of current layer [(kg/kg/s)*mb]
-  for (int i = 0; i < ConvProc::pcnst_extd; ++i)
-    wd_flux[i] = 0;
-  for (int kk = 0; kk < nlev; ++kk)
+  const int pcnst_extd = ConvProc::pcnst_extd;
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, pcnst_extd),
+                       [&](int i) { wd_flux[i] = 0; });
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int kk) {
     for (int i = 0; i < ConvProc::pcnst_extd; ++i)
-      dcondt_prevap(kk, i) = 0;
-  for (int kk = 0; kk < nlev; ++kk)
+      dcondt_prevap(i, kk) = 0;
+  });
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int kk) {
     for (int i = 0; i < ConvProc::pcnst_extd; ++i)
-      dcondt_prevap_hist(kk, i) = 0;
+      dcondt_prevap_hist(i, kk) = 0;
+  });
 
-  for (int kk = ktop; kk < nlev; ++kk) {
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, ktop, nlev), [&](int kk) {
     // step 1 - precip evaporation and aerosol resuspension
     ma_precpevap(dpdry[kk], evapc[kk], pr_flux, pr_flux_base, pr_flux_tmp,
                  x_ratio);
     // step 2 - precip production and aerosol scavenging
-    auto dcondt_wetdep_sub = Kokkos::subview(dcondt_wetdep, kk, Kokkos::ALL());
-    auto dcondt_sub = Kokkos::subview(dcondt, kk, Kokkos::ALL());
-    auto dcondt_prevap_sub = Kokkos::subview(dcondt_prevap, kk, Kokkos::ALL());
+    auto dcondt_wetdep_sub = Kokkos::subview(dcondt_wetdep, Kokkos::ALL(), kk);
+    auto dcondt_sub = Kokkos::subview(dcondt, Kokkos::ALL(), kk);
+    auto dcondt_prevap_sub = Kokkos::subview(dcondt_prevap, Kokkos::ALL(), kk);
     auto dcondt_prevap_hist_sub =
-        Kokkos::subview(dcondt_prevap_hist, kk, Kokkos::ALL());
+        Kokkos::subview(dcondt_prevap_hist, Kokkos::ALL(), kk);
     ma_precpprod(rprd[kk], dpdry[kk], doconvproc_extd, x_ratio, species_class,
                  mmtoo_prevap_resusp, pr_flux, pr_flux_tmp, pr_flux_base,
                  wd_flux, dcondt_wetdep_sub, dcondt_sub, dcondt_prevap_sub,
                  dcondt_prevap_hist_sub);
-  }
+  });
 }
 
 // =========================================================================================
@@ -1197,17 +1211,18 @@ void ma_precpevap_convproc(const int ktop, const int nlev,
 // sets a SINGLE level on output for the loop over ktop to kbot.  So, it should
 // be possible to input kk and then call in parallel from ktop to kbot.
 KOKKOS_INLINE_FUNCTION
-void initialize_dcondt(const bool doconvproc_extd[ConvProc::pcnst_extd],
+void initialize_dcondt(const ThreadTeam &team,
+                       const bool doconvproc_extd[ConvProc::pcnst_extd],
                        const int iflux_method, const int ktop, const int kbot,
-                       const int nlev, const Real dpdry[/* nlev */],
-                       const Real fa_u[/* nlev */], const Real mu[/* nlev+1 */],
-                       const Real md[/* nlev+1 */], Const_Kokkos_2D_View chat,
+                       const int nlev, const ConstColumnView &dpdry,
+                       const ConstColumnView &fa_u, const ConstColumnView &mu,
+                       const ConstColumnView &md, Const_Kokkos_2D_View chat,
                        Const_Kokkos_2D_View gath, Const_Kokkos_2D_View conu,
                        Const_Kokkos_2D_View cond,
                        Const_Kokkos_2D_View dconudt_activa,
                        Const_Kokkos_2D_View dconudt_wetdep,
-                       const Real dudp[/* nlev */], const Real dddp[/* nlev */],
-                       const Real eudp[/* nlev */], const Real eddp[/* nlev */],
+                       const ConstColumnView &dudp, const ConstColumnView &dddp,
+                       const ConstColumnView &eudp, const ConstColumnView &eddp,
                        Kokkos_2D_View dcondt) {
   // clang-format off
   // -----------------------------------------------------------------------
@@ -1240,12 +1255,13 @@ void initialize_dcondt(const bool doconvproc_extd[ConvProc::pcnst_extd],
   */
   // clang-format on
   // initialize variables
-  for (int i = 0; i < nlev; ++i)
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int i) {
     for (int j = 0; j < ConvProc::pcnst_extd; ++j)
-      dcondt(i, j) = 0.;
-
+      dcondt(j, i) = 0.;
+  });
+  team.team_barrier();
   // loop from ktop to kbot
-  for (int kk = ktop; kk < kbot; ++kk) {
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, ktop, kbot), [&](int kk) {
     const int kp1 = kk + 1;
     const int kp1x = mam4::min(kp1, nlev - 1);
     const int km1x = mam4::max(kk - 1, 0);
@@ -1260,31 +1276,31 @@ void initialize_dcondt(const bool doconvproc_extd[ConvProc::pcnst_extd],
         // number limit of 1)
         Real fluxin = 0, fluxout = 0;
         if (iflux_method != 2) {
-          fluxin = mu[kp1] * conu(kp1, icnst) +
-                   mu[kk] * mam4::min(chat(kk, icnst), gath(km1x, icnst)) -
-                   (md[kk] * cond(kk, icnst) +
-                    md[kp1] * mam4::min(chat(kp1, icnst), gath(kp1x, icnst)));
-          fluxout = mu[kk] * conu(kk, icnst) +
-                    mu[kp1] * mam4::min(chat(kp1, icnst), gath(kk, icnst)) -
-                    (md[kp1] * cond(kp1, icnst) +
-                     md[kk] * mam4::min(chat(kk, icnst), gath(kk, icnst)));
+          fluxin = mu[kp1] * conu(icnst, kp1) +
+                   mu[kk] * mam4::min(chat(icnst, kk), gath(icnst, km1x)) -
+                   (md[kk] * cond(icnst, kk) +
+                    md[kp1] * mam4::min(chat(icnst, kp1), gath(icnst, kp1x)));
+          fluxout = mu[kk] * conu(icnst, kk) +
+                    mu[kp1] * mam4::min(chat(icnst, kp1), gath(icnst, kk)) -
+                    (md[kp1] * cond(icnst, kp1) +
+                     md[kk] * mam4::min(chat(icnst, kk), gath(icnst, kk)));
         } else {
           // new method -- simple upstream method for the env subsidence
           // tmpa = net env mass flux (positive up) at top of layer k
-          fluxin = mu[kp1] * conu(kp1, icnst) - md[kk] * cond(kk, icnst);
-          fluxout = mu[kk] * conu(kk, icnst) - md[kp1] * cond(kp1, icnst);
+          fluxin = mu[kp1] * conu(icnst, kp1) - md[kk] * cond(icnst, kk);
+          fluxout = mu[kk] * conu(icnst, kk) - md[kp1] * cond(icnst, kp1);
           Real tmpa = -(mu[kk] + md[kk]);
           if (tmpa <= 0.0) {
-            fluxin -= tmpa * gath(km1x, icnst);
+            fluxin -= tmpa * gath(icnst, km1x);
           } else {
-            fluxout += tmpa * gath(kk, icnst);
+            fluxout += tmpa * gath(icnst, kk);
           }
           // tmpa = net env mass flux (positive up) at base of layer k
           tmpa = -(mu[kp1] + md[kp1]);
           if (tmpa >= 0.0) {
-            fluxin += tmpa * gath(kp1x, icnst);
+            fluxin += tmpa * gath(icnst, kp1x);
           } else {
-            fluxout -= tmpa * gath(kk, icnst);
+            fluxout -= tmpa * gath(icnst, kk);
           }
         }
         //  net flux [kg/kg/s * mb]
@@ -1295,11 +1311,12 @@ void initialize_dcondt(const bool doconvproc_extd[ConvProc::pcnst_extd],
         // into a subroutine, but for some reason it doesn't give consistent
         // dcondt values. have to leave them here.   Shuaiqi Tang, 2022
         const Real netsrce =
-            fa_u_dp * (dconudt_activa(kk, icnst) + dconudt_wetdep(kk, icnst));
-        dcondt(kk, icnst) = (netflux + netsrce) / dpdry[kk];
+            fa_u_dp * (dconudt_activa(icnst, kk) + dconudt_wetdep(icnst, kk));
+        dcondt(icnst, kk) = (netflux + netsrce) / dpdry[kk];
       }
     }
-  }
+  });
+  team.team_barrier();
 }
 // =========================================================================================
 // TODO: compute_downdraft_mixing_ratio uses multiple levels for computation but
@@ -1309,9 +1326,10 @@ void initialize_dcondt(const bool doconvproc_extd[ConvProc::pcnst_extd],
 // rewrite as kkp1=>kk and kk=>kk-1 and iterate from ktop+1 to kbot inclusive.
 KOKKOS_INLINE_FUNCTION
 void compute_downdraft_mixing_ratio(
-    const bool doconvproc_extd[ConvProc::pcnst_extd], const int ktop,
-    const int kbot, const Real md_i[/* nlev+1 */], const Real eddp[/* nlev */],
-    Const_Kokkos_2D_View gath, Kokkos_2D_View cond) {
+    const ThreadTeam &team, const bool doconvproc_extd[ConvProc::pcnst_extd],
+    const int ktop, const int kbot, const ConstColumnView &md_i,
+    const ConstColumnView &eddp, Const_Kokkos_2D_View gath,
+    Kokkos_2D_View cond) {
   // clang-format off
   //----------------------------------------------------------------------
   // Compute downdraft mixing ratios from cloudtop to cloudbase
@@ -1325,27 +1343,28 @@ void compute_downdraft_mixing_ratio(
    in kbot                     ! bottom level index
    in md_i[nlev+1]              ! md at current i (note nlev+1 dimension) [mb/s]
    in eddp[nlev]               ! ed(i,k)*dp(i,k) at current i [mb/s]
-   in gath[nlev,(pcnst_extd]  ! gathered tracer array [kg/kg]
-   inout  cond[nlev+1,pcnst_extd,nlev+1] ! mix ratio in downdraft at interfaces [kg/kg]
+   in gath[pcnst_extd,nlev]    ! gathered tracer array [kg/kg]
+   inout  cond[pcnst_extd,nlev+1] ! mix ratio in downdraft at interfaces [kg/kg]
   */
   // clang-format on
   // threshold below which we treat the mass fluxes as zero [mb/s]
   //  BAD_CONSTANT - used for both compute_downdraft_mixing_ratio and
   //  compute_massflux
   const Real mbsth = 1.e-15;
-  for (int kk = ktop; kk < kbot; ++kk) {
-    const int kp1 = kk + 1;
-    // md_m_eddp = downdraft massflux at kp1, without detrainment between k,kp1
-    const Real md_m_eddp = md_i[kk] - eddp[kk];
-    if (md_m_eddp < -mbsth) {
-      // The indexing started at 2 for Fortran, so 1 for C++
-      for (int icnst = 1; icnst < ConvProc::pcnst_extd; ++icnst) {
-        if (doconvproc_extd[icnst]) {
-          cond(kp1, icnst) =
-              (md_i[kk] * cond(kk, icnst) - eddp[kk] * gath(kk, icnst)) /
-              md_m_eddp;
+  for (int icnst = 1; icnst < ConvProc::pcnst_extd; ++icnst) {
+    if (doconvproc_extd[icnst]) {
+      Kokkos::single(Kokkos::PerTeam(team), [=]() {
+        for (int kk = ktop; kk < kbot; ++kk) {
+          // md_m_eddp = downdraft massflux at kk+1, without detrainment between
+          // k,kk+1
+          const Real md_m_eddp = md_i[kk] - eddp[kk];
+          if (md_m_eddp < -mbsth) {
+            cond(icnst, kk + 1) =
+                (md_i[kk] * cond(icnst, kk) - eddp[kk] * gath(icnst, kk)) /
+                md_m_eddp;
+          }
         }
-      }
+      });
     }
   }
 }
@@ -1496,11 +1515,11 @@ Real compute_wup(const int iconvtype, const Real mu_i_kk, const Real mu_i_kp1,
 }
 // ======================================================================================
 KOKKOS_INLINE_FUNCTION
-void compute_massflux(const int nlev, const int ktop, const int kbot,
-                      const Real dpdry[/* nlev */], const Real du[/* nlev */],
-                      const Real eu[/* nlev */], const Real ed[/* nlev */],
-                      Real mu[/* nlev+1 */], Real md[/* nlev+1 */],
-                      Real &xx_mfup_max) {
+void compute_massflux(const ThreadTeam &team, const int nlev, const int ktop,
+                      const int kbot, const ConstColumnView &dpdry,
+                      const ConstColumnView &du, const ConstColumnView &eu,
+                      const ConstColumnView &ed, const ColumnView &mu,
+                      const ColumnView md, Real &xx_mfup_max) {
   // -----------------------------------------------------------------------
   //  compute dry mass fluxes
   //  This is approximate because the updraft air is has different temp and qv
@@ -1532,18 +1551,39 @@ void compute_massflux(const int nlev, const int ktop, const int kbot,
   // excluding "top of cloudtop", "base of cloudbase"
 
   //  first calculate updraft and downdraft mass fluxes for all layers
-  for (int i = 0; i < nlev + 1; ++i)
-    mu[i] = 0, md[i] = 0;
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev + 1),
+                       [&](int i) { mu[i] = 0, md[i] = 0; });
+  team.team_barrier();
   // (eu-du) = d(mu)/dp -- integrate upwards, multiplying by dpdry
-  for (int kk = nlev - 1; 0 <= kk; --kk) {
-    mu[kk] = mu[kk + 1] + (eu[kk] - du[kk]) * dpdry[kk];
-    xx_mfup_max = mam4::max(xx_mfup_max, mu[kk]);
-  }
+  Kokkos::parallel_scan(Kokkos::TeamVectorRange(team, 1, nlev + 1),
+                        [&](int i, Real &accumulator, const bool last) {
+                          const int kk = nlev - i;
+                          if (1 == i)
+                            accumulator += mu[kk + 1];
+                          accumulator += (eu[kk] - du[kk]) * dpdry[kk];
+                          if (last)
+                            mu[kk] = accumulator;
+                        });
+  team.team_barrier();
+  Kokkos::parallel_reduce(
+      Kokkos::TeamVectorRange(team, 0, nlev),
+      [&](int kk, Real &xx_mfup_max) {
+        xx_mfup_max = mam4::max(xx_mfup_max, mu[kk]);
+      },
+      Kokkos::Max<Real>(xx_mfup_max));
+  team.team_barrier();
   // (ed) = d(md)/dp -- integrate downwards, multiplying by dpdry
-  for (int kk = 1; kk < nlev; ++kk)
-    md[kk] = md[kk - 1] - ed[kk - 1] * dpdry[kk - 1];
+  Kokkos::parallel_scan(Kokkos::TeamVectorRange(team, 1, nlev),
+                        [&](int kk, Real &accumulator, const bool last) {
+                          if (1 == kk)
+                            accumulator += md[kk - 1];
+                          accumulator -= ed[kk - 1] * dpdry[kk - 1];
+                          if (last)
+                            md[kk] = accumulator;
+                        });
+  team.team_barrier();
 
-  for (int kk = 0; kk < nlev + 1; ++kk) {
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, 0, nlev + 1), [&](int kk) {
     if (ktop < kk && kk < kbot) {
       // zero out values below threshold
       if (mu[kk] <= mbsth)
@@ -1553,21 +1593,22 @@ void compute_massflux(const int nlev, const int ktop, const int kbot,
     } else {
       mu[kk] = 0, md[kk] = 0;
     }
-  }
+  });
+  team.team_barrier();
 }
 // ======================================================================================
 // Because the local variable courantmax is over the whole column, this can not
 // be called in parallel.  Could pass courantmax back as an array and then
 // max-reduc over it.
 KOKKOS_INLINE_FUNCTION
-void compute_ent_det_dp(const int nlev, const int ktop, const int kbot,
-                        const Real dt, const Real dpdry[/* nlev */],
-                        const Real mu[/* nlev+1 */],
-                        const Real md[/* nlev+1 */], const Real du[/* nlev */],
-                        const Real eu[/* nlev */], const Real ed[/* nlev */],
-                        int &ntsub, Real eudp[/* nlev */],
-                        Real dudp[/* nlev */], Real eddp[/* nlev */],
-                        Real dddp[/* nlev */]) {
+void compute_ent_det_dp(const ThreadTeam &team, const int nlev, const int ktop,
+                        const int kbot, const Real dt,
+                        const ConstColumnView &dpdry, const ConstColumnView &mu,
+                        const ConstColumnView &md, const ConstColumnView &du,
+                        const ConstColumnView &eu, const ConstColumnView &ed,
+                        int &ntsub, const ColumnView &eudp,
+                        const ColumnView &dudp, const ColumnView &eddp,
+                        const ColumnView &dddp) {
   // clang-format off
   // -----------------------------------------------------------------------
   //  calculate mass flux change (from entrainment or detrainment) in the current dp
@@ -1593,17 +1634,13 @@ void compute_ent_det_dp(const int nlev, const int ktop, const int kbot,
   */
   // clang-format on
 
-  for (int i = 0; i < nlev; ++i)
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int i) {
     eudp[i] = dudp[i] = eddp[i] = dddp[i] = 0.0;
-
-  // maximum value of courant number [unitless]
-  Real courantmax = 0.0;
-  ntsub = 1;
-
+  });
   //  Compute updraft and downdraft "entrainment*dp" from eu and ed
   //  Compute "detrainment*dp" from mass conservation (total is mass flux
   //  difference between the top an bottom interface of this layer)
-  for (int kk = ktop; kk < kbot; ++kk) {
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, ktop, kbot), [&](int kk) {
     if ((mu[kk] > 0) || (mu[kk + 1] > 0)) {
       if (du[kk] <= 0.0) {
         eudp[kk] = mu[kk] - mu[kk + 1];
@@ -1624,12 +1661,22 @@ void compute_ent_det_dp(const int nlev, const int ktop, const int kbot,
         dddp[kk] = 0.0;
       }
     }
-    // get courantmax to calculate ntsub
-    courantmax =
-        mam4::max(courantmax,
-                  (mu[kk + 1] + eudp[kk] - md[kk] + eddp[kk]) * dt / dpdry[kk]);
-  }
+  });
+  team.team_barrier();
+  // get courantmax to calculate ntsub
+  // maximum value of courant number [unitless]
+  Real courantmax = 0.0;
+  Kokkos::parallel_reduce(
+      Kokkos::TeamVectorRange(team, ktop, kbot),
+      [&](const int kk, Real &courantmax) {
+        courantmax =
+            mam4::max(courantmax, (mu[kk + 1] + eudp[kk] - md[kk] + eddp[kk]) *
+                                      dt / dpdry[kk]);
+      },
+      Kokkos::Max<Real>(courantmax));
+  team.team_barrier();
   // number of time substeps needed to maintain "courant number" <= 1
+  ntsub = 1;
   if (courantmax > (1.0 + 1.0e-6)) {
     ntsub = 1 + static_cast<int>(courantmax);
   }
@@ -1638,9 +1685,10 @@ void compute_ent_det_dp(const int nlev, const int ktop, const int kbot,
 // This function can not be called in parallel over kk,
 // it is a recursive calculation by level
 KOKKOS_INLINE_FUNCTION
-void compute_midlev_height(const int nlev, const Real dpdry[/* nlev */],
-                           const Real rhoair[/* nlev */],
-                           Real zmagl[/* nlev */]) {
+void compute_midlev_height(const ThreadTeam &team, const int nlev,
+                           const ConstColumnView &dpdry,
+                           const ConstColumnView &rhoair,
+                           const ColumnView &zmagl) {
   // -----------------------------------------------------------------------
   //  compute height above surface for middle of level kk
   // -----------------------------------------------------------------------
@@ -1652,22 +1700,30 @@ void compute_midlev_height(const int nlev, const Real dpdry[/* nlev */],
 
   const Real hund_ovr_g = 100.0 / Constants::gravity;
   const int surface = nlev - 1;
-  for (int i = 0; i < nlev; ++i)
-    zmagl[i] = 0;
-  // at surface layer thickness [m]
-  Real dz = dpdry[surface] * hund_ovr_g / rhoair[surface];
-  zmagl[surface] = 0.5 * dz;
-  // other levels
-  for (int kk = surface - 1; 0 <= kk; --kk) {
-    // add half layer below
-    zmagl[kk] = zmagl[kk + 1] + 0.5 * dz;
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev),
+                       [&](int i) { zmagl[i] = 0; });
+  team.team_barrier();
+  Kokkos::parallel_scan(Kokkos::TeamVectorRange(team, 1, surface + 1),
+                        [&](const int i, Real &accumulator, const bool last) {
+                          const int kk = surface - i;
+                          // add half layer below
+                          const Real dz_kkp1 =
+                              dpdry[kk + 1] * hund_ovr_g / rhoair[kk + 1];
+                          // update layer thickness at level kk
+                          const Real dz_kk =
+                              dpdry[kk] * hund_ovr_g / rhoair[kk];
 
-    // update layer thickness at level kk
-    dz = dpdry[kk] * hund_ovr_g / rhoair[kk];
+                          if (1 == i) { // kk + 1 == surface
+                            // at surface layer thickness [m]
+                            zmagl[surface] = 0.5 * dz_kkp1;
+                            accumulator += zmagl[surface];
+                          }
 
-    // add half layer in this level
-    zmagl[kk] += 0.5 * dz;
-  }
+                          accumulator += 0.5 * (dz_kkp1 + dz_kk);
+                          if (last)
+                            zmagl[kk] = accumulator;
+                        });
+  team.team_barrier();
 }
 
 // ======================================================================================
@@ -1675,12 +1731,12 @@ void compute_midlev_height(const int nlev, const Real dpdry[/* nlev */],
 // gath was passed instead of a const q_i, then this function could take a kk
 // and be called in parallel over the levels.
 KOKKOS_INLINE_FUNCTION
-void initialize_tmr_array(
-    const int nlev, const int iconvtype,
-    const bool doconvproc_extd[ConvProc::pcnst_extd],
-    Kokkos::View<Real * [aero_model::pcnst], Kokkos::MemoryUnmanaged> q,
-    Kokkos_2D_View gath, Kokkos_2D_View chat, Kokkos_2D_View conu,
-    Kokkos_2D_View cond) {
+void initialize_tmr_array(const ThreadTeam &team, const int nlev,
+                          const int iconvtype,
+                          const bool doconvproc_extd[ConvProc::pcnst_extd],
+                          Kokkos::View<Real **, Kokkos::MemoryUnmanaged> q,
+                          Kokkos_2D_View gath, Kokkos_2D_View chat,
+                          Kokkos_2D_View conu, Kokkos_2D_View cond) {
   // -----------------------------------------------------------------------
   //  initialize tracer mixing ratio arrays (const, chat, conu, cond)
   //  chat, conu and cond are at interfaces; interpolation needed
@@ -1692,12 +1748,12 @@ void initialize_tmr_array(
   /*
   in :: iconvtype                 ! 1=deep, 2=uw shallow
   in :: doconvproc_extd[pcnst_extd] ! flag for doing convective transport
-  in :: q[nlev][pcnst]          ! q[icol][kk][icnst] at current icol
+  in :: q[pcnst][nnlev]          ! q[icol][kk][icnst] at current icol
 
-  out :: gath[nlev  ][pcnst_extd]   ! gathered tracer array [kg/kg]
-  out :: chat[nlev+1][pcnst_extd]   ! mix ratio in env at interfaces [kg/kg]
-  out :: conu[nlev+1][pcnst_extd]   ! mix ratio in updraft at interfaces [kg/kg]
-  out :: cond[nlev+1][pcnst_extd]   ! mix ratio in downdraft at interfaces [kg/kg]
+  out :: gath[pcnst_extd][nlev  ]   ! gathered tracer array [kg/kg]
+  out :: chat[pcnst_extd][nlev+1]   ! mix ratio in env at interfaces [kg/kg]
+  out :: conu[pcnst_extd][nlev+1]   ! mix ratio in updraft at interfaces [kg/kg]
+  out :: cond[pcnst_extd][nlev+1]   ! mix ratio in downdraft at interfaces [kg/kg]
   */
   // clang-format on
 
@@ -1711,39 +1767,43 @@ void initialize_tmr_array(
   const int pcnst_extd = ConvProc::pcnst_extd;
 
   // initiate variables
-  for (int j = 0; j < nlev; ++j)
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int j) {
     for (int i = 0; i < pcnst_extd; ++i)
-      gath(j, i) = 0;
+      gath(i, j) = 0;
+  });
+  team.team_barrier();
   // The indexing started at 2 for Fortran, so 1 for C++
   for (int icnst = 1; icnst < ncnst; ++icnst) {
     if (doconvproc_extd[icnst]) {
       // Gather up the constituent
-      for (int kk = 0; kk < nlev; ++kk)
-        gath(kk, icnst) = q(kk, icnst);
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev),
+                           [&](int kk) { gath(icnst, kk) = q(icnst, kk); });
     }
   }
+  team.team_barrier();
 
-  for (int j = 0; j < nlev + 1; ++j)
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev + 1), [&](int j) {
     for (int i = 0; i < pcnst_extd; ++i)
-      chat(j, i) = conu(j, i) = cond(j, i) = 0;
+      chat(i, j) = conu(i, j) = cond(i, j) = 0;
+  });
 
   // The indexing started at 2 for Fortran, so 1 for C++
   for (int icnst = 1; icnst < ncnst; ++icnst) {
     if (doconvproc_extd[icnst]) {
       // Interpolate environment tracer values to interfaces
-      for (int kk = 0; kk < nlev; ++kk) {
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int kk) {
         const int km1 = mam4::max(0, kk - 1);
         // get relative difference between the two levels
 
         // min gath concentration at level kk and kk-1 [kg/kg]
-        const Real min_con = mam4::min(gath(km1, icnst), gath(kk, icnst));
+        const Real min_con = mam4::min(gath(icnst, km1), gath(icnst, kk));
         // max gath concentration at level kk and kk-1 [kg/kg]
-        const Real max_con = mam4::max(gath(km1, icnst), gath(kk, icnst));
+        const Real max_con = mam4::max(gath(icnst, km1), gath(icnst, kk));
 
         // relative difference between level kk and kk-1 [unitless]
         const Real c_dif_rel =
             min_con < 0 ? 0
-                        : mam4::abs(gath(kk, icnst) - gath(km1, icnst)) /
+                        : mam4::abs(gath(icnst, kk) - gath(icnst, km1)) /
                               mam4::max(max_con, small_con);
 
         // If the two layers differ significantly use a geometric averaging
@@ -1751,34 +1811,34 @@ void initialize_tmr_array(
         // simple averaging which is used in subr cmfmca
         if (iconvtype != 1) {
           // simple averaging for non-deep convection
-          chat(kk, icnst) = 0.5 * (gath(kk, icnst) + gath(km1, icnst));
+          chat(icnst, kk) = 0.5 * (gath(icnst, kk) + gath(icnst, km1));
         } else if (c_dif_rel > small_rel) {
           // deep convection using geometric averaging
 
           // gath at the above (kk-1 level) [kg/kg]
-          const Real c_above = mam4::max(gath(km1, icnst), max_con * 1.e-12);
+          const Real c_above = mam4::max(gath(icnst, km1), max_con * 1.e-12);
 
           // gath at the below (kk level) [kg/kg]
-          const Real c_below = mam4::max(gath(kk, icnst), max_con * 1.e-12);
-          chat(kk, icnst) = mam4::log(c_above / c_below) / (c_above - c_below) *
+          const Real c_below = mam4::max(gath(icnst, kk), max_con * 1.e-12);
+          chat(icnst, kk) = mam4::log(c_above / c_below) / (c_above - c_below) *
                             c_above * c_below;
         } else {
           // Small diff, so just arithmetic mean
-          chat(kk, icnst) = 0.5 * (gath(kk, icnst) + gath(km1, icnst));
+          chat(icnst, kk) = 0.5 * (gath(icnst, kk) + gath(icnst, km1));
         }
         // Set provisional up and down draft values, and tendencies
-        conu(kk, icnst) = chat(kk, icnst);
-        cond(kk, icnst) = chat(kk, icnst);
-      }
+        conu(icnst, kk) = chat(icnst, kk);
+        cond(icnst, kk) = chat(icnst, kk);
+      });
     }
   }
   // The indexing started at 2 for Fortran, so 1 for C++
   for (int icnst = 1; icnst < ncnst; ++icnst) {
     if (doconvproc_extd[icnst]) {
       // Values at surface inferface == values in lowest layer
-      chat(nlev, icnst) = gath(nlev - 1, icnst);
-      conu(nlev, icnst) = gath(nlev - 1, icnst);
-      cond(nlev, icnst) = gath(nlev - 1, icnst);
+      chat(icnst, nlev) = gath(icnst, nlev - 1);
+      conu(icnst, nlev) = gath(icnst, nlev - 1);
+      cond(icnst, nlev) = gath(icnst, nlev - 1);
     }
   }
 }
@@ -1827,12 +1887,12 @@ void set_cloudborne_vars(const bool doconvproc[aero_model::pcnst],
   }
 }
 // ======================================================================================
-template <typename SubView, typename ConstSubView>
+template <typename SubView1, typename SubView2, typename ConstSubView>
 KOKKOS_INLINE_FUNCTION void
 update_qnew_ptend(const bool dotend[aero_model::pcnst],
                   const bool is_update_ptend, ConstSubView dqdt, const Real dt,
-                  bool ptend_lq[aero_model::pcnst], SubView ptend_q,
-                  SubView qnew) {
+                  bool ptend_lq[aero_model::pcnst], SubView1 ptend_q,
+                  SubView2 qnew) {
   // ---------------------------------------------------------------------------------------
   // update qnew, ptend_q and ptend_lq
   // ---------------------------------------------------------------------------------------
@@ -1850,7 +1910,7 @@ update_qnew_ptend(const bool dotend[aero_model::pcnst],
   */
   // clang-format on 
   for (int ll = 0; ll < aero_model::pcnst; ++ll) {
-    // calc new q (after ma_convproc_sh_intr)
+    // calc new q (after convproc tendency)
     if (dotend[ll]) qnew[ll] = mam4::max(0.0, qnew[ll] + dt*dqdt[ll]);
   }
   for (int ll = 0; ll < aero_model::pcnst; ++ll) {
@@ -2190,6 +2250,7 @@ KOKKOS_INLINE_FUNCTION void compute_activation_tend(
 // calculation of conu from one level to the next.
 KOKKOS_INLINE_FUNCTION
 void compute_updraft_mixing_ratio(
+  const ThreadTeam &team,
   const AeroSpeciesView &aero_species,
   const bool doconvproc_extd[ConvProc::pcnst_extd],
   const int nlev,
@@ -2197,20 +2258,20 @@ void compute_updraft_mixing_ratio(
   const int kbot,   
   const int iconvtype, 
   const Real dt,     
-  const Real dp[/* nlev */],
-  const Real dpdry[/* nlev */],        
-  const Real cldfrac[/* nlev */],          
-  const Real rhoair[/* nlev */],       
-  const Real zmagl[/* nlev */],  
+  const ConstColumnView &dp,
+  const ConstColumnView &dpdry,        
+  const ConstColumnView &cldfrac,          
+  const ConstColumnView &rhoair,       
+  const ConstColumnView &zmagl,  
   const Real dz,     
-  const Real mu[/* nlev+1 */],   
-  const Real eudp[/* nlev */],    
+  const ConstColumnView &mu,   
+  const ConstColumnView &eudp,    
   Const_Kokkos_2D_View gath,
-  const Real temperature[/* nlev */],    
-  const Real aqfrac[ConvProc::pcnst_extd], 
-  const Real icwmr[/* nlev */],  
-  const Real rprd[/* nlev */],   
-  Real fa_u[/* nlev */],   
+  const ConstColumnView &temperature,    
+  const Real aqfrac[ConvProc::pcnst_extd],
+  const ConstColumnView &icwmr,  
+  const ConstColumnView &rprd,   
+  const ColumnView &fa_u,   
   Kokkos_2D_View dconudt_wetdep,
   Kokkos_2D_View dconudt_activa,
   Kokkos_2D_View conu,           
@@ -2266,113 +2327,125 @@ void compute_updraft_mixing_ratio(
   //  BAD_CONSTANT - used for both need a reference for this value
   const Real cldfrac_cut = 0.005;
 
-  // Counter for no. of levels having activation
-  int kactcnt = 0;
-
-  // Lowest layer with activation (= cloudbase)
-  int kactfirst = 1;
-
   const int pcnst_extd = ConvProc::pcnst_extd;
-  for (int i = 0; i < nlev + 1; ++i)
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev + 1), [&](int i) {
     for (int j = 0; j < pcnst_extd; ++j)
-      dconudt_wetdep(i, j) = dconudt_activa(i, j) = 0.0;
+      dconudt_wetdep(j, i) = dconudt_activa(j, i) = 0.0;
+  });
 
-  for (int kk = kbot - 1; ktop <= kk; --kk) {
+  Kokkos::pair<Real, int> xx_base;
+  Kokkos::single(
+      Kokkos::PerTeam(team),
+      [=](Kokkos::pair<Real, int> &xx_base) {
+        // Counter for no. of levels having activation
+        int kactcnt = 0;
 
-    // cldfrac = conv cloud fractional area.  This could represent anvil cirrus
-    // area, and may not useful for aqueous chem and wet removal calculations
-    // adjust to remove zero clouds
-    //  cldfrac = cldfrac at current icol (with adjustments) [fraction]
-    const Real cldfrac_i = mam4::max(cldfrac[kk], cldfrac_cut);
+        // Lowest layer with activation (= cloudbase)
+        int kactfirst = 1;
 
-    const int kp1 = kk + 1;
+        for (int i = 1; i < kbot - ktop + 1; ++i) {
+          const int kk = kbot - i;
 
-    // Initialized so that it has a value if the following "if" check yeilds
-    // false
-    fa_u[kk] = 0;
+          // cldfrac = conv cloud fractional area.  This could represent anvil
+          // cirrus area, and may not useful for aqueous chem and wet removal
+          // calculations adjust to remove zero clouds
+          //  cldfrac = cldfrac at current icol (with adjustments) [fraction]
+          const Real cldfrac_i = mam4::max(cldfrac[kk], cldfrac_cut);
 
-    // mu_p_eudp = updraft massflux at k, without detrainment between kp1,k
-    // [mb/s]
-    const Real mu_p_eudp = mu[kp1] + eudp[kk];
+          const int kp1 = kk + 1;
 
-    if (mu_p_eudp > mbsth) {
-      // if (mu_p_eudp <= mbsth) the updraft mass flux is negligible
-      // at base and top of current layer,
-      // so current layer is a "gap" between two unconnected updrafts,
-      // so essentially skip all the updraft calculations for this layer
+          // Initialized so that it has a value if the following "if" check
+          // yeilds false
+          fa_u[kk] = 0;
 
-      // First apply changes from entrainment
-      //  f_ent = fraction of updraft massflux that was entrained
-      //  across this layer == eudp/mu_p_eudp [fraction]
-      const Real f_ent = utils::min_max_bound(0.0, 1.0, eudp[kk] / mu_p_eudp);
-      // The indexing started at 2 for Fortran, so 1 for C++
-      // NOTE: conu[kp1] was calculated in the call to compute_wetdep_tend
-      // in the last trip through the loop.  The loop iterations over kk
-      // are not independent!
-      for (int icnst = 1; icnst < pcnst_extd; ++icnst) {
-        if (doconvproc_extd[icnst]) {
-          conu(kk, icnst) =
-              (1.0 - f_ent) * conu(kp1, icnst) + f_ent * gath(kk, icnst);
+          // mu_p_eudp = updraft massflux at k, without detrainment between
+          // kp1,k [mb/s]
+          const Real mu_p_eudp = mu[kp1] + eudp[kk];
+
+          if (mu_p_eudp > mbsth) {
+            // if (mu_p_eudp <= mbsth) the updraft mass flux is negligible
+            // at base and top of current layer,
+            // so current layer is a "gap" between two unconnected updrafts,
+            // so essentially skip all the updraft calculations for this layer
+
+            // First apply changes from entrainment
+            //  f_ent = fraction of updraft massflux that was entrained
+            //  across this layer == eudp/mu_p_eudp [fraction]
+            const Real f_ent =
+                utils::min_max_bound(0.0, 1.0, eudp[kk] / mu_p_eudp);
+            // The indexing started at 2 for Fortran, so 1 for C++
+            // NOTE: conu[kp1] was calculated in the call to compute_wetdep_tend
+            // in the last trip through the loop.  The loop iterations over kk
+            // are not independent!
+            for (int icnst = 1; icnst < pcnst_extd; ++icnst) {
+              if (doconvproc_extd[icnst]) {
+                conu(icnst, kk) =
+                    (1.0 - f_ent) * conu(icnst, kp1) + f_ent * gath(icnst, kk);
+              }
+            }
+
+            // estimate updraft velocity (wup)
+            // mean updraft vertical velocity at current level updraft [m/s]
+            const Real wup_kk = compute_wup(iconvtype, mu[kk], mu[kp1],
+                                            cldfrac_i, rhoair[kk], zmagl[kk]);
+            // compute lagrangian transport time (dt_u)
+            // -------------------------------------------------------------------
+            // There is a bug here that dz is not vertically varying but fixed
+            // as the thickness of the lowest level calculated previously in the
+            // subroutine ma_convproc_tend. keep it here for C++ refacoring but
+            // may need to fix later
+            // found by Shuaiqi Tang, 2022
+            // -------------------------------------------------------------------
+            //  lagrangian transport time in the updraft [s]
+            const Real dt_u = mam4::min(dz / wup_kk, dt);
+
+            //  Now apply transformation and removal changes
+
+            // aerosol activation - method 2
+            auto dconudt_activa_sub =
+                Kokkos::subview(dconudt_activa, Kokkos::ALL(), kk);
+            auto conu_sub = Kokkos::subview(conu, Kokkos::ALL(), kk);
+            compute_activation_tend(
+                aero_species, f_ent, cldfrac_i, rhoair[kk], mu[kk], mu[kk + 1],
+                dt_u, wup_kk, icwmr[kk], temperature[kk], kk, kactcnt,
+                kactfirst, conu_sub, dconudt_activa_sub, xx_base.first,
+                xx_base.second); // xx_wcldbase, xx_kcldbase);
+
+            // wet removal
+            // NOTE: conu is input/output in this function!  So this call will
+            // effect the calculation of conu[kp1] in the next iteration through
+            // the loop over levels. This loop can NOT be parallelized over kk!
+            auto dconudt_wetdep_sub =
+                Kokkos::subview(dconudt_wetdep, Kokkos::ALL(), kk);
+            compute_wetdep_tend(doconvproc_extd, dt, dt_u, dp[kk], cldfrac_i,
+                                mu_p_eudp, aqfrac, icwmr[kk], rprd[kk],
+                                conu_sub, dconudt_wetdep_sub);
+
+            // compute updraft fractional area; for update fluxes use
+            // *** these must obey  dt_u(k)*mu_p_eudp = dpdry(k)*fa_u(k)
+            fa_u[kk] = dt_u * (mu_p_eudp / dpdry[kk]);
+          } // "(mu_p_eudp > mbsth)"
         }
-      }
-
-      // estimate updraft velocity (wup)
-      // mean updraft vertical velocity at current level updraft [m/s]
-      const Real wup_kk = compute_wup(iconvtype, mu[kk], mu[kp1], cldfrac_i,
-                                      rhoair[kk], zmagl[kk]);
-      // compute lagrangian transport time (dt_u)
-      // -------------------------------------------------------------------
-      // There is a bug here that dz is not vertically varying but fixed as
-      // the thickness of the lowest level calculated previously in the
-      // subroutine ma_convproc_tend. keep it here for C++ refacoring but
-      // may need to fix later
-      // found by Shuaiqi Tang, 2022
-      // -------------------------------------------------------------------
-      //  lagrangian transport time in the updraft [s]
-      const Real dt_u = mam4::min(dz / wup_kk, dt);
-
-      //  Now apply transformation and removal changes
-
-      // aerosol activation - method 2
-      auto dconudt_activa_sub =
-          Kokkos::subview(dconudt_activa, kk, Kokkos::ALL());
-      auto conu_sub = Kokkos::subview(conu, kk, Kokkos::ALL());
-      compute_activation_tend(aero_species, f_ent, cldfrac_i, rhoair[kk],
-                              mu[kk], mu[kk + 1], dt_u, wup_kk, icwmr[kk],
-                              temperature[kk], kk, kactcnt, kactfirst, conu_sub,
-                              dconudt_activa_sub, xx_wcldbase, xx_kcldbase);
-
-      // wet removal
-      // NOTE: conu is input/output in this function!  So this call will effect
-      // the calculation of conu[kp1] in the next iteration through the loop
-      // over levels. This loop can NOT be parallelized over kk!
-      auto dconudt_wetdep_sub =
-          Kokkos::subview(dconudt_wetdep, kk, Kokkos::ALL());
-      compute_wetdep_tend(doconvproc_extd, dt, dt_u, dp[kk], cldfrac_i,
-                          mu_p_eudp, aqfrac, icwmr[kk], rprd[kk], conu_sub,
-                          dconudt_wetdep_sub);
-
-      // compute updraft fractional area; for update fluxes use
-      // *** these must obey  dt_u(k)*mu_p_eudp = dpdry(k)*fa_u(k)
-      fa_u[kk] = dt_u * (mu_p_eudp / dpdry[kk]);
-    } // "(mu_p_eudp > mbsth)"
-  }   // "kk = kbot-1; ktop <= kk; --kk"
+      },
+      xx_base); // "kk = kbot-1; ktop <= kk; --kk"
+  xx_wcldbase = xx_base.first;
+  xx_kcldbase = xx_base.second;
 }
 // ======================================================================================
 template <typename SubView, typename ConstSubView>
 KOKKOS_INLINE_FUNCTION void
-ma_convproc_tend(const AeroSpeciesView &aero_species,
+ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
                  const Kokkos::View<Real *>
                      scratch1Dviews[ConvProc::Col1DViewInd::NumScratch],
                  const int nlev, const ConvProc::convtype convtype,
-                 const Real dt, const Real temperature[/* nlev */],
-                 const Real pmid[/* nlev */], ConstSubView qnew,
-                 const Real du[/* nlev */], const Real eu[/* nlev */],
-                 const Real ed[/* nlev */], const Real dp[/* nlev */],
-                 const Real dpdry[/* nlev */], const int ktop, const int kbot,
+                 const Real dt, const ConstColumnView &temperature,
+                 const ConstColumnView &pmid, ConstSubView qnew,
+                 const ConstColumnView &du, const ConstColumnView &eu,
+                 const ConstColumnView &ed, const ConstColumnView &dp,
+                 const ConstColumnView &dpdry, const int ktop, const int kbot,
                  const int mmtoo_prevap_resusp[/* aero_model::pcnst */],
-                 const Real cldfrac[/* nlev */], const Real icwmr[/* nlev */],
-                 const Real rprd[/* nlev */], const Real evapc[/* nlev */],
+                 const ConstColumnView &cldfrac, const ConstColumnView &icwmr,
+                 const ConstColumnView &rprd, const ConstColumnView &evapc,
                  SubView dqdt, const bool doconvproc[/* aero_model::pcnst */],
                  Real qsrflx[/* aero_model::pcnst */][nsrflx],
                  const int species_class[/* aero_model::pcnst */],
@@ -2425,7 +2498,7 @@ ma_convproc_tend(const AeroSpeciesView &aero_species,
    in :: gas_pcnst         ! number of tracers to transport
    in :: dt                ! Model timestep [s]
    in :: temperature[nlev]     ! Temperature [K]
-   in :: qnew[nlev][aero_model::pcnst]      ! Tracer array including moisture [kg/kg]
+   in :: qnew[aero_model::pcnst][nlev]      ! Tracer array including moisture [kg/kg]
 
    in :: du[nlev]    ! Mass detrain rate from updraft [1/s]
    in :: eu[nlev]    ! Mass entrain rate into updraft [1/s]
@@ -2505,65 +2578,55 @@ ma_convproc_tend(const AeroSpeciesView &aero_species,
   //  chat(nlev+1,pcnst_extd)   ! mix ratio in env at interfaces  [kg/kg]
   //  cond(nlev+1,pcnst_extd)   ! mix ratio in downdraft at interfaces [kg/kg]
   //  conu(nlev+1,pcnst_extd)   ! mix ratio in updraft at interfaces [kg/kg]
-  Kokkos_2D_View gath =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::gath].data(), nlev,
-          pcnst_extd);
-  Kokkos_2D_View chat =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::chat].data(), nlev + 1,
-          pcnst_extd);
-  Kokkos_2D_View cond =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::cond].data(), nlev + 1,
-          pcnst_extd);
-  Kokkos_2D_View conu =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::conu].data(), nlev + 1,
-          pcnst_extd);
+  Kokkos_2D_View gath = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+      scratch1Dviews[ConvProc::Col1DViewInd::gath].data(), pcnst_extd, nlev);
+  Kokkos_2D_View chat = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+      scratch1Dviews[ConvProc::Col1DViewInd::chat].data(), pcnst_extd,
+      nlev + 1);
+  Kokkos_2D_View cond = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+      scratch1Dviews[ConvProc::Col1DViewInd::cond].data(), pcnst_extd,
+      nlev + 1);
+  Kokkos_2D_View conu = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+      scratch1Dviews[ConvProc::Col1DViewInd::conu].data(), pcnst_extd,
+      nlev + 1);
 
   // dconudt_activa(nlev+1,pcnst_extd) ! d(conu)/dt by activation [kg/kg/s]
   // dconudt_wetdep(nlev+1,pcnst_extd) ! d(conu)/dt by wet removal [kg/kg/s]
   Kokkos_2D_View dconudt_activa =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
+      Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
           scratch1Dviews[ConvProc::Col1DViewInd::dconudt_activa].data(),
-          nlev + 1, pcnst_extd);
+          pcnst_extd, nlev + 1);
   Kokkos_2D_View dconudt_wetdep =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
+      Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
           scratch1Dviews[ConvProc::Col1DViewInd::dconudt_wetdep].data(),
-          nlev + 1, pcnst_extd);
+          pcnst_extd, nlev + 1);
 
   // fa_u(nlev)           ! fractional area of in the updraft [fraction]
   Kokkos::View<Real *> fa_u = scratch1Dviews[ConvProc::Col1DViewInd::fa_u];
 
   // dcondt(nlev,pcnst_extd)  ! grid-average TMR tendency for current column
   // [kg/kg/s]
-  Kokkos_2D_View dcondt =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::dcondt].data(), nlev,
-          pcnst_extd);
+  Kokkos_2D_View dcondt = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+      scratch1Dviews[ConvProc::Col1DViewInd::dcondt].data(), pcnst_extd, nlev);
 
   // dcondt_wetdep(nlev,pcnst_extd) ! portion of dcondt from wet deposition
   // [kg/kg/s] dcondt_prevap(nlev, pcnst_extd) ! portion of dcondt from precip
   // evaporation [kg/kg/s] dcondt_prevap_hist(nlev, pcnst_extd) ! similar but
   // used for history output [kg/kg/s] dcondt_resusp(nlev, pcnst_extd) ! portion
   // of dcondt from resuspension [kg/kg/s]
-  Kokkos_2D_View dcondt_wetdep =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::dcondt_wetdep].data(), nlev,
-          pcnst_extd);
-  Kokkos_2D_View dcondt_prevap =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::dcondt_prevap].data(), nlev,
-          pcnst_extd);
+  Kokkos_2D_View dcondt_wetdep = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+      scratch1Dviews[ConvProc::Col1DViewInd::dcondt_wetdep].data(), pcnst_extd,
+      nlev);
+  Kokkos_2D_View dcondt_prevap = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+      scratch1Dviews[ConvProc::Col1DViewInd::dcondt_prevap].data(), pcnst_extd,
+      nlev);
   Kokkos_2D_View dcondt_prevap_hist =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
+      Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
           scratch1Dviews[ConvProc::Col1DViewInd::dcondt_prevap_hist].data(),
-          nlev, pcnst_extd);
-  Kokkos_2D_View dcondt_resusp =
-      Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-          scratch1Dviews[ConvProc::Col1DViewInd::dcondt_resusp].data(), nlev,
-          pcnst_extd);
+          pcnst_extd, nlev);
+  Kokkos_2D_View dcondt_resusp = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
+      scratch1Dviews[ConvProc::Col1DViewInd::dcondt_resusp].data(), pcnst_extd,
+      nlev);
 
   // sumactiva(pcnst_extd)    ! sum (over layers) of dp*dconudt_activa [kg/kg/s]
   // sumaqchem(pcnst_extd)    ! sum (over layers) of dp*dconudt_aqchem [kg/kg/s]
@@ -2587,10 +2650,11 @@ ma_convproc_tend(const AeroSpeciesView &aero_species,
 
   //  q(nlev,pcnst)      ! q(k,m) at current i [kg/kg]
   auto q = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
-      scratch1Dviews[ConvProc::Col1DViewInd::q].data(), nlev, pcnst);
-  for (int i = 0; i < nlev; ++i)
+      scratch1Dviews[ConvProc::Col1DViewInd::q].data(), pcnst, nlev);
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int i) {
     for (int j = 0; j < pcnst; ++j)
-      q(i, j) = qnew(i, j);
+      q(j, i) = qnew(j, i);
+  });
 
   // precip-borne aerosol
   //    dcondt_wetdep is kgaero/kgair/s
@@ -2610,9 +2674,10 @@ ma_convproc_tend(const AeroSpeciesView &aero_species,
   for (int i = 0; i < pcnst; ++i)
     for (int j = 0; j < nsrflx; ++j)
       qsrflx[i][j] = 0;
-  for (int i = 0; i < nlev; ++i)
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int i) {
     for (int j = 0; j < pcnst; ++j)
-      dqdt(i, j) = 0;
+      dqdt(j, i) = 0;
+  });
   xx_mfup_max = 0;
   xx_wcldbase = 0;
   xx_kcldbase = 0;
@@ -2625,30 +2690,31 @@ ma_convproc_tend(const AeroSpeciesView &aero_species,
   set_cloudborne_vars(doconvproc, aqfrac, doconvproc_extd);
 
   // Load some variables in current column for further subroutine use
-  for (int kk = 0; kk < nlev; ++kk)
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int kk) {
     rhoair[kk] = pmid[kk] / (rair * temperature[kk]);
+  });
+  team.team_barrier();
 
   //  load tracer mixing ratio array, which will be updated at the end of each
   //  jtsub interation
 
   // calculate dry mass fluxes at cloud layer
-  compute_massflux(nlev, ktop, kbot, dpdry, du, eu, ed, mu.data(), md.data(),
+  compute_massflux(team, nlev, ktop, kbot, dpdry, du, eu, ed, mu, md,
                    xx_mfup_max);
 
   //  compute entraintment*dp and detraintment*dp and calculate ntsub
   int ntsub = 0;
-  compute_ent_det_dp(nlev, ktop, kbot, dt, dpdry, mu.data(), md.data(), du, eu,
-                     ed, ntsub, eudp.data(), dudp.data(), eddp.data(),
-                     dddp.data());
+  compute_ent_det_dp(team, nlev, ktop, kbot, dt, dpdry, mu, md, du, eu, ed,
+                     ntsub, eudp, dudp, eddp, dddp);
 
   // calculate height of layer interface above ground
-  compute_midlev_height(nlev, dpdry, rhoair.data(), zmagl.data());
+  compute_midlev_height(team, nlev, dpdry, rhoair, zmagl);
 
   for (int jtsub = 0; jtsub < ntsub; ++jtsub) {
 
     // initialize some tracer mixing ratio arrays
-    initialize_tmr_array(nlev, iconvtype, doconvproc_extd, q, gath, chat, conu,
-                         cond);
+    initialize_tmr_array(team, nlev, iconvtype, doconvproc_extd, q, gath, chat,
+                         conu, cond);
 
     // Compute updraft mixing ratios from cloudbase to cloudtop
     // ---------------------------------------------------------------------------
@@ -2659,43 +2725,47 @@ ma_convproc_tend(const AeroSpeciesView &aero_species,
     const Real dz = dpdry[0] * hund_ovr_g / rhoair[0];
 
     compute_updraft_mixing_ratio(
-        aero_species, doconvproc_extd, nlev, ktop, kbot, iconvtype, dt, dp,
-        dpdry, cldfrac, rhoair.data(), zmagl.data(), dz, mu.data(), eudp.data(),
-        gath, temperature, aqfrac, icwmr, rprd, fa_u.data(), dconudt_wetdep,
-        dconudt_activa, conu, xx_wcldbase, xx_kcldbase);
+        team, aero_species, doconvproc_extd, nlev, ktop, kbot, iconvtype, dt,
+        dp, dpdry, cldfrac, rhoair, zmagl, dz, mu, eudp, gath, temperature,
+        aqfrac, icwmr, rprd, fa_u, dconudt_wetdep, dconudt_activa, conu,
+        xx_wcldbase, xx_kcldbase);
 
     // Compute downdraft mixing ratios from cloudtop to cloudbase
-    compute_downdraft_mixing_ratio(doconvproc_extd, ktop, kbot, md.data(),
-                                   eddp.data(), gath, cond);
+    compute_downdraft_mixing_ratio(team, doconvproc_extd, ktop, kbot, md, eddp,
+                                   gath, cond);
 
     // Now compute fluxes and tendencies
     // NOTE:  The approach used in convtran applies to inert tracers and
     //        must be modified to include source and sink terms
-    initialize_dcondt(doconvproc_extd, iflux_method, ktop, kbot, nlev, dpdry,
-                      fa_u.data(), mu.data(), md.data(), chat, gath, conu, cond,
-                      dconudt_activa, dconudt_wetdep, dudp.data(), dddp.data(),
-                      eudp.data(), eddp.data(), dcondt);
+    initialize_dcondt(team, doconvproc_extd, iflux_method, ktop, kbot, nlev,
+                      dpdry, fa_u, mu, md, chat, gath, conu, cond,
+                      dconudt_activa, dconudt_wetdep, dudp, dddp, eudp, eddp,
+                      dcondt);
 
     // compute dcondt_wetdep for next subroutine
-    for (int i = 0; i < nlev; ++i)
+    Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int i) {
       for (int j = 0; j < pcnst_extd; ++j)
-        dcondt_wetdep(i, j) = 0.0;
-    for (int kk = ktop; kk < kbot; ++kk) {
-      // simply cancelling dpdry causes BFB test fail
-      const Real fa_u_dp = fa_u[kk] * dpdry[kk];
-      // The indexing started at 2 for Fortran, so 1 for C++
-      for (int icnst = 1; icnst < pcnst_extd; ++icnst) {
-        if (doconvproc_extd[icnst]) {
-          dcondt_wetdep(kk, icnst) =
-              fa_u_dp * dconudt_wetdep(kk, icnst) / dpdry[kk];
-        }
-      }
-    }
-
+        dcondt_wetdep(j, i) = 0.0;
+    });
+    team.team_barrier();
+    Kokkos::parallel_for(
+        Kokkos::TeamVectorRange(team, ktop, kbot), [&](int kk) {
+          // simply cancelling dpdry causes BFB test fail
+          const Real fa_u_dp = fa_u[kk] * dpdry[kk];
+          // The indexing started at 2 for Fortran, so 1 for C++
+          for (int icnst = 1; icnst < pcnst_extd; ++icnst) {
+            if (doconvproc_extd[icnst]) {
+              dcondt_wetdep(icnst, kk) =
+                  fa_u_dp * dconudt_wetdep(icnst, kk) / dpdry[kk];
+            }
+          }
+        });
+    team.team_barrier();
     // calculate effects of precipitation evaporation
-    ma_precpevap_convproc(ktop, nlev, dcondt_wetdep, rprd, evapc, dpdry,
+    ma_precpevap_convproc(team, ktop, nlev, dcondt_wetdep, rprd, evapc, dpdry,
                           doconvproc_extd, species_class, mmtoo_prevap_resusp,
                           wd_flux, dcondt_prevap, dcondt_prevap_hist, dcondt);
+    team.team_barrier();
 
     //  make adjustments to dcondt for activated & unactivated aerosol species
     //     pairs to account any (or total) resuspension of convective-cloudborne
@@ -2714,49 +2784,53 @@ ma_convproc_tend(const AeroSpeciesView &aero_species,
     //       kbot_prevap = kbot
     //  apply this minor fix when doing resuspend to coarse mode
     const int kbot_prevap = nlev;
-    for (int kk = ktop; kk < kbot_prevap; ++kk)
-      ma_resuspend_convproc(Kokkos::subview(dcondt, kk, Kokkos::ALL()),
-                            Kokkos::subview(dcondt_resusp, kk, Kokkos::ALL()));
+    Kokkos::parallel_for(
+        Kokkos::TeamVectorRange(team, ktop, kbot_prevap), [&](int kk) {
+          ma_resuspend_convproc(
+              Kokkos::subview(dcondt, Kokkos::ALL(), kk),
+              Kokkos::subview(dcondt_resusp, Kokkos::ALL(), kk));
+        });
+    team.team_barrier();
 
     // calculate new column-tendency variables
     compute_column_tendency(
-        doconvproc_extd, ktop, kbot_prevap, dpdry, dcondt_resusp, dcondt_prevap,
-        dcondt_prevap_hist, dconudt_activa, dconudt_wetdep, fa_u.data(),
-        sumactiva.data(), sumaqchem.data(), sumwetdep.data(), sumresusp.data(),
-        sumprevap.data(), sumprevap_hist.data());
+        team, doconvproc_extd, ktop, kbot_prevap, dpdry, dcondt_resusp,
+        dcondt_prevap, dcondt_prevap_hist, dconudt_activa, dconudt_wetdep, fa_u,
+        sumactiva, sumaqchem, sumwetdep, sumresusp, sumprevap, sumprevap_hist);
 
     // NOTE: update_tendency_final Fortran =
     //   update_tendency_diagnostics C++ + update_tendency_final C++
     //   because of the two loops in this function it was easier
     //   to split the function up so that one of these could
     //   be done in a thread team.
-    update_tendency_diagnostics(ntsub, pcnst, doconvproc, sumactiva.data(),
-                                sumaqchem.data(), sumwetdep.data(),
-                                sumresusp.data(), sumprevap.data(),
-                                sumprevap_hist.data(), qsrflx);
+    update_tendency_diagnostics(team, ntsub, pcnst, doconvproc, sumactiva,
+                                sumaqchem, sumwetdep, sumresusp, sumprevap,
+                                sumprevap_hist, qsrflx);
     // update tendencies
-    for (int kk = ktop; kk < kbot_prevap; ++kk) {
-      update_tendency_final(
-          ntsub, jtsub, pcnst, dt, Kokkos::subview(dcondt, kk, Kokkos::ALL()),
-          doconvproc, Kokkos::subview(dqdt, kk, Kokkos::ALL()),
-          Kokkos::subview(q, kk, Kokkos::ALL()));
-    }
+    Kokkos::parallel_for(
+        Kokkos::TeamVectorRange(team, ktop, kbot_prevap), [&](int kk) {
+          update_tendency_final(ntsub, jtsub, pcnst, dt,
+                                Kokkos::subview(dcondt, Kokkos::ALL(), kk),
+                                doconvproc,
+                                Kokkos::subview(dqdt, Kokkos::ALL(), kk),
+                                Kokkos::subview(q, Kokkos::ALL(), kk));
+        });
   } // of the main "for jtsub = 0, ntsub" loop
 }
 
 // =========================================================================================
 template <typename SubView, typename ConstSubView>
 KOKKOS_INLINE_FUNCTION void
-ma_convproc_dp_intr(const AeroSpeciesView &aero_species,
+ma_convproc_dp_intr(const ThreadTeam &team, const AeroSpeciesView &aero_species,
                     const Kokkos::View<Real *>
                         scratch1Dviews[ConvProc::Col1DViewInd::NumScratch],
-                    const int nlev, const Real temperature[/* nlev */],
-                    const Real pmid[/* nlev */], const Real dpdry[/* nlev */],
-                    const Real dt, const Real cldfrac[/* nlev */],
-                    const Real icwmr[/* nlev */], const Real rprddp[/* nlev */],
-                    const Real evapcdp[/* nlev */], const Real du[/* nlev */],
-                    const Real eu[/* nlev */], const Real ed[/* nlev */],
-                    const Real dp[/* nlev */], const int ktop, const int kbot,
+                    const int nlev, const ConstColumnView &temperature,
+                    const ConstColumnView &pmid, const ConstColumnView &dpdry,
+                    const Real dt, const ConstColumnView &cldfrac,
+                    const ConstColumnView &icwmr, const ConstColumnView &rprddp,
+                    const ConstColumnView &evapcdp, const ConstColumnView &du,
+                    const ConstColumnView &eu, const ConstColumnView &ed,
+                    const ConstColumnView &dp, const int ktop, const int kbot,
                     ConstSubView qnew,
                     const int species_class[/* aero_model::pcnst */],
                     const int mmtoo_prevap_resusp[/* aero_model::pcnst */],
@@ -2788,7 +2862,7 @@ ma_convproc_dp_intr(const AeroSpeciesView &aero_species,
    in    :: pmid[nlev]      ! Pressure at model levels [Pa]
 
    in    :: dt                   ! delta t (model time increment) [s]
-   in    :: qnew[nlev][pcnst]     ! tracer mixing ratio including water vapor [kg/kg]
+   in    :: qnew[pcnst][nlev]     ! tracer mixing ratio including water vapor [kg/kg]
    in    :: nsrflx               ! last dimension of qsrflx
 
    in    :: cldfrac[nlev] ! Deep conv cloud fraction [0-1]
@@ -2848,80 +2922,11 @@ ma_convproc_dp_intr(const AeroSpeciesView &aero_species,
   //
   // clang-format on
 
-  ma_convproc_tend(aero_species, scratch1Dviews, nlev, ConvProc::Deep, dt,
+  ma_convproc_tend(team, aero_species, scratch1Dviews, nlev, ConvProc::Deep, dt,
                    temperature, pmid, qnew, du, eu, ed, dp, dpdry, ktop, kbot,
                    mmtoo_prevap_resusp, cldfrac, icwmr, rprddp, evapcdp, dqdt,
                    dotend, qsrflx, species_class, xx_mfup_max, xx_wcldbase,
                    xx_kcldbase);
-}
-
-// =========================================================================================
-template <typename SubView, typename ConstSubView>
-KOKKOS_INLINE_FUNCTION void
-ma_convproc_sh_intr(const int nlev, const Real temperature[/* nlev */],
-                    const Real pmid[/* nlev */], const Real dpdry[/* nlev */],
-                    const Real pdel[/* nlev */], const Real dt,
-                    const Real cldfrac[/* nlev */],
-                    const Real icwmr[/* nlev */], const Real rprddp[/* nlev */],
-                    const Real evapcdp[/* nlev */], ConstSubView qnew,
-                    const int species_class[/* aero_model::pcnst */],
-                    SubView dqdt, Real qsrflx[/* aero_model::pcnst */][nsrflx],
-                    bool dotend[aero_model::pcnst]) {
-  // clang-format off
-  // ----------------------------------------------------------------------- 
-  //  
-  //  Purpose: 
-  //  Convective cloud processing (transport, activation/resuspension,
-  //     wet removal) of aerosols and trace gases.
-  //     (Currently no aqueous chemistry and no trace-gas wet removal)
-  //  Does aerosols    when convproc_do_aer is .true.
-  //  Does trace gases when convproc_do_gas is .true.
-  // 
-  //  This routine does shallow convection
-  //  Uses mass fluxes, cloud water, precip production from the
-  //     convective cloud routines
-  //  
-  //  Author: R. Easter
-  //  
-  // -----------------------------------------------------------------------
-
-  //  Arguments
-  /*   
-  in    :: dpdry[pver]           ! layer delta-p-dry [mb]
-  in    :: pdel[pver]            ! layer delta-p [mb]
-  in    :: temperature[pver]     ! Temperature [K]
-  in    :: pmid[pver]            ! Pressure at model levels [Pa]
-
-  in    :: dt                    ! delta t (model time increment) [s]
-  in    :: qnew[pver][pcnst]      ! tracer mixing ratio (TMR) including water vapor [kg/kg]
-
-  in    :: sh_frac[pver]         ! Shallow conv cloud frac [0-1]
-  in    :: icwmrsh[pver]         ! Shallow conv cloud condensate (in cloud) [kg/kg]
-  in    :: rprddp[pver]          ! Shallow conv precip production (grid avg) [kg/kg/s]
-  in    :: evapcdp[pver]         ! Shallow conv precip evaporation (grid avg) [kg/kg/s]
-  in    :: species_class[:]      ! species index
-
-  out   :: dotend[pcnst]         ! flag if do tendency
-  inout :: dqdt[pver][pcnst]     ! time tendency of TMR [kg/kg/s]
-  inout :: qsrflx[pcnst][nsrflx] ! process-specific column tracer tendencies  (see ma_convproc_intr for more information) [kg/m2/s] 
-  */
-  // clang-format on
-
-  // the original FORTRAN code has code to calculate mass fluxes from shallow
-  // convection, but the mass flux from CLUBB is currently set as zero,
-  // (see subroutine convect_shallow_tend in physics/cam/convect_shallow.F90)
-  // Therefore, we remove the calculation of the following variables and simply
-  // set them in default values for C++ porting.   - Shuaiqi Tang 2023.2.25
-  // =========================================================================================
-  for (int i = 0; i < nlev; ++i)
-    for (int j = 0; j < aero_model::pcnst; ++j)
-      dqdt(i, j) = 0;
-
-  for (int i = 0; i < aero_model::pcnst; ++i)
-    for (int j = 0; j < nsrflx; ++j)
-      qsrflx[i][j] = 0;
-  for (int i = 0; i < aero_model::pcnst; ++i)
-    dotend[i] = false;
 }
 
 // =========================================================================================
@@ -2931,17 +2936,13 @@ void ma_convproc_intr(
     const Kokkos::View<Real *>
         scratch1Dviews[ConvProc::Col1DViewInd::NumScratch],
     const bool convproc_do_aer, const bool convproc_do_gas, const int nlev,
-    const Real temperature[/* nlev */], const Real pmid[/* nlev */],
-    const Real dpdry[/* nlev */], const Real pdel[/* nlev */], const Real dt,
-    const Real dp_frac[/* nlev */], const Real icwmrdp[/* nlev */],
-    const Real rprddp[/* nlev */], const Real evapcdp[/* nlev */],
-    const Real sh_frac[/* nlev */], const Real icwmrsh[/* nlev */],
-    const Real rprdsh[/* nlev */], const Real evapcsh[/* nlev */],
-    const Real dlf[/* nlev */], const Real dlfsh[/* nlev */],
-    const Real sh_e_ed_ratio[/* nlev */], const Real du[/* nlev */],
-    const Real eu[/* nlev */], const Real ed[/* nlev */],
-    const Real dp[/* nlev */], const int ktop, const int kbot,
-    const int species_class[aero_model::pcnst],
+    const ConstColumnView &temperature, const ConstColumnView &pmid,
+    const ConstColumnView &dpdry, const Real dt, const ConstColumnView &dp_frac,
+    const ConstColumnView &icwmrdp, const ConstColumnView &rprddp,
+    const ConstColumnView &evapcdp, const ConstColumnView &dlf,
+    const ConstColumnView &du, const ConstColumnView &eu,
+    const ConstColumnView &ed, const ConstColumnView &dp, const int ktop,
+    const int kbot, const int species_class[aero_model::pcnst],
     const int mmtoo_prevap_resusp[aero_model::pcnst],
     const Diagnostics::ColumnTracerView state_q,
     Diagnostics::ColumnTracerView ptend_q, bool ptend_lq[aero_model::pcnst],
@@ -2956,7 +2957,7 @@ void ma_convproc_intr(
   // Does aerosols    when convproc_do_aer is .true.
   // Does trace gases when convproc_do_gas is .true.
   //
-  // Does deep and shallow convection
+  // Does deep convection
   // Uses mass fluxes, cloud water, precip production from the
   //    convective cloud routines
   //
@@ -2968,7 +2969,6 @@ void ma_convproc_intr(
   // Arguments
   /*  
   in    :: dpdry[nlev]           ! layer delta-p-dry [mb]
-  in    :: pdel[nlev]            ! layer delta-p [mb]
   in    :: temperature[nlev]     ! Temperature [K]
   in    :: pmid[nlev]            ! Pressure at model levels [Pa]
 
@@ -2979,13 +2979,7 @@ void ma_convproc_intr(
   in    :: icwmrdp[nlev]         ! Deep conv cloud condensate (in cloud) [kg/kg]
   in    :: rprddp[nlev]        ! Deep conv precip production (grid avg) [kg/kg/s]
   in    :: evapcdp[nlev]       ! Deep conv precip evaporation (grid avg) [kg/kg/s]
-  in    :: sh_frac[nlev]       ! Shal conv cloud frac [fraction]
-  in    :: icwmrsh[nlev]       ! Shal conv cloud condensate (in cloud) [kg/kg]
-  in    :: rprdsh[nlev]        ! Shal conv precip production (grid avg) [kg/kg/s]
-  in    :: evapcsh[nlev]       ! Shal conv precip evaporation (grid avg) [kg/kg/s]
   in    :: dlf[nlev]           ! Tot  conv cldwtr detrainment (grid avg) [kg/kg/s]
-  in    :: dlfsh[nlev]         ! Shal conv cldwtr detrainment (grid avg) [kg/kg/s]
-  in    :: sh_e_ed_ratio[nlev] ! shallow conv [ent/(ent+det)] ratio [fraction]
   inout :: aerdepwetis[pcnst]  ! aerosol wet deposition (interstitial) [kg/m2/s]
                        ! eu, ed, du are "d(massflux)/dp" and are all positive
   in    :: eu[nlev]    ! Mass entrain rate into updraft [1/s]
@@ -3011,25 +3005,29 @@ void ma_convproc_intr(
   // clang-format on
 
   auto dqdt = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
-      scratch1Dviews[ConvProc::Col1DViewInd::dqdt].data(), nlev,
-      aero_model::pcnst);
+      scratch1Dviews[ConvProc::Col1DViewInd::dqdt].data(), aero_model::pcnst,
+      nlev);
 
   auto dlfdp = Kokkos::View<Real *, Kokkos::MemoryUnmanaged>(
       scratch1Dviews[ConvProc::Col1DViewInd::dlfdp].data(), nlev);
 
-  for (int j = 0; j < nlev; ++j)
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int j) {
     for (int i = 0; i < aero_model::pcnst; ++i)
-      dqdt(j, i) = ptend_q(j, i);
+      dqdt(i, j) = ptend_q(j, i);
+  });
+  team.team_barrier();
 
   // qnew will update in the subroutines but not update back to state%q
   auto qnew = Diagnostics::ColumnTracerView(
-      scratch1Dviews[ConvProc::Col1DViewInd::qnew].data(), nlev,
-      aero_model::pcnst);
+      scratch1Dviews[ConvProc::Col1DViewInd::qnew].data(), aero_model::pcnst,
+      nlev);
   EKAT_KERNEL_ASSERT(state_q.extent_int(0) == nlev);
   EKAT_KERNEL_ASSERT(state_q.extent_int(1) <= aero_model::pcnst);
-  for (int i = 0; i < nlev; ++i)
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int i) {
     for (int j = 0; j < aero_model::pcnst; ++j)
-      qnew(i, j) = state_q(i, j);
+      qnew(j, i) = state_q(i, j);
+  });
+  team.team_barrier();
 
   // if do tendency
   bool dotend[aero_model::pcnst];
@@ -3043,32 +3041,37 @@ void ma_convproc_intr(
   // The following loop can be done in parallel even though ptend_lq is
   // overwritten each time I think it is OK since it is overwritten the same
   // from each thread.
-  for (int kk = 0; kk < nlev; ++kk)
-    update_qnew_ptend(dotend, false, Kokkos::subview(dqdt, kk, Kokkos::ALL()),
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int kk) {
+    update_qnew_ptend(dotend, false, Kokkos::subview(dqdt, Kokkos::ALL(), kk),
                       dt, ptend_lq, Kokkos::subview(ptend_q, kk, Kokkos::ALL()),
-                      Kokkos::subview(qnew, kk, Kokkos::ALL()));
+                      Kokkos::subview(qnew, Kokkos::ALL(), kk));
+  });
+  team.team_barrier();
 
   if (convproc_do_aer || convproc_do_gas) {
     //
     // do deep conv processing
     //
     Real qsrflx[aero_model::pcnst][nsrflx] = {};
-    for (int j = 0; j < nlev; ++j)
+    Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int j) {
       for (int i = 0; i < aero_model::pcnst; ++i)
-        dqdt(j, i) = 0;
-    for (int j = 0; j < nlev; ++j)
-      dlfdp[j] = mam4::max((dlf[j] - dlfsh[j]), 0.0);
-    ma_convproc_dp_intr(aero_species, scratch1Dviews, nlev, temperature, pmid,
-                        dpdry, dt, dp_frac, icwmrdp, rprddp, evapcdp, du, eu,
-                        ed, dp, ktop, kbot, qnew, species_class,
+        dqdt(i, j) = 0;
+      dlfdp[j] = mam4::max((dlf[j]), 0.0);
+    });
+    team.team_barrier();
+    ma_convproc_dp_intr(team, aero_species, scratch1Dviews, nlev, temperature,
+                        pmid, dpdry, dt, dp_frac, icwmrdp, rprddp, evapcdp, du,
+                        eu, ed, dp, ktop, kbot, qnew, species_class,
                         mmtoo_prevap_resusp, dqdt, qsrflx, dotend);
-    // apply deep conv processing tendency and prepare for shallow conv
-    // processing
-    for (int kk = 0; kk < nlev; ++kk)
-      update_qnew_ptend(dotend, true, Kokkos::subview(dqdt, kk, Kokkos::ALL()),
+    team.team_barrier();
+    // apply deep conv processing tendency
+    Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int kk) {
+      update_qnew_ptend(dotend, true, Kokkos::subview(dqdt, Kokkos::ALL(), kk),
                         dt, ptend_lq,
                         Kokkos::subview(ptend_q, kk, Kokkos::ALL()),
-                        Kokkos::subview(qnew, kk, Kokkos::ALL()));
+                        Kokkos::subview(qnew, Kokkos::ALL(), kk));
+    });
+    team.team_barrier();
     // update variables for output
     for (int icnst = 0; icnst < aero_model::pcnst; ++icnst) {
       // this used for surface coupling:
@@ -3079,36 +3082,8 @@ void ma_convproc_intr(
           species_class[icnst] == ConvProc::species_class::aerosol)
         aerdepwetis[icnst] += qsrflx[icnst][4] + qsrflx[icnst][5];
     }
-    //
-    // do shallow conv processing
-    //
-    for (int j = 0; j < nlev; ++j)
-      for (int i = 0; i < aero_model::pcnst; ++i)
-        dqdt(j, i) = 0;
-    for (int j = 0; j < nsrflx; ++j)
-      for (int i = 0; i < aero_model::pcnst; ++i)
-        qsrflx[i][j] = 0;
-    ma_convproc_sh_intr(nlev, temperature, pmid, dpdry, pdel, dt, sh_frac,
-                        icwmrsh, rprdsh, evapcsh, qnew, species_class, dqdt,
-                        qsrflx, dotend);
-
-    // apply shallow conv processing tendency
-    for (int kk = 0; kk < nlev; ++kk)
-      update_qnew_ptend(dotend, true, Kokkos::subview(dqdt, kk, Kokkos::ALL()),
-                        dt, ptend_lq,
-                        Kokkos::subview(ptend_q, kk, Kokkos::ALL()),
-                        Kokkos::subview(qnew, kk, Kokkos::ALL()));
-    // update variables for output
-    for (int icnst = 0; icnst < aero_model::pcnst; ++icnst) {
-      // this used for surface coupling
-      //  4 = wet removal
-      //  5 = actual precip-evap resuspension (what actually is applied to a
-      //  species)
-      if (dotend[icnst] &&
-          species_class[icnst] == ConvProc::species_class::aerosol)
-        aerdepwetis[icnst] += qsrflx[icnst][4] + qsrflx[icnst][5];
-    }
   } // (convproc_do_aer || convproc_do_gas)
+  team.team_barrier();
 }
 } // namespace convproc
 
@@ -3138,47 +3113,28 @@ void ConvProc::compute_tendencies(const AeroConfig &config,
     mmtoo_prevap_resusp[i] = config_.mmtoo_prevap_resusp[i];
 
   const int nlev = atmosphere.num_levels();
-  const Real *temperature = atmosphere.temperature.data();
-  const Real *pmid = atmosphere.pressure.data();
-  // pdel = Delta pressure between interfaces [mb]
-  const Real *pdel = atmosphere.hydrostatic_dp.data();
+  const auto &temperature = atmosphere.temperature;
+  const auto &pmid = atmosphere.pressure;
   // dpdry =  Delta dry-pressure [mb]
-  const Real *dpdry = diagnostics.hydrostatic_dry_dp.data();
+  const auto &dpdry = diagnostics.hydrostatic_dry_dp;
   // dp_frac = Deep conv cloud frac [fraction]
-  const Real *dp_frac = diagnostics.deep_convective_cloud_fraction.data();
-  // sh_frac = Shallow conv cloud frac [fraction]
-  const Real *sh_frac = diagnostics.shallow_convective_cloud_fraction.data();
+  const auto &dp_frac = diagnostics.deep_convective_cloud_fraction;
   // Deep cloud convective condensate [kg/kg]
-  const Real *icwmrdp = diagnostics.deep_convective_cloud_condensate.data();
-  // Shallow cloud convective condensate [kg/kg]
-  const Real *icwmrsh = diagnostics.shallow_convective_cloud_condensate.data();
+  const auto &icwmrdp = diagnostics.deep_convective_cloud_condensate;
   // Deep convective precipitation production (grid avg) [kg/kg/s]
-  const Real *rprddp =
-      diagnostics.deep_convective_precipitation_production.data();
-  // Shallow convective precipitation production (grid avg) [kg/kg/s]
-  const Real *rprdsh =
-      diagnostics.shallow_convective_precipitation_production.data();
+  const auto &rprddp = diagnostics.deep_convective_precipitation_production;
   // Deep convective precipitation evaporation (grid avg) [kg/kg/s]
-  const Real *evapcdp =
-      diagnostics.deep_convective_precipitation_evaporation.data();
-  // Shallow convective precipitation evaporation (grid avg) [kg/kg/s]
-  const Real *evapcsh =
-      diagnostics.shallow_convective_precipitation_evaporation.data();
+  const auto &evapcdp = diagnostics.deep_convective_precipitation_evaporation;
   // Shallow+Deep convective detrainment [kg/kg/s]
-  const Real *dlftot = diagnostics.total_convective_detrainment.data();
-  // Shallow convective detrainment [kg/kg/s]
-  const Real *dlfsh = diagnostics.shallow_convective_detrainment.data();
-  // Shallow convective ratio: [entrainment/(entrainment+detrainment)]
-  // [fraction]
-  const Real *sh_e_ed_ratio = diagnostics.shallow_convective_ratio.data();
+  const auto dlftot = diagnostics.total_convective_detrainment;
 
   // Next three are "d(massflux)/dp" and are all positive [1/s]
-  const Real *eu = diagnostics.mass_entrain_rate_into_updraft.data();
-  const Real *ed = diagnostics.mass_entrain_rate_into_downdraft.data();
-  const Real *du = diagnostics.mass_detrain_rate_from_updraft.data();
+  const auto &eu = diagnostics.mass_entrain_rate_into_updraft;
+  const auto &ed = diagnostics.mass_entrain_rate_into_downdraft;
+  const auto &du = diagnostics.mass_detrain_rate_from_updraft;
 
   // Delta pressure between interfaces [mb]
-  const Real *dp = diagnostics.delta_pressure.data();
+  const auto &dp = diagnostics.delta_pressure;
 
   // Tracer mixing ratio (TMR) including water vapor [kg/kg]
   const auto state_q = diagnostics.tracer_mixing_ratio;
@@ -3192,9 +3148,8 @@ void ConvProc::compute_tendencies(const AeroConfig &config,
   Real aerdepwetis[aero_model::pcnst] = {};
   convproc::ma_convproc_intr(
       team, config.aero_species, scratch1Dviews, convproc_do_aer,
-      convproc_do_gas, nlev, temperature, pmid, dpdry, pdel, dt, dp_frac,
-      icwmrdp, rprddp, evapcdp, sh_frac, icwmrsh, rprdsh, evapcsh, dlftot,
-      dlfsh, sh_e_ed_ratio, du, eu, ed, dp, ktop, kbot, species_class,
+      convproc_do_gas, nlev, temperature, pmid, dpdry, dt, dp_frac, icwmrdp,
+      rprddp, evapcdp, dlftot, du, eu, ed, dp, ktop, kbot, species_class,
       mmtoo_prevap_resusp, state_q, ptend_q, ptend_lq, aerdepwetis);
 }
 } // namespace mam4
