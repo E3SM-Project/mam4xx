@@ -114,8 +114,6 @@ imp_sol(VectorType &base_sol, const Real reaction_rates[rxntot],
   static_assert(gas_pcnst == 31 && clscnt4 == 30 && nzcnt == 32 &&
                     rxntot == 7 && extcnt == 9,
                 "The direct gas solver requires the current MAM4xx mechanism");
-  constexpr auto clsmap_4 = gas_chemistry::clsmap_4;
-  constexpr auto permute_4 = gas_chemistry::permute_4;
 
   result = ImpSolResult{};
   for (int k = 0; k < clscnt4; ++k) {
@@ -164,7 +162,8 @@ imp_sol(VectorType &base_sol, const Real reaction_rates[rxntot],
 
   Real solution[clscnt4] = {};
   for (int k = 0; k < clscnt4; ++k) {
-    solution[permute_4[k]] = base_sol[clsmap_4[k]];
+    // Work index 0 is O3; implicit entry k is work index k + 1.
+    solution[k] = base_sol[k + 1];
   }
 
   // Frozen reaction_rates have these meanings in the equations below:
@@ -235,22 +234,18 @@ imp_sol(VectorType &base_sol, const Real reaction_rates[rxntot],
   }
 
   Real trial[gas_pcnst] = {};
-  for (int j = 0; j < gas_pcnst; ++j) {
-    trial[j] = base_sol[j];
-  }
+  trial[0] = base_sol[0];
   for (int k = 0; k < clscnt4; ++k) {
-    trial[clsmap_4[k]] = solution[permute_4[k]];
+    trial[k + 1] = solution[k];
   }
 
   Real production[clscnt4] = {};
   Real loss[clscnt4] = {};
-  Real final_production[clscnt4] = {};
   imp_prod_loss(production, loss, trial, reaction_rates, het_rates);
   for (int k = 0; k < clscnt4; ++k) {
-    const int m = permute_4[k];
-    final_production[k] = production[m] + independent[m];
-    if (!Kokkos::isfinite(final_production[k]) ||
-        !Kokkos::isfinite(loss[m])) {
+    production[k] = production[k] + independent[k];
+    if (!Kokkos::isfinite(production[k]) ||
+        !Kokkos::isfinite(loss[k])) {
       result.outcome = ImpSolOutcome::NonfiniteResult;
       return;
     }
@@ -258,9 +253,9 @@ imp_sol(VectorType &base_sol, const Real reaction_rates[rxntot],
 
   // Publish only after every row and diagnostic has been checked.
   for (int k = 0; k < clscnt4; ++k) {
-    base_sol[clsmap_4[k]] = trial[clsmap_4[k]];
-    prod_out[k] = final_production[k];
-    loss_out[k] = loss[permute_4[k]];
+    base_sol[k + 1] = trial[k + 1];
+    prod_out[k] = production[k];
+    loss_out[k] = loss[k];
   }
   result.outcome = ImpSolOutcome::Converged;
 }
