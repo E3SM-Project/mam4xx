@@ -62,9 +62,8 @@ TEST_CASE("test_calc_org_matter_seasalt_competitive_adsorption",
   calc_org_matter_seasalt(data, mass_frac_bub_section, om_seasalt);
 
   for (int ibin = 0; ibin < salt_nsection; ++ibin) {
-    const bool selected =
-        data.Dg(ibin) >= data.seasalt_size_range_lo(1) &&
-        data.Dg(ibin) < data.seasalt_size_range_hi(0);
+    const bool selected = data.Dg(ibin) >= data.seasalt_size_range_lo(1) &&
+                          data.Dg(ibin) < data.seasalt_size_range_hi(0);
     const Real expected_total = selected ? expected_total_fraction : 0.0;
     REQUIRE(mam4::FloatingPoint<Real>::rel(om_seasalt[ibin], expected_total,
                                            tolerance));
@@ -104,8 +103,8 @@ TEST_CASE("test_calc_org_matter_seasalt_coverage_is_bounded",
   }
 
   const Real tolerance = 128 * std::numeric_limits<Real>::epsilon();
-  REQUIRE(mam4::FloatingPoint<Real>::rel(theta_sum, 0.5122028187397498,
-                                         tolerance));
+  REQUIRE(
+      mam4::FloatingPoint<Real>::rel(theta_sum, 0.5122028187397498, tolerance));
   REQUIRE(theta_sum >= 0.0);
   REQUIRE(theta_sum < 1.0);
 }
@@ -136,8 +135,8 @@ TEST_CASE("test_calc_org_matter_seasalt_zero_and_cap",
   const Real tolerance = 128 * std::numeric_limits<Real>::epsilon();
   REQUIRE(mam4::FloatingPoint<Real>::rel(om_seasalt[selected_bin], 0.78,
                                          tolerance));
-  REQUIRE(mam4::FloatingPoint<Real>::rel(
-      mass_frac_bub_section[0][selected_bin], 0.78, tolerance));
+  REQUIRE(mam4::FloatingPoint<Real>::rel(mass_frac_bub_section[0][selected_bin],
+                                         0.78, tolerance));
   REQUIRE(mass_frac_bub_section[1][selected_bin] == 0.0);
   REQUIRE(mass_frac_bub_section[2][selected_bin] == 0.0);
 }
