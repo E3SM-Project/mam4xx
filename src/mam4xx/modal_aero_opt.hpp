@@ -549,11 +549,11 @@ KOKKOS_INLINE_FUNCTION void modal_aero_sw_wo_diagnostics_k(
   //  ext_cmip6_sw(pcols,pver)  aerosol shortwave extinction [1/m]
   //  is_cmip6_volc
 
-  //  qqcw(:)                Cloud borne aerosols mixing ratios [kg/kg or 1/kg]
-  //  tauxar(pcols,0:pver,nswbands)  layer extinction optical depth [1]
-  //  wa(pcols,0:pver,nswbands)      layer single-scatter albedo [1]
-  //  ga(pcols,0:pver,nswbands)      asymmetry factor [1]
-  //  fa(pcols,0:pver,nswbands)      forward scattered fraction [1]
+  //  qqcw(:)                      Cloud borne aerosols mixing ratios [kg/kg or
+  //  1/kg] tauxar(ntot_amode,nswbands)  layer extinction optical depth [1]
+  //  wa(ntot_amode,nswbands)      layer single-scatter albedo [1]
+  //  ga(ntot_amode,nswbands)      asymmetry factor [1]
+  //  fa(ntot_amode,nswbands)      forward scattered fraction [1]
 
   //  Local variables
   // real(r8),    pointer :: specmmr(:,:)         species mass mixing ratio
@@ -749,13 +749,13 @@ void modal_aero_sw(const ThreadTeam &team, const Real dt,
   const ConstColumnView cldn = atm.cloud_fraction;
 
   auto work_ptr = (Real *)work.data();
-  const auto tauxar_work = View3D(work_ptr, pver, ntot_amode, nswbands);
+  const auto tauxar_work = View3D(work_ptr, ntot_amode, nswbands, pver);
   work_ptr += pver * ntot_amode * nswbands;
-  const auto wa_work = View3D(work_ptr, pver, ntot_amode, nswbands);
+  const auto wa_work = View3D(work_ptr, ntot_amode, nswbands, pver);
   work_ptr += pver * ntot_amode * nswbands;
-  const auto ga_work = View3D(work_ptr, pver, ntot_amode, nswbands);
+  const auto ga_work = View3D(work_ptr, ntot_amode, nswbands, pver);
   work_ptr += pver * ntot_amode * nswbands;
-  const auto fa_work = View3D(work_ptr, pver, ntot_amode, nswbands);
+  const auto fa_work = View3D(work_ptr, ntot_amode, nswbands, pver);
   work_ptr += pver * ntot_amode * nswbands;
 
   constexpr Real zero = 0;
@@ -795,13 +795,13 @@ void modal_aero_sw(const ThreadTeam &team, const Real dt,
 
         Real cldn_kk = cldn(kk);
         const auto tauxar_kkp =
-            Kokkos::subview(tauxar_work, kk, Kokkos::ALL(), Kokkos::ALL());
+            Kokkos::subview(tauxar_work, Kokkos::ALL(), Kokkos::ALL(), kk);
         const auto wa_kkp =
-            Kokkos::subview(wa_work, kk, Kokkos::ALL(), Kokkos::ALL());
+            Kokkos::subview(wa_work, Kokkos::ALL(), Kokkos::ALL(), kk);
         const auto ga_kkp =
-            Kokkos::subview(ga_work, kk, Kokkos::ALL(), Kokkos::ALL());
+            Kokkos::subview(ga_work, Kokkos::ALL(), Kokkos::ALL(), kk);
         const auto fa_kkp =
-            Kokkos::subview(fa_work, kk, Kokkos::ALL(), Kokkos::ALL());
+            Kokkos::subview(fa_work, Kokkos::ALL(), Kokkos::ALL(), kk);
         modal_aero_sw_wo_diagnostics_k(pdeldry(kk), pmid(kk), temperature(kk),
                                        cldn_kk,
                                        state_q, // in
@@ -822,23 +822,23 @@ void modal_aero_sw(const ThreadTeam &team, const Real dt,
           Kokkos::parallel_reduce(
               Kokkos::ThreadVectorRange(team, ntot_amode),
               [&](int imode, Real &suma) {
-                suma += tauxar_work(kk, imode, isw);
+                suma += tauxar_work(imode, isw, kk);
               },
               tauxar(isw, kk + 1));
 
           Kokkos::parallel_reduce(
               Kokkos::ThreadVectorRange(team, ntot_amode),
-              [&](int imode, Real &suma) { suma += wa_work(kk, imode, isw); },
+              [&](int imode, Real &suma) { suma += wa_work(imode, isw, kk); },
               wa(isw, kk + 1));
 
           Kokkos::parallel_reduce(
               Kokkos::ThreadVectorRange(team, ntot_amode),
-              [&](int imode, Real &suma) { suma += ga_work(kk, imode, isw); },
+              [&](int imode, Real &suma) { suma += ga_work(imode, isw, kk); },
               ga(isw, kk + 1));
 
           Kokkos::parallel_reduce(
               Kokkos::ThreadVectorRange(team, ntot_amode),
-              [&](int imode, Real &suma) { suma += fa_work(kk, imode, isw); },
+              [&](int imode, Real &suma) { suma += fa_work(imode, isw, kk); },
               fa(isw, kk + 1));
         }); // kk
 
@@ -854,7 +854,7 @@ void modal_aero_sw(const ThreadTeam &team, const Real dt,
           // savaervis ! true if visible wavelength (0.55 micron)
           // aodvis(icol )    = aodvis(icol) + dopaer(icol)
           // dopaer = tauxar_work
-          suma += tauxar_work(kk, imode, idx_sw_diag);
+          suma += tauxar_work(imode, idx_sw_diag, kk);
         } // imode
       },
       aodvis);
