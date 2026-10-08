@@ -4,18 +4,25 @@
 #include "gas_chem_mechanism.hpp"
 #include "mam4_math.hpp"
 
-#include <ekat_kernel_assert.hpp>
-
 namespace mam4 {
-
 namespace gas_chemistry {
 
-// BAD CONSTANTs
-constexpr int itermax = 11;
-const Real rel_err = 1.0e-3;
-// NOTE: high_rel_err is unused currently
-// const Real high_rel_err = 1.0e-4;
-const int max_time_steps = 1000;
+enum class ImpSolOutcome {
+  Converged,
+  InvalidInput,
+  NonfiniteResult,
+  UnsafeDenominator,
+  NegativeResult
+};
+
+struct ImpSolResult {
+  ImpSolOutcome outcome = ImpSolOutcome::InvalidInput;
+
+  KOKKOS_INLINE_FUNCTION
+  bool success() const {
+    return outcome == ImpSolOutcome::Converged;
+  }
+};
 
 KOKKOS_INLINE_FUNCTION
 void usrrxt(Real rxt[rxntot], // inout
@@ -23,13 +30,15 @@ void usrrxt(Real rxt[rxntot], // inout
             const int usr_HO2_HO2_ndx, const int usr_DMS_OH_ndx,
             const int usr_SO2_OH_ndx, const int inv_h2o_ndx) {
 
-  /*-----------------------------------------------------------------
-   ... ho2 + ho2 --> h2o2
-   note: this rate involves the water vapor number density
-  -----------------------------------------------------------------*/
   const Real one = 1.0;
+
+  // R1: HO2 + HO2 -> H2O2
+  // k1(T,M,H2O) = (3.5e-13*exp(430/T) + 1.7e-33*M*exp(1000/T))
+  //                * (1 + 1.4e-21*[H2O]*exp(2200/T)).
+  // adjrxt later forms the completed H2O2 source k1*[HO2]^2/M.
+  // Provenance: user-defined legacy EAM mo_usrrxt.F90 expression; no
+  // literature citation is recorded there.
   if (usr_HO2_HO2_ndx > 0) {
-    // BAD CONSTANT
     const Real ko = 3.5e-13 * mam4::exp(430.0 / temperature);
     const Real kinf = 1.7e-33 * mtot * mam4::exp(1000. / temperature);
     const Real fc = one + 1.4e-21 * invariants[inv_h2o_ndx] *
@@ -37,391 +46,225 @@ void usrrxt(Real rxt[rxntot], // inout
     rxt[usr_HO2_HO2_ndx] = (ko + kinf) * fc;
   }
 
-  /*-----------------------------------------------------------------
-       ... DMS + OH  --> .5 * SO2
-   -----------------------------------------------------------------*/
+  // R5: DMS + OH -> 0.5 SO2 + 0.5 HO2
+  // k5(T,M) = 1.7e-42*exp(7810/T)*M*0.21
+  //             / (1 + 5.5e-31*exp(7460/T)*M*0.21).
+  // The literal 0.21 is the legacy mechanism's fixed O2 mixing fraction.
+  // adjrxt later forms lambda5 = k5*[OH]; SO2 receives 0.5*lambda5*q_DMS.
+  // Provenance: user-defined legacy EAM mo_usrrxt.F90 expression; no
+  // literature citation is recorded there.
   if (usr_DMS_OH_ndx > 0) {
-    // BAD CONSTANT
     const Real ko =
         one + 5.5e-31 * mam4::exp(7460. / temperature) * mtot * 0.21;
     rxt[usr_DMS_OH_ndx] =
         1.7e-42 * mam4::exp(7810. / temperature) * mtot * 0.21 / ko;
   }
 
-  /*-----------------------------------------------------------------
-         ... SO2 + OH  --> SO4  (REFERENCE?? - not Liao)
-  -----------------------------------------------------------------*/
+  // R3: SO2 + OH -> H2SO4
+  // fc = 3.0e-31*(300/T)^3.3, ko = fc*M/(1 + fc*M/1.5e-12),
+  // k3(T,M) = ko * 0.6^(1/(1 + log10(fc*M/1.5e-12)^2)).
+  // adjrxt later forms lambda3 = k3*[OH], which transfers SO2 to H2SO4.
+  // Provenance: user-defined legacy EAM mo_usrrxt.F90 expression. That source
+  // explicitly marks the reference as unknown and says it is not Liao.
   if (usr_SO2_OH_ndx > 0) {
-    // BAD CONSTANT
     const Real fc = 3.0e-31 * mam4::pow(300. / temperature, 3.3);
     const Real ko = fc * mtot / (one + fc * mtot / 1.5e-12);
     rxt[usr_SO2_OH_ndx] =
         ko *
         mam4::pow(0.6, one / (one + square(mam4::log10(fc * mtot / 1.5e-12))));
   }
-
 } // usrrxt
 
-// initialize the solver (error tolerance)
+// Solve one scalar row of (I - dt*A) q_new = q_old + dt*source. The diagonal
+// of A is nonpositive for the current mechanism's nonnegative loss rates.
 KOKKOS_INLINE_FUNCTION
-void imp_slv_inti(Real epsilon[clscnt4]) {
-  for (int i = 0; i < clscnt4; ++i) {
-    epsilon[i] = rel_err;
+ImpSolOutcome solve_backward_euler_row(const Real old, const Real source,
+                                       const Real diagonal, const Real dt,
+                                       Real &updated) {
+  if (!Kokkos::isfinite(source)) {
+    return ImpSolOutcome::NonfiniteResult;
   }
+  const Real denominator = 1 - dt * diagonal;
+  if (!Kokkos::isfinite(denominator)) {
+    return ImpSolOutcome::NonfiniteResult;
+  }
+  if (denominator <= 0) {
+    return ImpSolOutcome::UnsafeDenominator;
+  }
+  const Real numerator = old + dt * source;
+  if (!Kokkos::isfinite(numerator)) {
+    return ImpSolOutcome::NonfiniteResult;
+  }
+  updated = numerator / denominator;
+  if (!Kokkos::isfinite(updated)) {
+    return ImpSolOutcome::NonfiniteResult;
+  }
+  if (updated < 0) {
+    return ImpSolOutcome::NegativeResult;
+  }
+  return ImpSolOutcome::Converged;
 }
-template <typename VectorType>
-KOKKOS_INLINE_FUNCTION void newton_raphson_iter(
-    const Real dti, const Real lin_jac[nzcnt], const Real lrxt[rxntot],
-    const Real lhet[gas_pcnst],         // in
-    const Real iter_invariant[clscnt4], // in
-    const bool factor[itermax], VectorType &lsol,
-    Real solution[clscnt4],                     // inout
-    bool converged[clscnt4], bool &convergence, // out
-    Real prod[clscnt4], Real loss[clscnt4], Real max_delta[clscnt4],
-    // work array
-    Real epsilon[clscnt4]) {
 
-  constexpr auto clsmap_4 = gas_chemistry::clsmap_4;
-  constexpr auto permute_4 = gas_chemistry::permute_4;
-  // dti := 1 / dt
-  // lrxt := reaction rates in 1D array [1/cm^3/s]
-  // lhet := washout rates [1/s]
-  // iter_invariant := dti * solution + ind_prd
-  // factor := boolean controlling whether to do LU factorization
-  // lsol is local solution--appears to be identical to 'solution'
-  // looks like 'solution' is local to imp_sol() and 'lsol' is local to
-  // newton_raphson_iter(), and the final solutions is 'base_sol'
-  // these are volume mixing ratios [kmol species/kmol dry air]
-  // lsol := base_sol (at initialization), then when converged base_sol = lsol
-  // solution := array from imp_sol that holds the intermediate solutions and
-  //         also holds the solution after converged [kmol species/kmol dry air]
-  // converged := array for entrywise convergence bools
-  // convergence := overall bool flag for convergence
-  // prod/loss := chemical production/loss rates [1/cm^3/s]
-  // NOTE: max_delta doesn't appear to be used for anything within gas_chem.hpp
-  //       however, it looks like it's written to output in MAM4
-  // max_delta := abs(forcing / solution) if abs(solution) > 1.0e-20 and
-  //              0 otherwise
-  // epsilon := rel_err = 1.0e-3 (hardcoded above)
-
-  // -----------------------------------------------------
-  //  the newton-raphson iteration for f(y) = 0
-  // -----------------------------------------------------
-
-  Real sys_jac[nzcnt] = {};
-  Real forcing[clscnt4] = {};
-  // BAD CONSTANT
-  const Real small = 1.0e-40;
-  const Real zero = 0;
-
-  for (int nr_iter = 0; nr_iter < itermax; ++nr_iter) {
-    // -----------------------------------------------------------------------
-    //  ... the non-linear component
-    // -----------------------------------------------------------------------
-
-    if (factor[nr_iter]) {
-      nlnmat(sys_jac, // out
-             lin_jac,
-             dti); // in
-      // -----------------------------------------------------------------------
-      //  ... factor the "system" matrix
-      // -----------------------------------------------------------------------
-
-      lu_fac(sys_jac);
-
-    } // factor
-    // -----------------------------------------------------------------------
-    //  ... form f(y)
-    // -----------------------------------------------------------------------
-    imp_prod_loss(prod, loss,        // out
-                  lsol, lrxt, lhet); // in
-
-    // the units are internally consistent here, providing that
-    // iter_invariant, prod, loss all have units [1/s] to match up with
-    // solution (vmr) [-] and dti [1/s]. however, there could be other answers
-    for (int mm = 0; mm < clscnt4; ++mm) {
-      forcing[mm] =
-          solution[mm] * dti - (iter_invariant[mm] + prod[mm] - loss[mm]);
-    } // mm
-
-    // -----------------------------------------------------------------------
-    //  ... solve for the mixing ratio at t(n+1)
-    // -----------------------------------------------------------------------
-    lu_slv(sys_jac, forcing);
-    for (int mm = 0; mm < clscnt4; ++mm) {
-      solution[mm] += forcing[mm];
-    } // mm
-
-    // -----------------------------------------------------------------------
-    //  ... convergence measures
-    // -----------------------------------------------------------------------
-
-    // NOTE: is there a particular reason we don't check on the first iteration?
-    // seems like it'd be better to avoid the if on every iteration loop.
-    // same deal below
-    if (nr_iter > 0) {
-      for (int kk = 0; kk < clscnt4; ++kk) {
-        int mm = permute_4[kk];
-        // BAD CONSTANT
-        if (mam4::abs(solution[mm]) > 1.0e-20) {
-          max_delta[kk] = mam4::abs(forcing[mm] / solution[mm]);
-        } else {
-          max_delta[kk] = zero;
-        }
-
-      } // kk
-
-    } // nr_iter
-
-    // -----------------------------------------------------------------------
-    //  ... limit iterate
-    // -----------------------------------------------------------------------
-    for (int kk = 0; kk < clscnt4; ++kk) {
-      if (solution[kk] < zero) {
-        solution[kk] = zero;
-      }
-    } // end kk
-
-    // -----------------------------------------------------------------------
-    //  ... transfer latest solution back to work array
-    // -----------------------------------------------------------------------
-
-    for (int kk = 0; kk < clscnt4; ++kk) {
-      int jj = clsmap_4[kk];
-      int mm = permute_4[kk];
-      lsol[jj] = solution[mm];
-    } // end kk
-
-    // -----------------------------------------------------------------------
-    //  ... check for convergence
-    // -----------------------------------------------------------------------
-
-    if (nr_iter > 0) {
-      convergence = true;
-      for (int kk = 0; kk < clscnt4; ++kk) {
-        converged[kk] = true;
-
-        int mm = permute_4[kk];
-        // TODO: is there a computational reason this needs to happen?
-        // I suspect not, given that epsilon is hard-coded to 1e-3, meaning that
-        // all of this logic surrounding 'converged[kk] = ...' is unnecessary
-        bool frc_mask = mam4::abs(forcing[mm]) > small;
-        if (frc_mask) {
-          // this ends up effectively being:
-          //                         if (small < abs(forcing) <= eps * abs(sol))
-          //                            => converged
-          // so the lower bound appears unnecessary
-          converged[kk] =
-              mam4::abs(forcing[mm]) <= epsilon[kk] * mam4::abs(solution[mm]);
-        } else {
-          // and this is just; if (abs(forcing) <= small <= eps) => converged
-          // and the implicit comparison of small and eps is not helpful
-          converged[kk] = true;
-        } // frc_mask
-        if (!converged[kk]) {
-          convergence = false;
-        }
-      } // end
-
-      if (convergence) {
-        return;
-      }
-    } // end if (nr_iter > 0)
-  }   // end nr_iter loop
-} // newton_raphson_iter() function
 template <typename VectorType>
 KOKKOS_INLINE_FUNCTION void
-imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
-        const Real reaction_rates[rxntot], const Real het_rates[gas_pcnst],
-        const Real extfrc[extcnt], const Real &delt, const bool factor[itermax],
-        Real epsilon[clscnt4], Real prod_out[clscnt4], Real loss_out[clscnt4]) {
-
+imp_sol(VectorType &base_sol, const Real reaction_rates[rxntot],
+        const Real het_rates[gas_pcnst], const Real extfrc[extcnt],
+        const Real delt, Real prod_out[clscnt4], Real loss_out[clscnt4],
+        ImpSolResult &result) {
+  static_assert(gas_pcnst == 31 && clscnt4 == 30 && nzcnt == 32 &&
+                    rxntot == 7 && extcnt == 9,
+                "The direct gas solver requires the current MAM4xx mechanism");
   constexpr auto clsmap_4 = gas_chemistry::clsmap_4;
   constexpr auto permute_4 = gas_chemistry::permute_4;
 
-  // ---------------------------------------------------------------------------
-  //  ... imp_sol advances the volumetric mixing ratio
-  //  forward one time step via the fully implicit euler scheme.
-  //
-  // NOTE: does anyone know what this is referring to?
-  // can probably lose it since it looks like these chips were axed in 2020/2023
-  // this source is meant for small l1 cache machines such as
-  // the intel pentium and itanium cpus
-  // ---------------------------------------------------------------------------
+  result = ImpSolResult{};
+  for (int k = 0; k < clscnt4; ++k) {
+    prod_out[k] = 0;
+    loss_out[k] = 0;
+  }
 
-  // NOTE:
-  // extfrc := external in-situ forcing [1/cm^3/s]
+  bool valid_input = Kokkos::isfinite(delt) && delt > 0;
+  for (int j = 0; j < gas_pcnst; ++j) {
+    valid_input = valid_input && Kokkos::isfinite(base_sol[j]) &&
+                  Kokkos::isfinite(het_rates[j]) &&
+                  (j == o3_idx || het_rates[j] >= 0);
+  }
+  for (int i = 0; i < rxntot; ++i) {
+    valid_input = valid_input && Kokkos::isfinite(reaction_rates[i]) &&
+                  reaction_rates[i] >= 0;
+  }
+  for (int i = 0; i < extcnt; ++i) {
+    valid_input = valid_input && Kokkos::isfinite(extfrc[i]);
+  }
+  // The ordered formulas use this exact current class layout. Fail explicitly
+  // if a future generated mechanism changes the mapping without redesign.
+  for (int k = 0; k < clscnt4; ++k) {
+    valid_input = valid_input && clsmap_4[k] == k + 1 && permute_4[k] == k;
+  }
+  if (!valid_input) {
+    return;
+  }
 
-  const Real zero = 0;
-  const Real half = 0.5;
-  const Real one = 1;
-  const Real two = 2;
-
-  const int cut_limit = 5;
-
-  Real ind_prd[clscnt4] = {};
-  Real lin_jac[nzcnt] = {};
-  bool converged[clscnt4] = {};
-  bool convergence = false;
-  Real prod[clscnt4] = {};
-  Real loss[clscnt4] = {};
-  Real max_delta[clscnt4] = {};
-
-  // -----------------------------------------------------------------------
-  //  ... class independent forcing
-  // -----------------------------------------------------------------------
-  // FIXME: BAD CONSTANT
-  // what does this 4 represent, and would it ever be different?
-  indprd(4,                       // in
-         ind_prd,                 // inout
-         reaction_rates, extfrc); // in
+  Real independent[clscnt4] = {};
+  Real matrix[nzcnt] = {};
+  indprd(4, independent, reaction_rates, extfrc);
+  linmat(matrix, reaction_rates, het_rates);
+  for (int k = 0; k < clscnt4; ++k) {
+    if (!Kokkos::isfinite(independent[k])) {
+      result.outcome = ImpSolOutcome::NonfiniteResult;
+      return;
+    }
+  }
+  for (int i = 0; i < nzcnt; ++i) {
+    if (!Kokkos::isfinite(matrix[i])) {
+      result.outcome = ImpSolOutcome::NonfiniteResult;
+      return;
+    }
+  }
 
   Real solution[clscnt4] = {};
-  Real iter_invariant[clscnt4] = {};
+  for (int k = 0; k < clscnt4; ++k) {
+    solution[permute_4[k]] = base_sol[clsmap_4[k]];
+  }
 
-  // !-----------------------------------------------------------------------
-  //       ! ... time step loop
-  //       !-----------------------------------------------------------------------
-  Real dt = delt;
-  int cut_cnt = 0;
-  int fail_cnt = 0;
-  int stp_con_cnt = 0;
-  // track how much of the outer time step = delt (interval) has been completed
-  // during Newton-Raphson iteration
-  Real interval_done = zero;
-  // time_step_loop
-  for (int i = 0; i < max_time_steps; ++i) {
-    const Real dti = one / dt;
-    // -----------------------------------------------------------------------
-    //  ... transfer from base to local work arrays
-    // -----------------------------------------------------------------------
-    auto &lsol = base_sol;
-    // -----------------------------------------------------------------------
-    //  ... transfer from base to class array
-    // -----------------------------------------------------------------------
+  // Frozen reaction_rates have these meanings in the equations below:
+  //   r0 = J(H2O2), supplied by the photolysis module;
+  //   r1 = k1*[HO2]^2/M, the completed R1 H2O2 source;
+  //   r2 = k2*[OH], r3 = k3*[OH], r4 = k4*[OH],
+  //   r5 = k5*[OH], and r6 = k6*[NO3].
+  // DMS -> SO2 -> H2SO4 are the only coupled rows, so solve that chain in
+  // dependency order. Here h_j denotes het_rates[j] and b_k an independent
+  // source. Each line solves its stated ODE with one backward-Euler step.
 
-    for (int kk = 0; kk < clscnt4; ++kk) {
-      int jj = clsmap_4[kk];
-      int mm = permute_4[kk];
-      solution[mm] = lsol[jj];
-    } // kk
+  // DMS losses (R4, R5, and R6):
+  //   DMS + OH  -> SO2                    at lambda4 = r4
+  //   DMS + OH  -> 0.5 SO2 + 0.5 HO2     at lambda5 = r5
+  //   DMS + NO3 -> SO2 + HNO3             at lambda6 = r6
+  // ODE: dq_DMS/dt = -(r4 + r5 + r6 + h4) q_DMS.
+  ImpSolOutcome outcome = solve_backward_euler_row(
+      solution[3], independent[3], matrix[5], delt, solution[3]);
+  if (outcome != ImpSolOutcome::Converged) {
+    result.outcome = outcome;
+    return;
+  }
 
-    // -----------------------------------------------------------------------
-    //  ... set the iteration invariant part of the function f(y)
-    // -----------------------------------------------------------------------
+  // SO2 production and loss:
+  //   DMS -> SO2 contributions are (r4 + 0.5*r5 + r6) q_DMS;
+  //   SO2 + OH -> H2SO4 removes SO2 at lambda3 = r3.
+  // ODE: dq_SO2/dt = b2 + (r4 + 0.5*r5 + r6) q_DMS
+  //                   - (r3 + h3) q_SO2.
+  const Real so2_source = independent[2] + matrix[4] * solution[3];
+  outcome = solve_backward_euler_row(solution[2], so2_source, matrix[3], delt,
+                                     solution[2]);
+  if (outcome != ImpSolOutcome::Converged) {
+    result.outcome = outcome;
+    return;
+  }
 
-    // TODO: the units seem wrong here--could these arrays hold quantities
-    // with different units?
-    // ind_prd has units [1/cm^3/s] (for the entries that are nonzero)
-    // dti units are [1/s], and
-    // solution is a volume mixing ratio [kmol species/kmol dry air]
-    // NOTE: this could be correct if solution had units [1/cm^3]
-    // which would line up with a number concentration
-    for (int mm = 0; mm < clscnt4; ++mm) {
-      iter_invariant[mm] = dti * solution[mm] + ind_prd[mm];
-    } // mm
-    //-----------------------------------------------------------------------
-    // ... the linear component
-    //-----------------------------------------------------------------------
-    linmat(lin_jac,                    //  out
-           reaction_rates, het_rates); // in
+  // H2SO4 production from R3: SO2 + OH -> H2SO4 at lambda3 = r3.
+  // ODE: dq_H2SO4/dt = r3 q_SO2 - h2 q_H2SO4.
+  const Real h2so4_source = independent[1] + matrix[2] * solution[2];
+  outcome = solve_backward_euler_row(solution[1], h2so4_source, matrix[1],
+                                     delt, solution[1]);
+  if (outcome != ImpSolOutcome::Converged) {
+    result.outcome = outcome;
+    return;
+  }
 
-    // =======================================================================
-    //  the newton-raphson iteration for f(y) = 0
-    // =======================================================================
+  // H2O2 chemistry:
+  //   H2O2 + hv -> products not retained   at J(H2O2) = r0
+  //   HO2 + HO2 -> H2O2                    at completed source r1
+  //   H2O2 + OH -> H2O + HO2               at lambda2 = r2
+  // ODE: dq_H2O2/dt = r1 - (r0 + r2 + h1) q_H2O2.
+  outcome = solve_backward_euler_row(solution[0], independent[0], matrix[0],
+                                     delt, solution[0]);
+  if (outcome != ImpSolOutcome::Converged) {
+    result.outcome = outcome;
+    return;
+  }
 
-    newton_raphson_iter(dti, lin_jac, reaction_rates, het_rates, // in
-                        iter_invariant,                          // in
-                        factor, lsol,
-                        solution,                        // inout
-                        converged, convergence,          // out
-                        prod, loss, max_delta, epsilon); // out
+  // SOAG and the remaining aerosol-mass/modal-number entries have no chemical
+  // coupling in this mechanism: dq_j/dt = b_(j-1) - h_j q_j.
+  for (int k = 4; k < clscnt4; ++k) {
+    outcome = solve_backward_euler_row(solution[k], independent[k],
+                                       matrix[k + 2], delt, solution[k]);
+    if (outcome != ImpSolOutcome::Converged) {
+      result.outcome = outcome;
+      return;
+    }
+  }
 
-    // -----------------------------------------------------------------------
-    //  ... check for newton-raphson convergence
-    // -----------------------------------------------------------------------
-    if (!convergence) {
-      // -----------------------------------------------------------------------
-      //            ... non-convergence
-      // -----------------------------------------------------------------------
-      fail_cnt += fail_cnt;
+  Real trial[gas_pcnst] = {};
+  for (int j = 0; j < gas_pcnst; ++j) {
+    trial[j] = base_sol[j];
+  }
+  for (int k = 0; k < clscnt4; ++k) {
+    trial[clsmap_4[k]] = solution[permute_4[k]];
+  }
 
-      stp_con_cnt = 0;
+  Real production[clscnt4] = {};
+  Real loss[clscnt4] = {};
+  Real final_production[clscnt4] = {};
+  imp_prod_loss(production, loss, trial, reaction_rates, het_rates);
+  for (int k = 0; k < clscnt4; ++k) {
+    const int m = permute_4[k];
+    final_production[k] = production[m] + independent[m];
+    if (!Kokkos::isfinite(final_production[k]) ||
+        !Kokkos::isfinite(loss[m])) {
+      result.outcome = ImpSolOutcome::NonfiniteResult;
+      return;
+    }
+  }
 
-      if (cut_cnt < cut_limit) {
-        cut_cnt += 1;
-        if (cut_cnt < cut_limit) {
-          dt *= half;
-        } else {
-          dt *= 0.1;
-        } // cut_cnt < cut_limit
-        // FIXME: figure out how we want to do error handling/logging
-        // break;
-        // cycle time_step_loop
-      } else {
-        // write(iulog,'('' imp_sol: Failed to converge @
-        // (lchnk,lev,col,nstep,dt,time) = '',4i6,1p,2e21.13)') &
-        //                   lchnk,lev,icol,nstep,dt,interval_done+dt
-        // do mm = 1,clscnt4
-        //                 if( .not. converged(mm) ) then
-        //                    write(iulog,'(1x,a8,1x,1pe10.3)')
-        //                    solsym(clsmap(mm,4)), max_delta(mm)
-        //                 endif
-        //              enddo
-      } //  cut_cnt < cut_limit
-    }   // non-convergence
+  // Publish only after every row and diagnostic has been checked.
+  for (int k = 0; k < clscnt4; ++k) {
+    base_sol[clsmap_4[k]] = trial[clsmap_4[k]];
+    prod_out[k] = final_production[k];
+    loss_out[k] = loss[permute_4[k]];
+  }
+  result.outcome = ImpSolOutcome::Converged;
+}
 
-    // -----------------------------------------------------------------------
-    // ... check for interval done
-    // -----------------------------------------------------------------------
-
-    interval_done += dt;
-
-    // BAD CONSTANT
-    if (mam4::abs(delt - interval_done) <= 0.0001) {
-      if (fail_cnt > 0) {
-        // FIXME: probably handle this more gracefully via error logging?
-        EKAT_KERNEL_ERROR_MSG("ERROR: imp_sol failure @ (lchnk,lev,col) = \n");
-      }
-      break;
-    } else {
-      // -----------------------------------------------------------------------
-      //  ... transfer latest solution back to base array
-      // -----------------------------------------------------------------------
-      if (convergence) {
-        stp_con_cnt += 1;
-      }
-
-      for (int mm = 0; mm < gas_pcnst; ++mm) {
-        base_sol[mm] = lsol[mm];
-      }
-
-      if (stp_con_cnt >= 2) {
-        dt *= two;
-        stp_con_cnt = 0;
-      }
-
-      dt = mam4::min(dt, delt - interval_done);
-
-    } // abs( delt - interval_done ) <= .0001
-  }   // time_step_loop
-
-  //-----------------------------------------------------------------------
-  // ... Transfer latest solution back to base array
-  //     and calculate Prod/Loss history buffers
-  //-----------------------------------------------------------------------
-
-  for (int kk = 0; kk < clscnt4; ++kk) {
-    const int jj = clsmap_4[kk];
-    const int mm = permute_4[kk];
-    //  ... Transfer latest solution back to base array
-    base_sol[jj] = solution[mm];
-    //  ... Prod/Loss history buffers...
-    prod_out[kk] = prod[mm] + ind_prd[mm];
-    loss_out[kk] = loss[mm];
-
-  } // cls_loop
-} // imp_sol
 } // namespace gas_chemistry
 } // namespace mam4
 #endif

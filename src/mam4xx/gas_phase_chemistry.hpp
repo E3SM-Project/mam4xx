@@ -43,7 +43,7 @@ KOKKOS_INLINE_FUNCTION void gas_phase_chemistry(
     const Real photo_rates[mam4::mo_photo::phtcnt], const Real extfrc[extcnt],
     const Real invariants[nfs], const Real het_rates[gas_pcnst],
     // out
-    VectorType &qq) {
+    VectorType &qq, gas_chemistry::ImpSolResult &result) {
 
   //=====================================================================
   // ... set rates for "tabular" and user specified reactions
@@ -81,36 +81,26 @@ KOKKOS_INLINE_FUNCTION void gas_phase_chemistry(
   // Class solution algorithms
   //===========================
 
-  // copy photolysis rates into reaction_rates (assumes photolysis rates come
-  // first)
+  // J1: H2O2 + hv -> products not retained by this reduced mechanism.
+  // photo_rates[0] is the upstream photolysis frequency J(H2O2) [s^-1], so
+  // the H2O2 loss used by imp_sol is J(H2O2) * q_H2O2. Actinic-flux and
+  // cross-section calculations remain in the photolysis module.
   for (int i = 0; i < phtcnt; ++i) {
     reaction_rates[i] = photo_rates[i];
   }
 
-  // ... solve for "Implicit" species
-  using mam4::gas_chemistry::itermax;
-  bool factor[itermax];
-  for (int i = 0; i < itermax; ++i) {
-    factor[i] = true;
-  }
-
-  // initialize error tolerances
+  // Solve the current affine implicit class by direct backward Euler.
   using mam4::gas_chemistry::clscnt4;
-  Real epsilon[clscnt4];
-  mam4::gas_chemistry::imp_slv_inti(epsilon);
-
-  // solve chemical system implicitly
   Real prod_out[clscnt4], loss_out[clscnt4];
-  mam4::gas_chemistry::imp_sol(qq,                                      // out
-                               reaction_rates, het_rates, extfrc_rates, // in
-                               dt, factor,                              // in
-                               epsilon, prod_out, loss_out);            // out
+  mam4::gas_chemistry::imp_sol(qq, reaction_rates, het_rates, extfrc_rates,
+                               dt, prod_out, loss_out, result);
 
   // save h2so4 change by gas phase chem (for later new particle nucleation)
   if (ndx_h2so4 > 0) {
     del_h2so4_gasprod = qq[ndx_h2so4] - del_h2so4_gasprod;
   }
 }
+
 } // namespace microphysics
 } // namespace mam4
 #endif

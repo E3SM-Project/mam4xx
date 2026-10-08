@@ -6,6 +6,9 @@
 #include <mam4xx/mam4.hpp>
 #include <validation.hpp>
 
+#include <cstdlib>
+#include <iostream>
+
 using namespace skywalker;
 using namespace mam4::gas_chemistry;
 
@@ -22,17 +25,14 @@ void imp_sol(Ensemble *ensemble) {
     std::vector<Real> prod_out(clscnt4, zero);
     std::vector<Real> loss_out(clscnt4, zero);
 
-    Real epsilon[clscnt4] = {};
-    imp_slv_inti(epsilon);
-
-    bool factor[itermax];
-    for (int i = 0; i < itermax; ++i) {
-      factor[i] = true;
+    ImpSolResult result;
+    imp_sol(base_sol, reaction_rates.data(), het_rates.data(), extfrc.data(),
+            delt, prod_out.data(), loss_out.data(), result);
+    if (!result.success()) {
+      std::cerr << "imp_sol validation did not complete the requested interval: "
+                << static_cast<int>(result.outcome) << std::endl;
+      std::exit(EXIT_FAILURE);
     }
-
-    imp_sol(base_sol, //    ! species mixing ratios [vmr] & !
-            reaction_rates.data(), het_rates.data(), extfrc.data(), delt,
-            factor, epsilon, prod_out.data(), loss_out.data());
 
     output.set("base_sol", base_sol);
   });
