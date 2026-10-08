@@ -69,8 +69,8 @@ TEST_CASE("test_calc_org_matter_seasalt_competitive_adsorption",
                                            tolerance));
     for (int iorg = 0; iorg < n_organic_species; ++iorg) {
       const Real expected = selected ? expected_class_fraction[iorg] : 0.0;
-      REQUIRE(mam4::FloatingPoint<Real>::rel(
-          mass_frac_bub_section[iorg][ibin], expected, tolerance));
+      REQUIRE(mam4::FloatingPoint<Real>::rel(mass_frac_bub_section[iorg][ibin],
+                                             expected, tolerance));
     }
   }
 }
