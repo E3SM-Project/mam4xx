@@ -8,12 +8,12 @@
 
 #include <iostream>
 
-// This driver computes the binary or ternary gas_chemistry for the given
-// input.
+// Run the selected gas-chemistry calculation on the input cases in a YAML file.
 
 void usage() {
-  std::cerr << "gas_chem_driver: a Skywalker driver for validating the "
-               "MAM4 gas_chemistry parameterizations."
+  std::cerr << "gas_chem_driver: validate MAM4xx gas-chemistry rates, "
+               "production/loss calculations, and the backward-Euler solver "
+               "using Skywalker input cases."
             << std::endl;
   std::cerr << "gas_chem_driver: usage:" << std::endl;
   std::cerr << "gas_chem_driver <input.yaml>" << std::endl;
