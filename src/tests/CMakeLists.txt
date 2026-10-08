@@ -51,6 +51,9 @@ EkatCreateUnitTest(mam4_aero_emissions_unit_tests mam4_aero_emissions_unit_tests
 EkatCreateUnitTest(mam4_photo_setcol mam4_photo_setcol.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
 
+EkatCreateUnitTest(mam4_gas_chem_analytical_sol_unit_tests mam4_gas_chem_analytical_sol_unit_tests.cpp
+  LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
+
 if (NOT ${CMAKE_CXX_COMPILER_ID} STREQUAL "Intel") #The Intel compiler always emit a warning for inline functions.
   target_compile_options(utils_unit_tests PRIVATE)
   target_compile_options(mam4_gasaerexch_unit_tests PRIVATE)
@@ -63,6 +66,7 @@ if (NOT ${CMAKE_CXX_COMPILER_ID} STREQUAL "Intel") #The Intel compiler always em
   target_compile_options(mam4_spitfire_transport_unit_tests PRIVATE)
   target_compile_options(mam4_mo_setsox_unit_tests PRIVATE)
   target_compile_options(mam4_aero_emissions_unit_tests PRIVATE)
+  target_compile_options(mam4_gas_chem_analytical_sol_unit_tests PRIVATE)
 endif ()
 
 EkatCreateUnitTest(mam4_ndrop_unit_tests mam4_ndrop_unit_tests.cpp

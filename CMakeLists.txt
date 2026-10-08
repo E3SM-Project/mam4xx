@@ -8,6 +8,7 @@ option(MAM4XX_ENABLE_GPU       "Enable GPU support" OFF)
 option(MAM4XX_ENABLE_COVERAGE  "Enable code coverage instrumentation" OFF)
 option(MAM4XX_ENABLE_SKYWALKER "Enable Skywalker cross validation" ON)
 option(MAM4XX_ENABLE_TESTS     "Enable unit tests" ON)
+option(MAM4XX_USE_IMPLICIT_GAS_SOLVER "Use implicit gas solver instead of analytical solution" OFF)
 
 # Single or double precision?
 if (CMAKE_VERSION GREATER_EQUAL 4.2)

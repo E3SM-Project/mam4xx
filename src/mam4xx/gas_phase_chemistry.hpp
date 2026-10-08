@@ -88,6 +88,11 @@ KOKKOS_INLINE_FUNCTION void gas_phase_chemistry(
   }
 
   // ... solve for "Implicit" species
+  using mam4::gas_chemistry::clscnt4;
+  Real prod_out[clscnt4], loss_out[clscnt4];
+
+#ifdef MAM4XX_USE_IMPLICIT_GAS_SOLVER
+  // Solve chemical system implicitly with iterative Newton-Raphson scheme
   using mam4::gas_chemistry::itermax;
   bool factor[itermax];
   for (int i = 0; i < itermax; ++i) {
@@ -95,16 +100,19 @@ KOKKOS_INLINE_FUNCTION void gas_phase_chemistry(
   }
 
   // initialize error tolerances
-  using mam4::gas_chemistry::clscnt4;
   Real epsilon[clscnt4];
   mam4::gas_chemistry::imp_slv_inti(epsilon);
 
-  // solve chemical system implicitly
-  Real prod_out[clscnt4], loss_out[clscnt4];
   mam4::gas_chemistry::imp_sol(qq,                                      // out
                                reaction_rates, het_rates, extfrc_rates, // in
                                dt, factor,                              // in
                                epsilon, prod_out, loss_out, result);    // out
+#else
+  // Solve chemical system analytically (exact closed-form solution)
+  mam4::gas_chemistry::analytical_sol(qq,                                      // out
+                                      reaction_rates, het_rates, extfrc_rates, // in
+                                      dt, prod_out, loss_out, result);         // out
+#endif
 
   // save h2so4 change by gas phase chem (for later new particle nucleation)
   if (ndx_h2so4 > 0) {
