@@ -604,9 +604,9 @@ public:
 
 namespace convproc {
 using Const_Kokkos_2D_View =
-    Kokkos::View<const Real * [ConvProc::pcnst_extd], Kokkos::MemoryUnmanaged>;
+    Kokkos::View<const Real **, Kokkos::MemoryUnmanaged>;
 using Kokkos_2D_View =
-    Kokkos::View<Real * [ConvProc::pcnst_extd], Kokkos::MemoryUnmanaged>;
+    Kokkos::View<Real **, Kokkos::MemoryUnmanaged>;
 
 KOKKOS_INLINE_FUNCTION
 void assign_la_lc(const int imode, const int ispec, int &la, int &lc) {
@@ -1735,7 +1735,7 @@ KOKKOS_INLINE_FUNCTION
 void initialize_tmr_array(
     const ThreadTeam &team, const int nlev, const int iconvtype,
     const bool doconvproc_extd[ConvProc::pcnst_extd],
-    Kokkos::View<Real * [aero_model::pcnst], Kokkos::MemoryUnmanaged> q,
+    Kokkos::View<Real **, Kokkos::MemoryUnmanaged> q,
     Kokkos_2D_View gath, Kokkos_2D_View chat, Kokkos_2D_View conu,
     Kokkos_2D_View cond) {
   // -----------------------------------------------------------------------
@@ -2661,10 +2661,10 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
 
   //  q(nlev,pcnst)      ! q(k,m) at current i [kg/kg]
   auto q = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
-      scratch1Dviews[ConvProc::Col1DViewInd::q].data(), nlev, pcnst);
+      scratch1Dviews[ConvProc::Col1DViewInd::q].data(), pcnst, nlev);
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int i) {
     for (int j = 0; j < pcnst; ++j)
-      q(i, j) = qnew(i, j);
+      q(j, i) = qnew(i, j);
   });
 
   // precip-borne aerosol
@@ -2687,7 +2687,7 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
       qsrflx[i][j] = 0;
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int i) {
     for (int j = 0; j < pcnst; ++j)
-      dqdt(i, j) = 0;
+      dqdt(j, i) = 0;
   });
   xx_mfup_max = 0;
   xx_wcldbase = 0;
@@ -2799,7 +2799,7 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
         Kokkos::TeamVectorRange(team, ktop, kbot_prevap), [&](int kk) {
           ma_resuspend_convproc(
               Kokkos::subview(dcondt, Kokkos::ALL(), kk),
-              Kokkos::subview(dcondt_resusp, Kokkos::ALL()), kk);
+              Kokkos::subview(dcondt_resusp, Kokkos::ALL(), kk));
         });
     team.team_barrier();
 
@@ -2823,8 +2823,8 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
           update_tendency_final(ntsub, jtsub, pcnst, dt,
                                 Kokkos::subview(dcondt, Kokkos::ALL(),kk),
                                 doconvproc,
-                                Kokkos::subview(dqdt, kk, Kokkos::ALL()),
-                                Kokkos::subview(q, kk, Kokkos::ALL()));
+                                Kokkos::subview(dqdt, Kokkos::ALL(), kk),
+                                Kokkos::subview(q, Kokkos::ALL(), kk));
         });
   } // of the main "for jtsub = 0, ntsub" loop
 }
@@ -3016,15 +3016,15 @@ void ma_convproc_intr(
   // clang-format on
 
   auto dqdt = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
-      scratch1Dviews[ConvProc::Col1DViewInd::dqdt].data(), nlev,
-      aero_model::pcnst);
+      scratch1Dviews[ConvProc::Col1DViewInd::dqdt].data(), 
+      aero_model::pcnst, nlev);
 
   auto dlfdp = Kokkos::View<Real *, Kokkos::MemoryUnmanaged>(
       scratch1Dviews[ConvProc::Col1DViewInd::dlfdp].data(), nlev);
 
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int j) {
     for (int i = 0; i < aero_model::pcnst; ++i)
-      dqdt(j, i) = ptend_q(j, i);
+      dqdt(i, j) = ptend_q(j, i);
   });
   team.team_barrier();
 
@@ -3053,7 +3053,7 @@ void ma_convproc_intr(
   // overwritten each time I think it is OK since it is overwritten the same
   // from each thread.
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int kk) {
-    update_qnew_ptend(dotend, false, Kokkos::subview(dqdt, kk, Kokkos::ALL()),
+    update_qnew_ptend(dotend, false, Kokkos::subview(dqdt, Kokkos::ALL(), kk),
                       dt, ptend_lq, Kokkos::subview(ptend_q, kk, Kokkos::ALL()),
                       Kokkos::subview(qnew, kk, Kokkos::ALL()));
   });
@@ -3066,7 +3066,7 @@ void ma_convproc_intr(
     Real qsrflx[aero_model::pcnst][nsrflx] = {};
     Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int j) {
       for (int i = 0; i < aero_model::pcnst; ++i)
-        dqdt(j, i) = 0;
+        dqdt(i, j) = 0;
       dlfdp[j] = mam4::max((dlf[j]), 0.0);
     });
     team.team_barrier();
@@ -3077,7 +3077,7 @@ void ma_convproc_intr(
     team.team_barrier();
     // apply deep conv processing tendency
     Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int kk) {
-      update_qnew_ptend(dotend, true, Kokkos::subview(dqdt, kk, Kokkos::ALL()),
+      update_qnew_ptend(dotend, true, Kokkos::subview(dqdt, Kokkos::ALL(), kk),
                         dt, ptend_lq,
                         Kokkos::subview(ptend_q, kk, Kokkos::ALL()),
                         Kokkos::subview(qnew, kk, Kokkos::ALL()));

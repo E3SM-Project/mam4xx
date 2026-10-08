@@ -23,13 +23,13 @@ void get_input(const Input &input, const std::string &name, const int size,
 }
 void get_input(const Input &input, const std::string &name, const int rows,
                const int cols, std::vector<Real> &host,
-               Kokkos::View<Real * [mam4::ConvProc::pcnst_extd],
+               Kokkos::View<Real **,
                             Kokkos::MemoryUnmanaged> &dev) {
   host = input.get_array(name);
   EKAT_ASSERT(host.size() == rows * cols);
   mam4::ColumnView col_view = mam4::validation::create_column_view(rows * cols);
-  dev = Kokkos::View<Real * [mam4::ConvProc::pcnst_extd],
-                     Kokkos::MemoryUnmanaged>(col_view.data(), rows, cols);
+  dev = Kokkos::View<Real **,
+                     Kokkos::MemoryUnmanaged>(col_view.data(), cols, rows);
   {
     std::vector<std::vector<Real>> matrix(rows, std::vector<Real>(cols));
     // Col Major layout
@@ -39,32 +39,32 @@ void get_input(const Input &input, const std::string &name, const int rows,
     auto host_view = Kokkos::create_mirror_view(dev);
     for (int i = 0; i < rows; ++i)
       for (int j = 0; j < cols; ++j)
-        host_view(i, j) = matrix[i][j];
+        host_view(j, i) = matrix[i][j];
     Kokkos::deep_copy(dev, host_view);
   }
 }
 void set_output(Output &output, const std::string &name, const int rows,
                 const int cols, std::vector<Real> &host,
-                const Kokkos::View<Real * [mam4::ConvProc::pcnst_extd],
+                const Kokkos::View<Real **,
                                    Kokkos::MemoryUnmanaged> &dev) {
   host.resize(rows * cols);
   auto host_view = Kokkos::create_mirror_view(dev);
   Kokkos::deep_copy(host_view, dev);
   for (int i = 0, n = 0; i < rows; ++i)
     for (int j = 0; j < cols; ++j, ++n)
-      host[n] = host_view(i, j);
+      host[n] = host_view(j, i);
   output.set(name, host);
 }
 void set_host(const std::string &name, const int rows, const int cols,
               std::vector<Real> &host,
-              const Kokkos::View<Real * [mam4::ConvProc::pcnst_extd],
+              const Kokkos::View<Real **,
                                  Kokkos::MemoryUnmanaged> &dev) {
   host.resize(rows * cols);
   auto host_view = Kokkos::create_mirror_view(dev);
   Kokkos::deep_copy(host_view, dev);
   for (int i = 0, n = 0; i < rows; ++i)
     for (int j = 0; j < cols; ++j, ++n)
-      host[n] = host_view(i, j);
+      host[n] = host_view(j, i);
 }
 } // namespace
 void initialize_dcondt(Ensemble *ensemble) {
@@ -88,7 +88,7 @@ void initialize_dcondt(Ensemble *ensemble) {
         eudp_host, eddp_host, dcondt_host, dcondt_host_2;
     mam4::ColumnView doconvproc_extd_dev, dpdry_i_dev, fa_u_dev, mu_i_dev,
         md_i_dev, dudp_dev, dddp_dev, eudp_dev, eddp_dev;
-    Kokkos::View<Real * [mam4::ConvProc::pcnst_extd], Kokkos::MemoryUnmanaged>
+    Kokkos::View<Real **, Kokkos::MemoryUnmanaged>
         gath_dev, chat_dev, conu_dev, cond_dev, dconudt_activa_dev,
         dconudt_wetdep_dev, dcondt_dev, dcondt_dev_2;
 
@@ -121,14 +121,14 @@ void initialize_dcondt(Ensemble *ensemble) {
 
     mam4::ColumnView col_view =
         mam4::validation::create_column_view(nlev * mam4::ConvProc::pcnst_extd);
-    dcondt_dev = Kokkos::View<Real * [mam4::ConvProc::pcnst_extd],
+    dcondt_dev = Kokkos::View<Real **,
                               Kokkos::MemoryUnmanaged>(
-        col_view.data(), nlev, mam4::ConvProc::pcnst_extd);
+        col_view.data(), mam4::ConvProc::pcnst_extd, nlev);
     mam4::ColumnView col_view_2 =
         mam4::validation::create_column_view(nlev * mam4::ConvProc::pcnst_extd);
-    dcondt_dev_2 = Kokkos::View<Real * [mam4::ConvProc::pcnst_extd],
+    dcondt_dev_2 = Kokkos::View<Real **,
                                 Kokkos::MemoryUnmanaged>(
-        col_view_2.data(), nlev, mam4::ConvProc::pcnst_extd);
+        col_view_2.data(), mam4::ConvProc::pcnst_extd, nlev);
 
     auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
