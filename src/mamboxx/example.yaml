@@ -1,0 +1,55 @@
+# example input configuration for mamboxx created from the namelist file
+# for the MAM Fortran box model
+
+time:
+  dt: 3600
+  nstep: 100
+
+control:
+  gas_chemstry:         false
+  gas_aerosol_exchange: true
+  rename:               true
+  nucleation:           true
+  coagulation:          true
+
+atmosphere:
+  temperature:       273.  # [K]
+  pressure:          1.e5, # [Pa]
+  relative_humidity: 0.9,  # for clear air [-]
+
+aerosols:
+  modes:
+    accumulation:
+      numc: 1.e8, # modal number concentration [#/m3]
+      so4:  0.3   # aerosol mass fractions [-] (must sum to 1)
+      pom:  0
+      soa:  0.3
+      bc:   0 
+      dst:  0
+      ncl:  0.4
+      mom:  0
+    aitken:
+      numc: 1.e9
+      so4:  0.3
+      soa:  0.3
+      ncl:  0.4
+      mom:  0
+    coarse:
+      numc: 1.e5
+      dst:  0
+      ncl:  0.4
+      so4:  0.3
+      bc:   0
+      pom:  0
+      soa:  0.3
+      mom: 0
+    primary_carbon:
+      numc: 2.e8
+      mfpom4: 0
+      bc: 1
+      mom: 0
+
+gases:
+  so2:  1.e-4   # mass mixing ratios [kg gas/kg air]
+  so4:  1.e-13
+  soag: 5.e-10

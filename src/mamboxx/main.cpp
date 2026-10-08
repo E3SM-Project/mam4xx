@@ -25,7 +25,9 @@ mamboxx [options] <config-file>\n";
 CommandLineArgs parse_args(int argc, char *argv[]) {
   CommandLineArgs args = {};
   if (argc < 2) { // no args!
+    args.valid = false;
     args.error = usage;
+    return args;
   }
 
   args.filename = argv[1];
