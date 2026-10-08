@@ -22,9 +22,8 @@ using mam4::gas_chemistry::rxntot;
 using mam4::mo_photo::phtcnt;
 constexpr int synoz_ndx = -1;
 
-// Zero-based reaction slots for HO2+HO2 (1), the DMS+OH addition branch (5),
-// and SO2+OH (3); invariant slot 3 contains the prescribed H2O number density.
-// These were converted from the legacy mechanism's one-based indices.
+// Indices used by usrrxt to write reaction coefficients into reaction_rates
+// and read water-vapor number density from invariants.
 constexpr int usr_HO2_HO2_ndx = 1, usr_DMS_OH_ndx = 5, usr_SO2_OH_ndx = 3,
               inv_h2o_ndx = 3;
 
@@ -93,6 +92,12 @@ KOKKOS_INLINE_FUNCTION void gas_phase_chemistry(
   // photo_rates[0] is the upstream photolysis frequency J(H2O2) [s^-1], so
   // the H2O2 loss used by imp_sol is J(H2O2) * q_H2O2. Actinic-flux and
   // cross-section calculations remain in the photolysis module.
+  // mo_photo::jlong sums cross section * quantum yield * actinic photon flux
+  // over wavelength bins above 200 nm; "long" does not mean thermal infrared.
+  // Actinic-flux basis: Madronich (1987), JGR 92, 9740-9752,
+  // doi:10.1029/JD092iD08p09740. H2O2 absorption measurements include Lin,
+  // Rohatgi, and DeMore (1978), GRL 5, 113-115, doi:10.1029/GL005i002p00113.
+  // These references do not identify the exact XSQY/RSF input-table generation.
   for (int i = 0; i < phtcnt; ++i) {
     reaction_rates[i] = photo_rates[i];
   }

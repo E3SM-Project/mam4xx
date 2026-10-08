@@ -41,8 +41,13 @@ void usrrxt(Real rxt[rxntot], // inout
   // adjrxt later forms the completed H2O2 source k1*[HO2]^2/M.
   // ko and kinf are additive contributions to k1 [cm^3 molecule^-1 s^-1];
   // fc is the dimensionless enhancement due to water vapor.
-  // Provenance: user-defined legacy EAM mo_usrrxt.F90 expression; no
-  // literature citation is recorded there.
+  // Rate expression matches Sander et al. (2006), JPL Publication 06-2,
+  // Table 1-1 and note B13 (pp. 1-9, 1-44--1-45); see references in
+  // gas_chem_mechanism.hpp. The evaluation also includes O2 as a product;
+  // only H2O2 production is retained in this reduced mechanism.
+  // B13 attributes the water enhancement to Lii, Sauer, and Gordon (1981),
+  // J. Phys. Chem. 85, 2833-2834, and Kircher and Sander (1984),
+  // J. Phys. Chem. 88, 2082-2091. The code was ported from mo_usrrxt.F90.
   if (usr_HO2_HO2_ndx > 0) {
     const Real ko = 3.5e-13 * mam4::exp(430.0 / temperature);
     const Real kinf = 1.7e-33 * mtot * mam4::exp(1000. / temperature);
@@ -57,8 +62,12 @@ void usrrxt(Real rxt[rxntot], // inout
   // The literal 0.21 is the legacy mechanism's fixed O2 mixing fraction.
   // M*0.21 is the prescribed O2 number density; ko is dimensionless.
   // adjrxt later forms lambda5 = k5*[OH]; SO2 receives 0.5*lambda5*q_DMS.
-  // Provenance: user-defined legacy EAM mo_usrrxt.F90 expression; no
-  // literature citation is recorded there.
+  // Ported from legacy EAM mo_usrrxt.F90. JPL Publication 19-5, Table 1I,
+  // note I20, evaluates the OH-addition channel but recommends a different
+  // rate expression. A literature source for this legacy fit and its lumped
+  // 0.5 SO2 yield has not been verified; I20 is not a citation for either.
+  // JPL 06-2, note I19, also used [O2] in the denominator, but with different
+  // coefficients. That shared form does not establish this fit's provenance.
   if (usr_DMS_OH_ndx > 0) {
     const Real ko =
         one + 5.5e-31 * mam4::exp(7460. / temperature) * mtot * 0.21;
@@ -73,8 +82,14 @@ void usrrxt(Real rxt[rxntot], // inout
   // ko, and the high-pressure limit 1.5e-12 have units cm^3 molecule^-1 s^-1.
   // The ratio inside log10 and the broadening multiplier are dimensionless.
   // adjrxt later forms lambda3 = k3*[OH], which transfers SO2 to H2SO4.
-  // Provenance: user-defined legacy EAM mo_usrrxt.F90 expression. That source
-  // explicitly marks the reference as unknown and says it is not Liao.
+  // Rate coefficients and the 0.6 falloff expression match DeMore et al.
+  // (1997), JPL Publication 97-4, Table 2, note I4 and the table's falloff
+  // formula (p. 126). That evaluation describes OH + SO2 + M -> HOSO2 + M;
+  // H2SO4 here is the lumped downstream product, not the elementary product.
+  // I4 cites Wine et al. (1984), J. Phys. Chem. 88, 2095-2104,
+  // doi:10.1021/j150654a031, among the underlying experimental datasets.
+  // The implemented coefficients are an evaluated synthesis, not a direct
+  // transcription of that single laboratory study.
   if (usr_SO2_OH_ndx > 0) {
     const Real fc = 3.0e-31 * mam4::pow(300. / temperature, 3.3);
     const Real ko = fc * mtot / (one + fc * mtot / 1.5e-12);

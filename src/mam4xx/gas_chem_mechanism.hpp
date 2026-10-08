@@ -15,6 +15,15 @@
 // pp_linoz_mam4_resus_mom_soag mechanism. Its generated chem_mech.doc records
 // the formulas below but not literature citations. The user-defined R1, R3,
 // and R5 formulas come from legacy mo_usrrxt.F90; see gas_chem.hpp.
+// Verified rate-expression matches are identified next to the calculations;
+// a match does not establish which reference the original code author used.
+// References: NASA/JPL evaluations of chemical kinetics and photochemical data:
+// - DeMore et al. (1997), JPL Publication 97-4, Evaluation 12:
+//   https://ntrs.nasa.gov/citations/19970037557
+// - Sander et al. (2006), JPL Publication 06-2, Evaluation 15:
+//   https://ntrs.nasa.gov/citations/20090033862
+// - JPL Publication 19-5, Evaluation 19 (DMS-channel comparisons only):
+//   https://jpldataeval.jpl.nasa.gov/pdf/NASA-JPL%20Evaluation%2019-5.pdf
 // Reaction notation and units:
 // T is temperature [K], M is total air number density [molecules cm^-3],
 // and [X] is the prescribed number density of reactant X [molecules cm^-3].
@@ -56,14 +65,24 @@ void setrxt(Real rates[rxntot], const Real temp) {
   // the constants divided by temp inside exp have temperature units (K).
   // R2: H2O2 + OH -> H2O + HO2
   // Bimolecular coefficient: k2(T) = 2.9e-12 * exp(-160/T).
+  // Matches DeMore et al. (1997), JPL Publication 97-4, Table 1, note B11
+  // (pp. 18, 46--47), including the Arrhenius prefactor and exponent.
   rates[2] = 2.9000000000e-12 * mam4::exp(-160.000000 / temp);
 
   // R4: DMS + OH -> SO2
   // Bimolecular coefficient: k4(T) = 9.6e-12 * exp(-234/T).
+  // JPL Publication 19-5, Table 1I, note I19, evaluates H abstraction but
+  // recommends 1.2e-11*exp(-280/T), not this legacy fit. A source for the
+  // implemented fit has not been verified. SO2 is a lumped downstream product;
+  // the elementary abstraction reaction instead forms CH2SCH3 and H2O.
   rates[4] = 9.6000000000e-12 * mam4::exp(-234.000000 / temp);
 
   // R6: DMS + NO3 -> SO2 + HNO3
   // Bimolecular coefficient: k6(T) = 1.9e-13 * exp(520/T).
+  // JPL Publication 19-5, Table 1I, note I40, recommends exp(530/T) with
+  // this prefactor, not exp(520/T). A source for the legacy 520 K fit has
+  // not been verified. The elementary reaction forms CH3SCH2 + HNO3;
+  // this reduced mechanism instead uses the lumped downstream SO2 product.
   rates[6] = 1.9000000000e-13 * mam4::exp(520.000000 / temp);
 } // setrxt
 
