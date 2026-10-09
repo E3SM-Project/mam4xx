@@ -3,10 +3,10 @@
 // National Technology & Engineering Solutions of Sandia, LLC (NTESS)
 // SPDX-License-Identifier: BSD-3-Clause
 
-#include "ekat_assert.hpp"
-#include "ekat_parameter_list.hpp"
 #include "mamboxx.hpp"
 
+#include <ekat_assert.hpp>
+#include <ekat_parameter_list.hpp>
 #include <ekat_yaml.hpp>
 
 namespace mamboxx {
@@ -63,6 +63,19 @@ AtmosphereConfig read_atmosphere(const ekat::ParameterList &params) {
   cfg.pressure = read_box_or_column(params, "pressure");
   cfg.relative_humidity = read_box_or_column(params, "relative_humidity");
 
+  EKAT_REQUIRE(cfg.temperature.size() == cfg.pressure.size() and
+               cfg.temperature.size() == cfg.relative_humidity.size(),
+               "size mismatch in atmosphere data: all arrays must be the same length");
+
+  for (size_t i = 0; i < cfg.temperature.size(); ++i) {
+    EKAT_REQUIRE(cfg.temperature[i] > 0.0,
+        "non-positive atmosphere.temperature[" << i << "]: " << cfg.temperature[i]);
+    EKAT_REQUIRE(cfg.pressure[i] > 0.0,
+        "non-positive atmosphere.pressure[" << i << "]: " << cfg.pressure[i]);
+    EKAT_REQUIRE(cfg.relative_humidity[i] >= 0.0 and cfg.relative_humidity[i] <= 1.0,
+        "invalid atmosphere.relative_humidity[" << i << "]: " << cfg.relative_humidity[i]);
+  }
+
   return cfg;
 }
 
@@ -108,6 +121,16 @@ AerosolState read_aerosols(const ekat::ParameterList &params) {
     auto mode = modes.sublist(mode_names[i]);
     cfg.modes[mode_names[i]] = read_aerosol_mode(mode);
   }
+  size_t n_levels = 0;
+  for (auto iter = cfg.modes.begin(); iter != cfg.modes.end(); ++iter) {
+    size_t n = iter->second.numc.size();
+    if (n_levels == 0) {
+      n_levels = n;
+    } else {
+      EKAT_REQUIRE(n == n_levels,
+          "found different numbers of vertical levels in aerosol modes: " << n_levels << ", " << n);
+    }
+  }
   return cfg;
 }
 
@@ -121,6 +144,16 @@ GasState read_gases(const ekat::ParameterList &params) {
           "Negative mass mixing ratio at level " << i << " for gas " << gas_name);
     }
     cfg.mass_mixing_ratios[gas_name] = mass_mixing_ratios;
+  }
+  size_t n_levels = 0;
+  for (auto iter = cfg.mass_mixing_ratios.begin(); iter != cfg.mass_mixing_ratios.end(); ++iter) {
+    size_t n = iter->second.size();
+    if (n_levels == 0) {
+      n_levels = n;
+    } else {
+      EKAT_REQUIRE(n == n_levels,
+          "found different numbers of vertical levels in gases: " << n_levels << ", " << n);
+    }
   }
   return cfg;
 }
@@ -149,6 +182,17 @@ Config read_config(const std::string &filename) {
   cfg.atmosphere = read_atmosphere(atmosphere);
   cfg.aerosols = read_aerosols(aerosols);
   cfg.gases = read_gases(aerosols);
+
+  size_t num_modes = cfg.aerosols.modes.size();
+  EKAT_REQUIRE(num_modes > 0, "no aerosol modes specified");
+
+  // verify that # of vertical levels is the same everywhere
+  size_t n_atm  = cfg.atmosphere.temperature.size();
+  size_t n_aero = cfg.aerosols.modes.begin()->second.numc.size();
+  size_t n_gas = cfg.aerosols.modes.size();
+  EKAT_REQUIRE(n_atm == n_aero == n_gas,
+      "number of vertical levels differs for atmosphere (" << n_atm << "), aerosols (" << n_aero <<
+      "), and gases (" << n_gas);
 
   return cfg;
 }
