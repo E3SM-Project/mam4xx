@@ -3,8 +3,6 @@
 // National Technology & Engineering Solutions of Sandia, LLC (NTESS)
 // SPDX-License-Identifier: BSD-3-Clause
 
-#include "ekat_assert.hpp"
-#include "ekat_parameter_list.hpp"
 #include "mamboxx.hpp"
 #include <mam4xx/mam4_math.hpp>
 
@@ -12,6 +10,8 @@
 #include <ekat_parameter_list.hpp>
 #include <ekat_yaml.hpp>
 
+#include <ekat_assert.hpp>
+#include <ekat_parameter_list.hpp>
 #include <ekat_yaml.hpp>
 
 namespace mamboxx {
@@ -203,6 +203,16 @@ AerosolConfig read_aerosols(const AtmosphereConfig &atmosphere, const ekat::Para
   size_t n_levels = 0;
   for (auto iter = cfg.modes.begin(); iter != cfg.modes.end(); ++iter) {
     size_t n = iter->second.number_mixing_ratio.size();
+    if (n_levels == 0) {
+      n_levels = n;
+    } else {
+      EKAT_REQUIRE(n == n_levels,
+          "found different numbers of vertical levels in aerosol modes: " << n_levels << ", " << n);
+    }
+  }
+  size_t n_levels = 0;
+  for (auto iter = cfg.modes.begin(); iter != cfg.modes.end(); ++iter) {
+    size_t n = iter->second.numc.size();
     if (n_levels == 0) {
       n_levels = n;
     } else {
