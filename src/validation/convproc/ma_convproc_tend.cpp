@@ -189,8 +189,9 @@ void ma_convproc_tend(Ensemble *ensemble) {
     init_scratch(scratch1Dviews);
 
     mam4::ColumnView scalars_dev = mam4::validation::create_column_view(3);
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "ma_convproc_tend", 1, KOKKOS_LAMBDA(int) {
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           Real cldfrac[nlev], icwmr[nlev], pmid[nlev], rprd[nlev], dpdry[nlev],
               evapc[nlev], du[nlev], eu[nlev], ed[nlev], dp[nlev],
               temperature[nlev], dqdt[nlev][pcnst], qsrflx[pcnst][nsrflx];
@@ -218,8 +219,8 @@ void ma_convproc_tend(Ensemble *ensemble) {
           Real xx_mfup_max, xx_wcldbase;
           int xx_kcldbase;
           mam4::convproc::ma_convproc_tend(
-              aero_species, scratch1Dviews, nlev, convtype, dt, temperature,
-              pmid, qnew_dev, du, eu, ed, dp, dpdry, ktop, kbot,
+              team, aero_species, scratch1Dviews, nlev, convtype, dt,
+              temperature, pmid, qnew_dev, du, eu, ed, dp, dpdry, ktop, kbot,
               mmtoo_prevap_resusp, cldfrac, icwmr, rprd, evapc, dqdt_view,
               doconvproc, qsrflx, species_class, xx_mfup_max, xx_wcldbase,
               xx_kcldbase);
