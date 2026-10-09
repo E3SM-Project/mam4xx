@@ -6,6 +6,9 @@
 #include <mam4xx/mam4.hpp>
 #include <validation.hpp>
 
+#include <cstdlib>
+#include <iostream>
+
 using namespace skywalker;
 using namespace mam4::gas_chemistry;
 
@@ -22,17 +25,38 @@ void imp_sol(Ensemble *ensemble) {
     std::vector<Real> prod_out(clscnt4, zero);
     std::vector<Real> loss_out(clscnt4, zero);
 
-    Real epsilon[clscnt4] = {};
-    imp_slv_inti(epsilon);
-
-    bool factor[itermax];
-    for (int i = 0; i < itermax; ++i) {
-      factor[i] = true;
+    ImpSolResult result;
+    imp_sol(base_sol, reaction_rates.data(), het_rates.data(), extfrc.data(),
+            delt, prod_out.data(), loss_out.data(), result);
+    if (!result.success()) {
+      const char *reason = "unknown solver outcome";
+      switch (result.outcome) {
+      case ImpSolOutcome::InvalidInput:
+        reason = "invalid input: every input must be finite, the timestep "
+                 "must be positive, and reaction rates and heterogeneous "
+                 "losses for state entries 1-30 must be nonnegative";
+        break;
+      case ImpSolOutcome::NonfiniteResult:
+        reason = "an intermediate calculation or final state/rate became "
+                 "not-a-number (NaN) or infinity";
+        break;
+      case ImpSolOutcome::UnsafeDenominator:
+        reason = "the backward-Euler denominator 1 - dt*diagonal was zero "
+                 "or negative";
+        break;
+      case ImpSolOutcome::NegativeResult:
+        reason = "the backward-Euler update produced a negative state entry";
+        break;
+      case ImpSolOutcome::Converged:
+        break;
+      }
+      std::cerr << "Gas-chemistry validation failed: " << reason
+                << " (outcome code " << static_cast<int>(result.outcome)
+                << "). Chemical state was left unchanged and production/loss "
+                   "outputs were set to zero. Stopping validation."
+                << std::endl;
+      std::exit(EXIT_FAILURE);
     }
-
-    imp_sol(base_sol, //    ! species mixing ratios [vmr] & !
-            reaction_rates.data(), het_rates.data(), extfrc.data(), delt,
-            factor, epsilon, prod_out.data(), loss_out.data());
 
     output.set("base_sol", base_sol);
   });

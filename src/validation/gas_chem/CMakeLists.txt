@@ -11,10 +11,8 @@ include_directories(${PROJECT_BINARY_DIR}/validation)
 add_executable(gas_chem_driver
                gas_chem_driver.cpp
                linmat.cpp
-               nlnmat.cpp
                indprd.cpp
                imp_prod_loss.cpp
-               newton_raphson_iter.cpp
                imp_sol.cpp
                adjrxt.cpp
                setrxt.cpp
@@ -37,9 +35,7 @@ endforeach()
 set(TEST_LIST
     indprd_ts_355
     linmat_ts_355
-    nlnmat_ts_355
     imp_prod_loss_ts_355
-    newton_raphson_iter_ts_355
     imp_sol_ts_355
     adjrxt_ts_1400
     setrxt_ts_1400
@@ -53,9 +49,7 @@ set(DEFAULT_TOL 1e-12)
 set(ERROR_THRESHOLDS
    ${DEFAULT_TOL} # indprd_ts_355
    ${DEFAULT_TOL} # linmat_ts_355
-   ${DEFAULT_TOL} # nlnmat_ts_355
    ${DEFAULT_TOL} # imp_prod_loss_ts_355
-   7e-11          # newton_raphson_iter_ts_355
    ${DEFAULT_TOL} # imp_sol_ts_355
    ${DEFAULT_TOL} # adjrxt_ts_1400
    ${DEFAULT_TOL} # setrxt_ts_1400

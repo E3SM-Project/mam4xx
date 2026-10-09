@@ -10,18 +10,40 @@
 // Generated code.
 // Authors: Oscar Diaz-Ibarra (odiazib@sandia.gov)
 //          Mike Schmidt (mjschm@sandia.gov)
+//
+// Reaction stoichiometry and coefficients were ported from the legacy EAM
+// pp_linoz_mam4_resus_mom_soag mechanism. Its generated chem_mech.doc records
+// the formulas below but not literature citations. The user-defined R1, R3,
+// and R5 formulas come from legacy mo_usrrxt.F90; see gas_chem.hpp.
+// Verified rate-expression matches are identified next to the calculations;
+// a match does not establish which reference the original code author used.
+// References: NASA/JPL evaluations of chemical kinetics and photochemical data:
+// - DeMore et al. (1997), JPL Publication 97-4, Evaluation 12:
+//   https://ntrs.nasa.gov/citations/19970037557
+// - Sander et al. (2006), JPL Publication 06-2, Evaluation 15:
+//   https://ntrs.nasa.gov/citations/20090033862
+// - JPL Publication 19-5, Evaluation 19 (DMS-channel comparisons only):
+//   https://jpldataeval.jpl.nasa.gov/pdf/NASA-JPL%20Evaluation%2019-5.pdf
+// Reaction notation and units:
+// T is temperature [K], M is total air number density [molecules cm^-3],
+// and [X] is the prescribed number density of reactant X [molecules cm^-3].
+// q_X is the molar mixing ratio of gas X. The effective bimolecular rate
+// coefficient k [cm^3 molecule^-1 s^-1], multiplied by a prescribed oxidant
+// density, gives the fixed pseudo-first-order coefficient lambda [s^-1].
+// Aerosol-mass and modal-aerosol-number species share the chemistry work array;
+// their sources and losses use the corresponding work-array entry unit s^-1.
 namespace mam4 {
 namespace gas_chemistry {
 
 constexpr int nabscol = 2;    // number of absorbing densities
 constexpr int rxntot = 7;     // number of total reactions
-constexpr int gas_pcnst = 31; // number of gas phase species
+constexpr int gas_pcnst = 31; // gas, aerosol-mass, and modal-number work entries
 constexpr int nzcnt = 32;     // number of non-zero matrix entries
-constexpr int clscnt4 = 30;   // number of species in implicit class
+constexpr int clscnt4 = 30;   // work entries 1-30; O3 (entry 0) is excluded
 constexpr int extcnt = 9;     // number of species with external forcing
 constexpr int nfs = 8;        // number of fixed species
 constexpr int o3_idx = 0;     // index of O3
-constexpr int indexm = 0;     // index of total atm density in invariant array
+constexpr int indexm = 0;     // total air number density [molecules cm^-3]
 constexpr auto permute_4 = Kokkos::to_array<int>(
     {0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14,
      15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29});
@@ -39,45 +61,93 @@ constexpr auto adv_mass = Kokkos::to_array<Real>(
 
 KOKKOS_INLINE_FUNCTION
 void setrxt(Real rates[rxntot], const Real temp) {
+  // temp is in K. The coefficients below are in cm^3 molecule^-1 s^-1;
+  // the constants divided by temp inside exp have temperature units (K).
+  // R2: H2O2 + OH -> H2O + HO2
+  // Bimolecular coefficient: k2(T) = 2.9e-12 * exp(-160/T).
+  // Matches DeMore et al. (1997), JPL Publication 97-4, Table 1, note B11
+  // (pp. 18, 46--47), including the Arrhenius prefactor and exponent.
   rates[2] = 2.9000000000e-12 * mam4::exp(-160.000000 / temp);
+
+  // R4: DMS + OH -> SO2
+  // Bimolecular coefficient: k4(T) = 9.6e-12 * exp(-234/T).
+  // JPL Publication 19-5, Table 1I, note I19, evaluates H abstraction but
+  // recommends 1.2e-11*exp(-280/T), not this legacy fit. A source for the
+  // implemented fit has not been verified. SO2 is a lumped downstream product;
+  // the elementary abstraction reaction instead forms CH2SCH3 and H2O.
   rates[4] = 9.6000000000e-12 * mam4::exp(-234.000000 / temp);
+
+  // R6: DMS + NO3 -> SO2 + HNO3
+  // Bimolecular coefficient: k6(T) = 1.9e-13 * exp(520/T).
+  // JPL Publication 19-5, Table 1I, note I40, recommends exp(530/T) with
+  // this prefactor, not exp(520/T). A source for the legacy 520 K fit has
+  // not been verified. The elementary reaction forms CH3SCH2 + HNO3;
+  // this reduced mechanism instead uses the lumped downstream SO2 product.
   rates[6] = 1.9000000000e-13 * mam4::exp(520.000000 / temp);
 } // setrxt
 
 KOKKOS_INLINE_FUNCTION
 void set_rates(Real rxt_rates[rxntot], Real sol[gas_pcnst]) {
-  // rate_const*H2O2
+  // On entry, slots 0 and 2-6 are first-order coefficients [s^-1]. Multiply
+  // by gas mixing ratios to form completed mixing-ratio tendencies per second.
+  // Slot 1 is already the state-independent H2O2 source and is left unchanged.
+  // J1: H2O2 + hv -> products not retained by this mechanism.
+  // Completed loss rate: J(H2O2) * q_H2O2.
   rxt_rates[0] *= sol[1];
-  // rate_const*OH*H2O2
+
+  // R2: H2O2 + OH -> H2O + HO2.
+  // Completed loss rate: k2(T) * [OH] * q_H2O2.
   rxt_rates[2] *= sol[1];
-  // rate_const*OH*SO2
+
+  // R3: SO2 + OH -> H2SO4.
+  // Completed transfer rate: k3(T,M) * [OH] * q_SO2.
   rxt_rates[3] *= sol[3];
-  // rate_const*OH*DMS
+
+  // R4: DMS + OH -> SO2.
+  // Completed transfer rate: k4(T) * [OH] * q_DMS.
   rxt_rates[4] *= sol[4];
-  // rate_const*OH*DMS
+
+  // R5: DMS + OH -> 0.5 SO2 + 0.5 HO2.
+  // Completed DMS loss rate: k5(T,M) * [OH] * q_DMS; SO2 receives half.
   rxt_rates[5] *= sol[4];
-  // rate_const*NO3*DMS
+
+  // R6: DMS + NO3 -> SO2 + HNO3.
+  // Completed transfer rate: k6(T) * [NO3] * q_DMS.
   rxt_rates[6] *= sol[4];
 } // set_rates
 
 KOKKOS_INLINE_FUNCTION
 void adjrxt(Real rate[rxntot], const Real inv[nfs], const Real m) {
+  // Convert the bimolecular coefficients into frozen pseudo-first-order
+  // coefficients [s^-1] using prescribed densities [molecules cm^-3].
+  // inv[4]=OH, inv[5]=NO3, inv[6]=HO2; m is air number density [molecules cm^-3].
+  // R2: lambda2 = k2(T) * [OH].
   rate[2] *= inv[4];
+  // R3: lambda3 = k3(T,M) * [OH].
   rate[3] *= inv[4];
+  // R4: lambda4 = k4(T) * [OH].
   rate[4] *= inv[4];
+  // R5: lambda5 = k5(T,M) * [OH].
   rate[5] *= inv[4];
+  // R6: lambda6 = k6(T) * [NO3].
   rate[6] *= inv[5];
+
+  // R1: HO2 + HO2 -> H2O2.
+  // Completed mixing-ratio source: P1 = k1(T,M,H2O) * [HO2]^2 / M.
+  // k1*[HO2]^2 is molecules cm^-3 s^-1; division by M gives a
+  // mixing-ratio tendency [s^-1], not another first-order loss coefficient.
   rate[1] *= inv[6] * inv[6] / m;
 } // adjrxt
 
-// TODO: unless rxt[0:6] and/or het_rates[1:4] have different units than the
-// rest of the arrays the below additions seem fishy
-// Units:
-// rxt := reaction rates in 1D array [1/cm^3/s]
-// het_rates := washout rates [1/s]
-// TODO: the lines of concern *kind of* bear resemblance to the similarly
-// concerning lines in linmat(), though it's difficult to tell if that results
-// in consistent units
+// Calculate production and loss at state y for the 30 implicit work entries.
+// Output index k corresponds to y[k+1]; O3 is excluded. The caller adds the
+// state-independent sources from indprd to prod afterward.
+// For inputs prepared by gas_phase_chemistry, rxt[0] and rxt[2] through rxt[6]
+// are loss or transfer coefficients in s^-1; het_rates are heterogeneous
+// first-order removal coefficients in s^-1, not concentration tendencies.
+// Multiplication by y gives rates in the corresponding state-entry units per
+// second (molar mixing ratio per second for gases). rxt[1] is an H2O2 source,
+// not a first-order coefficient, and is included by indprd rather than here.
 template <typename VectorType>
 KOKKOS_INLINE_FUNCTION void
 imp_prod_loss(Real prod[clscnt4], Real loss[clscnt4], const VectorType &y,
@@ -100,10 +170,13 @@ imp_prod_loss(Real prod[clscnt4], Real loss[clscnt4], const VectorType &y,
 KOKKOS_INLINE_FUNCTION
 void indprd(const int class_id, Real prod[clscnt4], const Real rxt[rxntot],
             const Real extfrc[extcnt]) {
-  // extfrc := external in-situ forcing [1/cm^3/s]
-  // thus, prod must have units [1/cm^3/s]
+  // Sources that do not depend on the updated species values. The caller
+  // gas_phase_chemistry divides external forcing by air number density before
+  // passing it here. prod and extfrc therefore use work-entry units per second.
+  // For gases, this is mixing-ratio s^-1, not molecules cm^-3 s^-1.
   const Real zero = 0;
-  // this is hard-coded to 4 outside of this function
+  // Class 1 contains O3, whose source is zero in this chemistry operator.
+  // Class 4 contains the 30 implicit entries; imp_sol requests this class.
   if (class_id == 1) {
     prod[0] = zero;
   } else if (class_id == 4) {
@@ -140,92 +213,16 @@ void indprd(const int class_id, Real prod[clscnt4], const Real rxt[rxntot],
   } // indprd
 }
 
-// NOTE: at this point we are taking RHS units of (maybe) [1/s] to [s]
-// and the units are internally consistent
-KOKKOS_INLINE_FUNCTION
-void lu_fac(Real lu[nzcnt]) {
-  const Real one = 1;
-  lu[0] = one / lu[0];
-  lu[1] = one / lu[1];
-  lu[3] = one / lu[3];
-  lu[5] = one / lu[5];
-  lu[6] = one / lu[6];
-  lu[7] = one / lu[7];
-  lu[8] = one / lu[8];
-  lu[9] = one / lu[9];
-  lu[10] = one / lu[10];
-  lu[11] = one / lu[11];
-  lu[12] = one / lu[12];
-  lu[13] = one / lu[13];
-  lu[14] = one / lu[14];
-  lu[15] = one / lu[15];
-  lu[16] = one / lu[16];
-  lu[17] = one / lu[17];
-  lu[18] = one / lu[18];
-  lu[19] = one / lu[19];
-  lu[20] = one / lu[20];
-  lu[21] = one / lu[21];
-  lu[22] = one / lu[22];
-  lu[23] = one / lu[23];
-  lu[24] = one / lu[24];
-  lu[25] = one / lu[25];
-  lu[26] = one / lu[26];
-  lu[27] = one / lu[27];
-  lu[28] = one / lu[28];
-  lu[29] = one / lu[29];
-  lu[30] = one / lu[30];
-  lu[31] = one / lu[31];
-} // lu_fac
-
-// TODO: again, the units for b[1:2] look like they could be inconsistent
-// lu = sys_jac [s]--mostly, maybe?; when passed in within gas_chem.hpp
-// b = forcing [1/s]--maybe; when passed in from gas_chem.hpp
-KOKKOS_INLINE_FUNCTION
-void lu_slv(Real lu[nzcnt], Real b[clscnt4]) {
-  b[29] *= lu[31];
-  b[28] *= lu[30];
-  b[27] *= lu[29];
-  b[26] *= lu[28];
-  b[25] *= lu[27];
-  b[24] *= lu[26];
-  b[23] *= lu[25];
-  b[22] *= lu[24];
-  b[21] *= lu[23];
-  b[20] *= lu[22];
-  b[19] *= lu[21];
-  b[18] *= lu[20];
-  b[17] *= lu[19];
-  b[16] *= lu[18];
-  b[15] *= lu[17];
-  b[14] *= lu[16];
-  b[13] *= lu[15];
-  b[12] *= lu[14];
-  b[11] *= lu[13];
-  b[10] *= lu[12];
-  b[9] *= lu[11];
-  b[8] *= lu[10];
-  b[7] *= lu[9];
-  b[6] *= lu[8];
-  b[5] *= lu[7];
-  b[4] *= lu[6];
-  b[3] *= lu[5];
-  b[2] -= lu[4] * b[3];
-  b[2] *= lu[3];
-  // the above 2 lines are equivalent to b[2] = (b[2] - (lu[4] * b[3])) * lu[3]
-  b[1] -= lu[2] * b[2];
-  b[1] *= lu[1];
-  // the above 2 lines are equivalent to b[1] = (b[1] - (lu[2] * b[2])) * lu[1]
-  b[0] *= lu[0];
-} // lu_slv
-
-// TODO: as in imp_prod_loss() unless rxt[0:6] and/or het_rates[1:4] have
-// different units than the rest of the arrays the below additions seem suspect
-// Units:
-// rxt := reaction rates in 1D array [1/cm^3/s]
-// het_rates := washout rates [1/s]
-// TODO: the lines of concern *kind of* bear resemblance to the similarly
-// concerning lines in imp_prod_loss(), though it's difficult to tell if that
-// results in consistent units
+// Build the 32 stored coefficients of dq/dt = A*q + b for the 30 implicit
+// unknowns. The six leading entries represent four diagonal losses plus the
+// SO2->H2SO4 and DMS->SO2 couplings; the rest are independent diagonal losses.
+// A has units s^-1, so A*q and b both have the state-entry unit s^-1.
+// Diagonal entries are negative total loss coefficients; off-diagonals are
+// positive transfer coefficients. Multiplying an off-diagonal by the upstream
+// species mixing ratio gives the receiving species' production tendency.
+// rxt[0], rxt[2] through rxt[6], and het_rates are coefficients in s^-1 for
+// inputs prepared by gas_phase_chemistry. The H2O2 source rxt[1] belongs to b
+// and is supplied by indprd, so it does not appear in A.
 KOKKOS_INLINE_FUNCTION
 void linmat(Real mat[nzcnt], const Real rxt[rxntot],
             const Real het_rates[gas_pcnst]) {
@@ -235,73 +232,10 @@ void linmat(Real mat[nzcnt], const Real rxt[rxntot],
   mat[3] = -(+rxt[3] + het_rates[3]);
   mat[4] = +rxt[4] + 0.500000 * rxt[5] + rxt[6];
   mat[5] = -(+rxt[4] + rxt[5] + rxt[6] + het_rates[4]);
-  mat[6] = -(+het_rates[5]);
-  mat[7] = -(+het_rates[6]);
-  mat[8] = -(+het_rates[7]);
-  mat[9] = -(+het_rates[8]);
-  mat[10] = -(+het_rates[9]);
-  mat[11] = -(+het_rates[10]);
-  mat[12] = -(+het_rates[11]);
-  mat[13] = -(+het_rates[12]);
-  mat[14] = -(+het_rates[13]);
-  mat[15] = -(+het_rates[14]);
-  mat[16] = -(+het_rates[15]);
-  mat[17] = -(+het_rates[16]);
-  mat[18] = -(+het_rates[17]);
-  mat[19] = -(+het_rates[18]);
-  mat[20] = -(+het_rates[19]);
-  mat[21] = -(+het_rates[20]);
-  mat[22] = -(+het_rates[21]);
-  mat[23] = -(+het_rates[22]);
-  mat[24] = -(+het_rates[23]);
-  mat[25] = -(+het_rates[24]);
-  mat[26] = -(+het_rates[25]);
-  mat[27] = -(+het_rates[26]);
-  mat[28] = -(+het_rates[27]);
-  mat[29] = -(+het_rates[28]);
-  mat[30] = -(+het_rates[29]);
-  mat[31] = -(+het_rates[30]);
+  for (int k = 4; k < clscnt4; ++k) {
+    mat[k + 2] = -het_rates[k + 1];
+  }
 } // linmat
-
-// TODO: the below calculations appear to have inconsistent units for
-// mat[0, 2, 3, 5]
-// NOTE: it's *possible* we could be ok, if the odd-looking sums in linmat()
-// turn out to be ok
-KOKKOS_INLINE_FUNCTION
-void nlnmat(Real mat[nzcnt], const Real lmat[nzcnt], const Real dti) {
-  mat[0] = lmat[0] - dti;
-  mat[1] = lmat[1] - dti;
-  mat[2] = lmat[2];
-  mat[3] = lmat[3] - dti;
-  mat[4] = lmat[4];
-  mat[5] = lmat[5] - dti;
-  mat[6] = lmat[6] - dti;
-  mat[7] = lmat[7] - dti;
-  mat[8] = lmat[8] - dti;
-  mat[9] = lmat[9] - dti;
-  mat[10] = lmat[10] - dti;
-  mat[11] = lmat[11] - dti;
-  mat[12] = lmat[12] - dti;
-  mat[13] = lmat[13] - dti;
-  mat[14] = lmat[14] - dti;
-  mat[15] = lmat[15] - dti;
-  mat[16] = lmat[16] - dti;
-  mat[17] = lmat[17] - dti;
-  mat[18] = lmat[18] - dti;
-  mat[19] = lmat[19] - dti;
-  mat[20] = lmat[20] - dti;
-  mat[21] = lmat[21] - dti;
-  mat[22] = lmat[22] - dti;
-  mat[23] = lmat[23] - dti;
-  mat[24] = lmat[24] - dti;
-  mat[25] = lmat[25] - dti;
-  mat[26] = lmat[26] - dti;
-  mat[27] = lmat[27] - dti;
-  mat[28] = lmat[28] - dti;
-  mat[29] = lmat[29] - dti;
-  mat[30] = lmat[30] - dti;
-  mat[31] = lmat[31] - dti;
-} // nlnmat
 
 } // namespace gas_chemistry
 } // namespace mam4
