@@ -130,52 +130,29 @@ void initialize_dcondt(Ensemble *ensemble) {
                                 Kokkos::MemoryUnmanaged>(
         col_view_2.data(), nlev, mam4::ConvProc::pcnst_extd);
 
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "initialize_dcondt", 1, KOKKOS_LAMBDA(int) {
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           bool doconvproc_extd[mam4::ConvProc::pcnst_extd];
-          Real dpdry_i[nlev];
-          Real fa_u[nlev];
-          Real mu_i[nlev + 1];
-          Real md_i[nlev + 1];
-          Real dudp[nlev];
-          Real dddp[nlev];
-          Real eudp[nlev];
-          Real eddp[nlev];
 
           for (int i = 0; i < mam4::ConvProc::pcnst_extd; ++i)
             doconvproc_extd[i] = doconvproc_extd_dev[i];
-          for (int i = 0; i < nlev; ++i)
-            dpdry_i[i] = dpdry_i_dev(i);
-          for (int i = 0; i < nlev; ++i)
-            fa_u[i] = fa_u_dev(i);
-          for (int i = 0; i < nlev + 1; ++i)
-            mu_i[i] = mu_i_dev(i);
-          for (int i = 0; i < nlev + 1; ++i)
-            md_i[i] = md_i_dev(i);
-          for (int i = 0; i < nlev; ++i)
-            dudp[i] = dudp_dev(i);
-          for (int i = 0; i < nlev; ++i)
-            dddp[i] = dddp_dev(i);
-          for (int i = 0; i < nlev; ++i)
-            eudp[i] = eudp_dev(i);
-          for (int i = 0; i < nlev; ++i)
-            eddp[i] = eddp_dev(i);
 
           mam4::convproc::initialize_dcondt(
-              doconvproc_extd, iflux_method, ktop, kbot, nlev, dpdry_i, fa_u,
-              mu_i, md_i, chat_dev, gath_dev, conu_dev, cond_dev,
-              dconudt_activa_dev, dconudt_wetdep_dev, dudp, dddp, eudp, eddp,
-              dcondt_dev);
+              team, doconvproc_extd, iflux_method, ktop, kbot, nlev,
+              dpdry_i_dev, fa_u_dev, mu_i_dev, md_i_dev, chat_dev, gath_dev,
+              conu_dev, cond_dev, dconudt_activa_dev, dconudt_wetdep_dev,
+              dudp_dev, dddp_dev, eudp_dev, eddp_dev, dcondt_dev);
 
           const int iflux_method_2 = 2;
           // flip a bit to trip a check in initialize_dcondt
-          mu_i[62] *= -1;
-          md_i[62] *= -1;
+          mu_i_dev[62] *= -1;
+          md_i_dev[62] *= -1;
           mam4::convproc::initialize_dcondt(
-              doconvproc_extd, iflux_method_2, ktop, kbot, nlev, dpdry_i, fa_u,
-              mu_i, md_i, chat_dev, gath_dev, conu_dev, cond_dev,
-              dconudt_activa_dev, dconudt_wetdep_dev, dudp, dddp, eudp, eddp,
-              dcondt_dev_2);
+              team, doconvproc_extd, iflux_method_2, ktop, kbot, nlev,
+              dpdry_i_dev, fa_u_dev, mu_i_dev, md_i_dev, chat_dev, gath_dev,
+              conu_dev, cond_dev, dconudt_activa_dev, dconudt_wetdep_dev,
+              dudp_dev, dddp_dev, eudp_dev, eddp_dev, dcondt_dev_2);
         });
     // Check case of iflux_method == 2 which is not part of the e3sm tests.
     set_host("dcondt", nlev, mam4::ConvProc::pcnst_extd, dcondt_host_2,

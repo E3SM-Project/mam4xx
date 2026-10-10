@@ -89,7 +89,7 @@ void get_activate_frac(Ensemble *ensemble) {
           const auto fluxm_k = Kokkos::subview(fluxm, kk, Kokkos::ALL());
 
           mam4::ndrop::get_activate_frac(
-              state_q_k.data(), air_density, air_density, wsub(kk),
+              state_q_k, air_density, air_density, wsub(kk),
               tair(kk), // in
               num2vol_ratio_min_nmodes, num2vol_ratio_max_nmodes, exp45logsig,
               alogsig, aten_testing, fn_k.data(), fm_k.data(), fluxn_k.data(),
