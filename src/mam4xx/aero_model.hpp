@@ -18,6 +18,8 @@
 namespace mam4 {
 
 namespace aero_model {
+using View1D = DeviceType::view_1d<Real>;
+using ConstView1D = DeviceType::view_1d<const Real>;
 
 // BAD CONSTANT
 constexpr int nimptblgrow_mind = -7, nimptblgrow_maxd = 12;
@@ -800,9 +802,9 @@ void index_ordering(const int lspec, const int imode, const int lphase, int &mm,
 
 // =============================================================================
 KOKKOS_INLINE_FUNCTION
-int examine_prec_exist(const int level_for_precipitation, const Real pdel[],
-                       const Real prain[], const Real cmfdqr[],
-                       const Real evapr[]) {
+int examine_prec_exist(const int level_for_precipitation, ConstColumnView &pdel,
+                       ConstColumnView &prain, const View1D &cmfdqr,
+                       const ConstView1D &evapr) {
   // clang-format off
   // ----------------------------------------------------------------------
   // examine if level level_for_precipitation has precipitation.

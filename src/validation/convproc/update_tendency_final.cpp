@@ -131,25 +131,21 @@ void update_tendency_final(Ensemble *ensemble) {
     get_input(input, "qsrflx", ncnst, nsrflx, col_major, qsrflx_host,
               qsrflx_dev);
 
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "update_tendency_diagnostics", 1, KOKKOS_LAMBDA(int) {
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           bool doconvproc[pcnst] = {};
           for (int n = 0; n < pcnst; ++n)
             doconvproc[n] = doconvproc_dev[n];
 
-          Real *sumactiva = sumactiva_dev.data();
-          Real *sumaqchem = sumaqchem_dev.data();
-          Real *sumwetdep = sumwetdep_dev.data();
-          Real *sumresusp = sumresusp_dev.data();
-          Real *sumprevap = sumprevap_dev.data();
-          Real *sumprevap_hist = sumprevap_hist_dev.data();
           Real qsrflx[pcnst][nsrflx];
           for (int i = 0; i < ncnst; ++i)
             for (int j = 0; j < nsrflx; ++j)
               qsrflx[i][j] = qsrflx_dev(i, j);
           mam4::convproc::update_tendency_diagnostics(
-              ntsub, ncnst, doconvproc, sumactiva, sumaqchem, sumwetdep,
-              sumresusp, sumprevap, sumprevap_hist, qsrflx);
+              team, ntsub, ncnst, doconvproc, sumactiva_dev, sumaqchem_dev,
+              sumwetdep_dev, sumresusp_dev, sumprevap_dev, sumprevap_hist_dev,
+              qsrflx);
           for (int i = 0; i < ncnst; ++i)
             for (int j = 0; j < nsrflx; ++j)
               qsrflx_dev(i, j) = qsrflx[i][j];

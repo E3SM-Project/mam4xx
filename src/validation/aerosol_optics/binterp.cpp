@@ -63,9 +63,8 @@ void binterp(Ensemble *ensemble) {
           int jtab = 0;
           Real ttab = zero;
           Real utab = zero;
-          binterp(table, ref_real, ref_img, ref_real_tab.data(),
-                  ref_img_tab.data(), itab, jtab, ttab, utab, coef.data(),
-                  itab_1);
+          binterp(table, ref_real, ref_img, ref_real_tab, ref_img_tab, itab,
+                  jtab, ttab, utab, coef.data(), itab_1);
           tab(0) = Real(itab);
           tab(1) = Real(jtab);
           tab(2) = ttab;

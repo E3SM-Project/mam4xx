@@ -189,26 +189,12 @@ void ma_convproc_tend(Ensemble *ensemble) {
     init_scratch(scratch1Dviews);
 
     mam4::ColumnView scalars_dev = mam4::validation::create_column_view(3);
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "ma_convproc_tend", 1, KOKKOS_LAMBDA(int) {
-          Real cldfrac[nlev], icwmr[nlev], pmid[nlev], rprd[nlev], dpdry[nlev],
-              evapc[nlev], du[nlev], eu[nlev], ed[nlev], dp[nlev],
-              temperature[nlev], dqdt[nlev][pcnst], qsrflx[pcnst][nsrflx];
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
+          Real dqdt[nlev][pcnst], qsrflx[pcnst][nsrflx];
           int species_class[pcnst];
           bool doconvproc[pcnst];
-          for (int i = 0; i < nlev; ++i) {
-            cldfrac[i] = cldfrac_dev[i];
-            icwmr[i] = icwmr_dev[i];
-            temperature[i] = temperature_dev[i];
-            pmid[i] = pmid_dev[i];
-            rprd[i] = rprd_dev[i];
-            dpdry[i] = dpdry_dev[i];
-            evapc[i] = evapc_dev[i];
-            du[i] = du_dev[i];
-            eu[i] = eu_dev[i];
-            ed[i] = ed_dev[i];
-            dp[i] = dp_dev[i];
-          }
           for (int i = 0; i < pcnst; ++i) {
             doconvproc[i] = doconvproc_dev[i];
             species_class[i] = species_class_dev[i];
@@ -218,11 +204,11 @@ void ma_convproc_tend(Ensemble *ensemble) {
           Real xx_mfup_max, xx_wcldbase;
           int xx_kcldbase;
           mam4::convproc::ma_convproc_tend(
-              aero_species, scratch1Dviews, nlev, convtype, dt, temperature,
-              pmid, qnew_dev, du, eu, ed, dp, dpdry, ktop, kbot,
-              mmtoo_prevap_resusp, cldfrac, icwmr, rprd, evapc, dqdt_view,
-              doconvproc, qsrflx, species_class, xx_mfup_max, xx_wcldbase,
-              xx_kcldbase);
+              team, aero_species, scratch1Dviews, nlev, convtype, dt,
+              temperature_dev, pmid_dev, qnew_dev, du_dev, eu_dev, ed_dev,
+              dp_dev, dpdry_dev, ktop, kbot, mmtoo_prevap_resusp, cldfrac_dev,
+              icwmr_dev, rprd_dev, evapc_dev, dqdt_view, doconvproc, qsrflx,
+              species_class, xx_mfup_max, xx_wcldbase, xx_kcldbase);
 
           for (int i = 0; i < nlev; ++i) {
             for (int j = 0; j < pcnst; ++j) {

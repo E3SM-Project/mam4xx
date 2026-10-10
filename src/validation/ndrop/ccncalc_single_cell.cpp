@@ -17,7 +17,7 @@ void ccncalc_single_cell(Ensemble *ensemble) {
     const int ntot_amode = mam4::AeroConfig::num_modes();
     const int psat = mam4::ndrop::psat;
 
-    const auto state_q = input.get_array("state_q");
+    auto state_q = input.get_array("state_q");
 
     const Real tair = input.get_array("tair")[0];
 
@@ -64,10 +64,12 @@ void ccncalc_single_cell(Ensemble *ensemble) {
       nspec_amode[i] = nspec_amode_db[i];
     }
     std::vector<Real> ccn(psat, zero);
-    mam4::ndrop::ccncalc(state_q.data(), tair, qcldbrn, qcldbrn_num.data(),
-                         air_density, num2vol_ratio_min_nmodes,
-                         num2vol_ratio_max_nmodes, exp45logsig, alogsig,
-                         ccn.data());
+    using View1DHost = typename mam4::HostType::view_1d<Real>;
+    View1DHost state(state_q.data(), mam4::aero_model::pcnst);
+    View1DHost cc(ccn.data(), psat);
+    mam4::ndrop::ccncalc(state, tair, qcldbrn, qcldbrn_num.data(), air_density,
+                         num2vol_ratio_min_nmodes, num2vol_ratio_max_nmodes,
+                         exp45logsig, alogsig, cc);
 
     output.set("ccn", ccn);
   });

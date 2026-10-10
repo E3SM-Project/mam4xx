@@ -133,11 +133,11 @@ void set_photo_table_work_arrays(const PhotoTableData &photo_table_data,
   photo_table_work.rsf = View2D(work_ptr, photo_table_data.nw, pver);
   work_ptr += pver * photo_table_data.nw;
   photo_table_work.xswk =
-      View3D(work_ptr, pver, photo_table_data.numj, photo_table_data.nw);
+      View3D(work_ptr, photo_table_data.numj, photo_table_data.nw, pver);
   work_ptr += pver * photo_table_data.numj * photo_table_data.nw;
-  photo_table_work.psum_l = View2D(work_ptr, pver, photo_table_data.nw);
+  photo_table_work.psum_l = View2D(work_ptr, photo_table_data.nw, pver);
   work_ptr += pver * photo_table_data.nw;
-  photo_table_work.psum_u = View2D(work_ptr, pver, photo_table_data.nw);
+  photo_table_work.psum_u = View2D(work_ptr, photo_table_data.nw, pver);
   work_ptr += pver * photo_table_data.nw;
   photo_table_work.parg = View1D(work_ptr, nlev);
   work_ptr += nlev;
@@ -451,13 +451,14 @@ void find_index(const View1D &var_in, const int var_len,
 
 } // find_index
 
-KOKKOS_INLINE_FUNCTION
-void calc_sum_wght(const Real dels[3], const Real wrk0, // in
-                   const int iz, const int is, const int iv,
-                   const int ial,         // in
-                   const View5D &rsf_tab, // in
-                   const int nw,
-                   const View1D &psum // out
+template <typename SubView>
+KOKKOS_INLINE_FUNCTION void
+calc_sum_wght(const Real dels[3], const Real wrk0, // in
+              const int iz, const int is, const int iv,
+              const int ial,         // in
+              const View5D &rsf_tab, // in
+              const int nw,
+              const SubView &psum // out
 ) {
 
   // @param[in]   dels(3)
@@ -622,16 +623,18 @@ void interpolate_rsf(const ThreadTeam &team, const View1D &alb_in,
     int iv = ratindl;
     dels[1] =
         utils::min_max_bound(zero, one, (v3ratl - o3rat[iv]) * del_o3rat[iv]);
-    calc_sum_wght(dels, wrk0,                              // in
-                  pind, is, iv, ial,                       // in
-                  rsf_tab, nw, ekat::subview(psum_l, kk)); // out
+    calc_sum_wght(dels, wrk0,        // in
+                  pind, is, iv, ial, // in
+                  rsf_tab, nw,
+                  Kokkos::subview(psum_l, Kokkos::ALL(), kk)); // out
 
     iv = ratindu;
     dels[1] =
         utils::min_max_bound(zero, one, (v3ratu - o3rat[iv]) * del_o3rat[iv]);
-    calc_sum_wght(dels, wrk0,                              // in
-                  pind - 1, is, iv, ial,                   // in
-                  rsf_tab, nw, ekat::subview(psum_u, kk)); //  inout
+    calc_sum_wght(dels, wrk0,            // in
+                  pind - 1, is, iv, ial, // in
+                  rsf_tab, nw,
+                  Kokkos::subview(psum_u, Kokkos::ALL(), kk)); //  inout
 
     /*------------------------------------------------------------------------------
         etfphot comes in as photons/cm^2/sec/nm  (rsf includes the wlintv
@@ -641,7 +644,7 @@ void interpolate_rsf(const ThreadTeam &team, const View1D &alb_in,
      ------------------------------------------------------------------------------*/
     for (int wn = 0; wn < nw; wn++)
       rsf(wn, kk) =
-          (psum_l(kk, wn) + wght1 * (psum_u(kk, wn) - psum_l(kk, wn))) *
+          (psum_l(wn, kk) + wght1 * (psum_u(wn, kk) - psum_l(wn, kk))) *
           etfphot[wn];
   }); // TeamVectorRange over kbot levels
 } // interpolate_rsf
@@ -751,7 +754,7 @@ void jlong(const ThreadTeam &team, const Real sza_in, const View1D &alb_in,
         if (ptarget >= prs[0]) {
           for (int wn = 0; wn < nw; wn++) {
             for (int i = 0; i < numj; i++) {
-              xswk(kk, i, wn) = xsqy(i, wn, t_index, 0);
+              xswk(i, wn, kk) = xsqy(i, wn, t_index, 0);
             } // end for i
           }   // end for wn
           // Fortran to C++ indexing conversion
@@ -759,7 +762,7 @@ void jlong(const ThreadTeam &team, const Real sza_in, const View1D &alb_in,
           for (int wn = 0; wn < nw; wn++) {
             for (int i = 0; i < numj; i++) {
               // Fortran to C++ indexing conversion
-              xswk(kk, i, wn) = xsqy(i, wn, t_index, np_xs - 1);
+              xswk(i, wn, kk) = xsqy(i, wn, t_index, np_xs - 1);
             } // end for i
           }   // end for wn
 
@@ -778,7 +781,7 @@ void jlong(const ThreadTeam &team, const Real sza_in, const View1D &alb_in,
           }   // end for km
           for (int wn = 0; wn < nw; wn++) {
             for (int i = 0; i < numj; i++) {
-              xswk(kk, i, wn) = xsqy(i, wn, t_index, pndx) +
+              xswk(i, wn, kk) = xsqy(i, wn, t_index, pndx) +
                                 delp * (xsqy(i, wn, t_index, pndx + 1) -
                                         xsqy(i, wn, t_index, pndx));
 
@@ -788,7 +791,7 @@ void jlong(const ThreadTeam &team, const Real sza_in, const View1D &alb_in,
         for (int i = 0; i < numj; ++i) {
           Real suma = zero;
           for (int wn = 0; wn < nw; wn++) {
-            suma += xswk(kk, i, wn) * rsf(wn, kk);
+            suma += xswk(i, wn, kk) * rsf(wn, kk);
           }
           j_long(i, kk) = suma;
         } // i

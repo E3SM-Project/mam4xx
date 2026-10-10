@@ -79,10 +79,10 @@ void ccncalc(Ensemble *ensemble) {
               num2vol_ratio_max_nmodes); // voltonumblo_amode
 
           const auto ccn_k = Kokkos::subview(ccn, kk, Kokkos::ALL());
-          mam4::ndrop::ccncalc(state_q_k.data(), tair(kk), qcldbrn, qcldbrn_num,
+          mam4::ndrop::ccncalc(state_q_k, tair(kk), qcldbrn, qcldbrn_num,
                                air_density, num2vol_ratio_min_nmodes,
                                num2vol_ratio_max_nmodes, exp45logsig, alogsig,
-                               ccn_k.data());
+                               ccn_k);
         });
 
     auto ccn_host = Kokkos::create_mirror_view(ccn);
