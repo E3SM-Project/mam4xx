@@ -64,6 +64,7 @@ void init_scratch(
                  mam4::ConvProc::pcnst_extd);
   Kokkos::resize(scratch1Dviews[mam4::ConvProc::sumwetdep],
                  mam4::ConvProc::pcnst_extd);
+  Kokkos::resize(scratch1Dviews[mam4::ConvProc::x_ratio], config_.nlev);
 }
 
 void get_input(const Input &input, const std::string &name, const int size,
