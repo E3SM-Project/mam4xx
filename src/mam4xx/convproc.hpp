@@ -2336,7 +2336,7 @@ void compute_updraft_mixing_ratio(
     for (int j = 0; j < pcnst_extd; ++j)
       dconudt_wetdep(i, j) = dconudt_activa(i, j) = 0.0;
   });
-
+  team.team_barrier();
   Kokkos::pair<Real, int> xx_base;
   Kokkos::single(
       Kokkos::PerTeam(team),
