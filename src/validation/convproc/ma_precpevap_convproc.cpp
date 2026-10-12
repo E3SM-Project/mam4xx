@@ -108,6 +108,7 @@ void ma_precpevap_convproc(Ensemble *ensemble) {
               mmtoo_prevap_resusp_host, mmtoo_prevap_resusp_dev);
     mam4::ColumnView wd_flux =
         mam4::validation::create_column_view(mam4::ConvProc::pcnst_extd);
+    mam4::ColumnView x_ratio = mam4::validation::create_column_view(nlev);
     auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
         team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
@@ -124,8 +125,8 @@ void ma_precpevap_convproc(Ensemble *ensemble) {
           mam4::convproc::ma_precpevap_convproc(
               team, ktop, nlev, dcondt_wetdep_dev, rprd_dev.data(),
               evapc_dev.data(), dpdry_i_dev.data(), doconvproc_extd,
-              species_class, mmtoo_prevap_resusp, wd_flux, dcondt_prevap_dev,
-              dcondt_prevap_hist_dev, dcondt_dev);
+              species_class, mmtoo_prevap_resusp, x_ratio, wd_flux,
+              dcondt_prevap_dev, dcondt_prevap_hist_dev, dcondt_dev);
         });
     set_output(output, "dcondt", nlev, pcnst_extd, dcondt_host, dcondt_dev);
     set_output(output, "dcondt_prevap", nlev, pcnst_extd, dcondt_prevap_host,

@@ -539,6 +539,7 @@ public:
     dqdt,
     qnew,
     dlfdp,
+    x_ratio,
     NumScratch
   };
 
@@ -592,6 +593,7 @@ public:
     Kokkos::resize(scratch1Dviews[dqdt], config_.nlev * aero_model::pcnst);
     Kokkos::resize(scratch1Dviews[qnew], config_.nlev * aero_model::pcnst);
     Kokkos::resize(scratch1Dviews[dlfdp], config_.nlev);
+    Kokkos::resize(scratch1Dviews[x_ratio], config_.nlev);
   } // end(init)
 
   KOKKOS_INLINE_FUNCTION
@@ -981,10 +983,9 @@ KOKKOS_INLINE_FUNCTION void
 ma_precpprod(const Real rprd, const Real dpdry,
              const bool doconvproc_extd[ConvProc::pcnst_extd],
              const Real x_ratio, const int species_class[aero_model::pcnst],
-             const int mmtoo_prevap_resusp[aero_model::pcnst], Real &pr_flux,
-             Real &pr_flux_tmp, Real &pr_flux_base, ColumnView wd_flux,
-             ConstSubView dcondt_wetdep, SubView dcondt, SubView dcondt_prevap,
-             SubView dcondt_prevap_hist) {
+             const int mmtoo_prevap_resusp[aero_model::pcnst],
+             ColumnView wd_flux, ConstSubView dcondt_wetdep, SubView dcondt,
+             SubView dcondt_prevap, SubView dcondt_prevap_hist) {
   // clang-format off
   // ------------------------------------------
   //  step 2 in ma_precpevap_convproc: aerosol scavenging from precipitation production
@@ -1009,24 +1010,15 @@ ma_precpprod(const Real rprd, const Real dpdry,
            -3 for aerosol number species
            -1 for other species
 
-  inout  pr_flux   - precip flux at base of current layer [(kg/kg/s)*mb]
-  inout  pr_flux_tmp   - precip flux at base of current layer, after adjustment in step 1 [(kg/kg/s)*mb]
-  inout  pr_flux_base   - precip flux at an effective cloud base for calculations in a particular layer
   inout  wd_flux[pcnst_extd]   - tracer wet deposition flux at base of current layer [(kg/kg/s)*mb]
   inout  dcondt[pcnst_extd]  - overall TMR tendency from convection at a certain layer [kg/kg/s]
   inout  dcondt_prevap[pcnst_extd]  - portion of TMR tendency due to precip evaporation [kg/kg/s]
   inout  dcondt_prevap_hist[pcnst_extd]   - dcondt_prevap_hist at a certain layer [kg/kg/s]
   */
   // clang-format on
-  // local precip flux [(kg/kg/s)*mb]
-  const Real pr_flux_local = mam4::max(0.0, rprd * dpdry);
-  pr_flux_base = mam4::max(0.0, pr_flux_base + pr_flux_local);
-  pr_flux =
-      utils::min_max_bound(0.0, pr_flux_base, pr_flux_tmp + pr_flux_local);
 
   // The indexing started at 2 for Fortran, so 1 for C++
   for (int icnst = 1; icnst < ConvProc::pcnst_extd; ++icnst) {
-
     if (doconvproc_extd[icnst]) {
       // wet deposition flux from the aerosol resuspension
       // wd_flux_tmp (updated) =
@@ -1076,17 +1068,15 @@ ma_precpprod(const Real rprd, const Real dpdry,
 }
 // =========================================================================================
 KOKKOS_INLINE_FUNCTION
-void ma_precpevap_convproc(const ThreadTeam &team, const int ktop,
-                           const int nlev, Const_Kokkos_2D_View dcondt_wetdep,
-                           const Real rprd[/* nlev */],
-                           const Real evapc[/* nlev */],
-                           const Real dpdry[/* nlev */],
-                           const bool doconvproc_extd[ConvProc::pcnst_extd],
-                           const int species_class[aero_model::pcnst],
-                           const int mmtoo_prevap_resusp[aero_model::pcnst],
-                           ColumnView wd_flux, Kokkos_2D_View dcondt_prevap,
-                           Kokkos_2D_View dcondt_prevap_hist,
-                           Kokkos_2D_View dcondt) {
+void ma_precpevap_convproc(
+    const ThreadTeam &team, const int ktop, const int nlev,
+    Const_Kokkos_2D_View dcondt_wetdep, const Real rprd[/* nlev */],
+    const Real evapc[/* nlev */], const Real dpdry[/* nlev */],
+    const bool doconvproc_extd[ConvProc::pcnst_extd],
+    const int species_class[aero_model::pcnst],
+    const int mmtoo_prevap_resusp[aero_model::pcnst], ColumnView x_ratio,
+    ColumnView wd_flux, Kokkos_2D_View dcondt_prevap,
+    Kokkos_2D_View dcondt_prevap_hist, Kokkos_2D_View dcondt) {
   // clang-format off
   // -----------------------------------------------------------------------
   // 
@@ -1163,20 +1153,6 @@ void ma_precpevap_convproc(const ThreadTeam &team, const int ktop,
   //        consistently when going from dcondt to wd_flux then to dcondt
   // clang-format on
 
-  // initiate variables that are integrated in vertical
-  // precip flux at base of current layer [(kg/kg/s)*mb]
-  Real pr_flux = 0.0;
-  // precip flux at an effective cloud base for calculations in a particular
-  // layer
-  Real pr_flux_base = 0.0;
-  // precip flux at base of current layer, after adjustment of resuspension in
-  // step 1 [(kg/kg/s)*mb]
-  Real pr_flux_tmp = 0;
-  // ratio of adjusted and old fraction of precipitation-borne aerosol
-  // flux that is NOT resuspended, calculated in step 1 and used in step 2 (see
-  // below)
-  Real x_ratio = 0;
-
   // tracer wet deposition flux at base of current layer [(kg/kg/s)*mb]
   const int pcnst_extd = ConvProc::pcnst_extd;
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, pcnst_extd),
@@ -1190,20 +1166,45 @@ void ma_precpevap_convproc(const ThreadTeam &team, const int ktop,
       dcondt_prevap_hist(kk, i) = 0;
   });
 
+  Kokkos::single(Kokkos::PerTeam(team), [=]() {
+    // initiate variables that are integrated in vertical
+    // precip flux at base of current layer [(kg/kg/s)*mb]
+    Real pr_flux = {};
+    // precip flux at an effective cloud base for calculations in a particular
+    // layer
+    Real pr_flux_base = {};
+    // precip flux at base of current layer, after adjustment of resuspension in
+    // step 1 [(kg/kg/s)*mb]
+    Real pr_flux_tmp = {};
+    // x_ratio[kk] is ratio of adjusted and old fraction of precipitation-borne
+    // aerosol flux that is NOT resuspended, calculated in step 1 and used in
+    // step 2 (see below)
+    for (int kk = ktop; kk < nlev; ++kk) {
+      // step 1 - precip evaporation and aerosol resuspension
+      ma_precpevap(dpdry[kk], evapc[kk], pr_flux, pr_flux_base, pr_flux_tmp,
+                   x_ratio[kk]);
+
+      // local precip flux [(kg/kg/s)*mb]
+      // This has to be done in serial because pr_flux, pr_flux_base,
+      // pr_flux_tmp are all input/output values that integrate down the column.
+      const Real pr_flux_local = mam4::max(0.0, rprd[kk] * dpdry[kk]);
+      pr_flux_base = mam4::max(0.0, pr_flux_base + pr_flux_local);
+      pr_flux =
+          utils::min_max_bound(0.0, pr_flux_base, pr_flux_tmp + pr_flux_local);
+    }
+  });
+
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, ktop, nlev), [&](int kk) {
-    // step 1 - precip evaporation and aerosol resuspension
-    ma_precpevap(dpdry[kk], evapc[kk], pr_flux, pr_flux_base, pr_flux_tmp,
-                 x_ratio);
     // step 2 - precip production and aerosol scavenging
     auto dcondt_wetdep_sub = Kokkos::subview(dcondt_wetdep, kk, Kokkos::ALL());
     auto dcondt_sub = Kokkos::subview(dcondt, kk, Kokkos::ALL());
     auto dcondt_prevap_sub = Kokkos::subview(dcondt_prevap, kk, Kokkos::ALL());
     auto dcondt_prevap_hist_sub =
         Kokkos::subview(dcondt_prevap_hist, kk, Kokkos::ALL());
-    ma_precpprod(rprd[kk], dpdry[kk], doconvproc_extd, x_ratio, species_class,
-                 mmtoo_prevap_resusp, pr_flux, pr_flux_tmp, pr_flux_base,
-                 wd_flux, dcondt_wetdep_sub, dcondt_sub, dcondt_prevap_sub,
-                 dcondt_prevap_hist_sub);
+
+    ma_precpprod(rprd[kk], dpdry[kk], doconvproc_extd, x_ratio[kk],
+                 species_class, mmtoo_prevap_resusp, wd_flux, dcondt_wetdep_sub,
+                 dcondt_sub, dcondt_prevap_sub, dcondt_prevap_hist_sub);
   });
 }
 
@@ -2659,6 +2660,8 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
       scratch1Dviews[ConvProc::Col1DViewInd::sumresusp];
   Kokkos::View<Real *> sumwetdep =
       scratch1Dviews[ConvProc::Col1DViewInd::sumwetdep];
+  Kokkos::View<Real *> x_ratio =
+      scratch1Dviews[ConvProc::Col1DViewInd::x_ratio];
 
   //  q(nlev,pcnst)      ! q(k,m) at current i [kg/kg]
   auto q = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
@@ -2777,7 +2780,8 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
     // calculate effects of precipitation evaporation
     ma_precpevap_convproc(team, ktop, nlev, dcondt_wetdep, rprd, evapc, dpdry,
                           doconvproc_extd, species_class, mmtoo_prevap_resusp,
-                          wd_flux, dcondt_prevap, dcondt_prevap_hist, dcondt);
+                          x_ratio, wd_flux, dcondt_prevap, dcondt_prevap_hist,
+                          dcondt);
     team.team_barrier();
 
     //  make adjustments to dcondt for activated & unactivated aerosol species
