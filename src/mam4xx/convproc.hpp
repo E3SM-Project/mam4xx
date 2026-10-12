@@ -1786,12 +1786,11 @@ void initialize_tmr_array(
     }
   }
   team.team_barrier();
-
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev + 1), [&](int j) {
     for (int i = 0; i < pcnst_extd; ++i)
       chat(j, i) = conu(j, i) = cond(j, i) = 0;
   });
-
+  team.team_barrier();
   // The indexing started at 2 for Fortran, so 1 for C++
   for (int icnst = 1; icnst < ncnst; ++icnst) {
     if (doconvproc_extd[icnst]) {
