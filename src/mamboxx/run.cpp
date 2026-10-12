@@ -1,3 +1,4 @@
+#include "mam4xx/mo_setinv.hpp"
 #include "mamboxx.hpp"
 #include <mam4xx/mam4.hpp>
 #include <mam4xx/atmosphere.hpp>
@@ -183,6 +184,17 @@ void external_forcing(State &state, Real dt) {
 }
 
 void set_invariants(State &state, Real dt) {
+  auto policy = TeamPolicyFactory::get_default_team_policy(1, state.n_lev);
+  View1D cnst_offline[mam4::mo_setinv::num_tracer_cnst];
+  // FIXME: populate offline constituents 
+  Kokkos::parallel_for("mamboxx::set_invariants", policy, KOKKOS_LAMBDA(const ThreadTeam &team) {
+    mam4::mo_setinv::setinv(team,                                    // in
+                            state.invariants,                        // out
+                            state.atmosphere.temperature,            // in
+                            state.atmosphere.vapor_mixing_ratio,     // in
+                            cnst_offline,                            // in
+                            state.atmosphere.pressure);              // in
+  });
 }
 
 void compute_o3_column_density(State &state, Real dt) {
