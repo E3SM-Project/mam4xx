@@ -777,18 +777,15 @@ ma_precpprod(const Real rprd, const Real dpdry,
 }
 // =========================================================================================
 KOKKOS_INLINE_FUNCTION
-void ma_precpevap_convproc(const ThreadTeam &team, const int ktop,
-                           const int nlev, Const_Kokkos_2D_View dcondt_wetdep,
-                           const ConstColumnView &rprd,
-                           const ConstColumnView &evapc,
-                           const ConstColumnView &dpdry,
-                           const bool doconvproc_extd[ConvProc::pcnst_extd],
-                           const int species_class[aero_model::pcnst],
-                           const int mmtoo_prevap_resusp[aero_model::pcnst],
-			   ColumnView x_ratio,
-                           ColumnView wd_flux, Kokkos_2D_View dcondt_prevap,
-                           Kokkos_2D_View dcondt_prevap_hist,
-                           Kokkos_2D_View dcondt) {
+void ma_precpevap_convproc(
+    const ThreadTeam &team, const int ktop, const int nlev,
+    Const_Kokkos_2D_View dcondt_wetdep, const ConstColumnView &rprd,
+    const ConstColumnView &evapc, const ConstColumnView &dpdry,
+    const bool doconvproc_extd[ConvProc::pcnst_extd],
+    const int species_class[aero_model::pcnst],
+    const int mmtoo_prevap_resusp[aero_model::pcnst], ColumnView x_ratio,
+    ColumnView wd_flux, Kokkos_2D_View dcondt_prevap,
+    Kokkos_2D_View dcondt_prevap_hist, Kokkos_2D_View dcondt) {
   // clang-format off
   // -----------------------------------------------------------------------
   //
