@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 #include <mam4_config.hpp>
+#include <mam4xx/mam4_types.hpp>
 
 #include <string>
 #include <map>
@@ -58,6 +59,9 @@ struct GasState {
   std::map<std::string, std::vector<Real>> mass_mixing_ratios;
 };
 
+struct Diagnostics {
+};
+
 struct Config {
   TimeConfig       time;
   ControlConfig    control;
@@ -71,6 +75,7 @@ struct Result {
   std::string  error;    // if !success
   AerosolState aerosols; // final aerosol state
   GasState     gases;    // final gas state
+  Diagnostics  diagnostics;
 };
 
 // reads a mamboxx config file, returning a Config struct storing its contents
@@ -79,6 +84,9 @@ Config read_config(const std::string &filename);
 // executes a simulation using the given configuration, returning a result
 // indicating success/failure and containing final states
 Result run(const Config &config);
+
+// Creates a new column with the given number of vertical levels.
+mam4::ColumnView create_column_view(int num_levels);
 
 }
 
