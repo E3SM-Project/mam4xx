@@ -1,28 +1,45 @@
+#include "mam4xx/mo_setinv.hpp"
 #include "mamboxx.hpp"
-#include <mam4xx/mam4_types.hpp>
+#include <mam4xx/mam4.hpp>
 
 #include <ekat_assert.hpp>
+#include <ekat_team_policy_utils.hpp>
+
+// Unresolved questions/issues:
+// 1. How do we accommodate different numbers of vertical levels? mam4::nlev
+//    is currently a compile-time parameter.
+// 2. We need an AtmosphereState instead of an immutable AtmosphereConfig, in
+//    which water vapor/ice/etc are tracked and evolved. This means additional
+//    input data in the YAML file. See the DryAtmosphere struct in mam_coupling.hpp
+//    for the essentials.
+// 3. How do we handle emissions and external forcing? Use input from the YAML file?
 
 namespace mamboxx {
 
 namespace {
+
+using View1D            = mam4::DeviceType::view_1d<Real>;
+using View2D            = mam4::DeviceType::view_2d<Real>;
+using ThreadTeam        = mam4::ThreadTeam;
+using TeamPolicyFactory = ekat::TeamPolicyFactory<ekat::KokkosTypes<ekat::DefaultDevice>::ExeSpace>;
 
 struct State {
   AtmosphereConfig atmosphere;
   AerosolState     aerosols;
   GasState         gases;
 
-  int k_top, k_bottom;
+  View2D invariants;
+  int n_lev, k_top, k_bottom;
 };
 
 void initialize(const Config &config, State &state) {
-  size_t n_lev = config.atmosphere.temperature.size();
-  EKAT_REQUIRE(n_lev <= mam4::nlev,
-      "requested number of vertical levels (" << n_lev <<
+  state.n_lev = config.atmosphere.temperature.size();
+  EKAT_REQUIRE(state.n_lev <= mam4::nlev,
+      "requested number of vertical levels (" << state.n_lev <<
       ") exceeds compile-time limit (" << mam4::nlev <<
       ") -- reconfigure with MAM4XX_NUM_VERTICALS set to a higher limit");
   state.k_top = 0;
-  state.k_bottom = n_lev;
+  state.k_bottom = state.n_lev;
 }
 
 void external_forcing(State &state, Real dt) {
@@ -30,6 +47,17 @@ void external_forcing(State &state, Real dt) {
 }
 
 void set_invariants(State &state, Real dt) {
+  auto policy = TeamPolicyFactory::get_default_team_policy(1, state.n_lev);
+  View1D cnst_offline[mam4::mo_setinv::num_tracer_cnst];
+  // FIXME: populate offline constituents 
+  Kokkos::parallel_for("mamboxx::set_invariants", policy, KOKKOS_LAMBDA(const ThreadTeam &team) {
+    mam4::mo_setinv::setinv(team,                                    // in
+                            state.invariants,                        // out
+                            state.atmosphere.temperature,            // in
+                            state.atmosphere.vapor_mixing_ratio,     // in
+                            cnst_offline,                            // in
+                            state.atmosphere.pressure);              // in
+  });
 }
 
 void compute_o3_column_density(State &state, Real dt) {

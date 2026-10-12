@@ -33,9 +33,11 @@ struct ControlConfig {
 
 // prevailing atmospheric conditions (column data)
 struct AtmosphereConfig {
-  std::vector<Real> temperature;       // [K]
-  std::vector<Real> pressure;          // [Pa]
-  std::vector<Real> relative_humidity; // for clear air [-]
+  std::vector<Real> temperature;        // [K]
+  std::vector<Real> pressure;           // [Pa]
+  std::vector<Real> relative_humidity;  // for clear air [-]
+  // FIXME: add input for vapor_mixing_ratio
+  std::vector<Real> vapor_mixing_ratio; // water vapor MMR [kg vapor/kg air]
 };
 
 // aerosol mode (column) data
@@ -47,6 +49,9 @@ struct AerosolModeConfig {
   // mapping of aerosol species names to mass fractions
   std::map<std::string, std::vector<Real>> mass_fractions;
 };
+
+// FIXME: need to distinguish between XConfig (using vectors, maps) and
+// FIXME: XState (using views)
 
 struct AerosolState {
   // mapping of aerosol mode names to their data
