@@ -178,6 +178,41 @@ void vmr2mmr_cw(State &state, Real dt) {
 void linoz(State &state, Real dt) {
 }
 
+void external_forcing(State &state, Real dt) {
+  // TODO: add when appropriate
+}
+
+void set_invariants(State &state, Real dt) {
+}
+
+void compute_o3_column_density(State &state, Real dt) {
+}
+
+void photo_table(State &state, Real dt) {
+}
+
+void sethet(State &state, Real dt) {
+}
+
+void drydep_xactive(State &state, Real dt) {
+}
+
+void gas_phase_chemistry(State &state, Real dt) {
+}
+
+void setsox(State &state, Real dt) {
+}
+
+void modal_aero_amicphys_intr(State &state, Real dt) {
+}
+
+void vmr2mmr_cw(State &state, Real dt) {
+}
+
+void linoz(State &state, Real dt) {
+}
+
+
 void step(State &state, Real dt) {
   size_t n_lev = state.atmosphere.temperature.size();
  
