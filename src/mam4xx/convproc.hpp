@@ -1641,6 +1641,7 @@ void compute_ent_det_dp(const ThreadTeam &team, const int nlev, const int ktop,
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int i) {
     eudp[i] = dudp[i] = eddp[i] = dddp[i] = 0.0;
   });
+  team.team_barrier();
   //  Compute updraft and downdraft "entrainment*dp" from eu and ed
   //  Compute "detrainment*dp" from mass conservation (total is mass flux
   //  difference between the top an bottom interface of this layer)
