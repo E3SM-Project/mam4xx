@@ -1540,7 +1540,7 @@ void compute_massflux(const ThreadTeam &team, const int nlev, const int ktop,
    in  :: ed[nlev]       ! Mass entrain rate into downdraft [1/s]
    out :: mu[nlev+1]     ! mu at current i (note nlev+1 dimension, see ma_convproc_tend) [mb/s]
    out :: md[nlev+1]     ! md at current i (note nlev+1 dimension) [mb/s]
-   inout :: xx_mfup_max  ! diagnostic field of column maximum updraft mass flux [mb/s]
+   out :: xx_mfup_max  ! diagnostic field of column maximum updraft mass flux [mb/s]
   */
   // clang-format on
   // threshold below which we treat the mass fluxes as zero [mb/s]
@@ -1567,6 +1567,7 @@ void compute_massflux(const ThreadTeam &team, const int nlev, const int ktop,
                             mu[kk] = accumulator;
                         });
   team.team_barrier();
+  xx_mfup_max = 0;
   Kokkos::parallel_reduce(
       Kokkos::TeamVectorRange(team, 0, nlev),
       [&](int kk, Real &xx_mfup_max) {
@@ -2915,8 +2916,8 @@ ma_convproc_dp_intr(const ThreadTeam &team, const AeroSpeciesView &aero_species,
   // diagnostics variables to write out.
   // xx_kcldbase is filled with index kk. maybe better define as integer
   // keep it in C++ refactoring for BFB comparison (by Shuaiqi Tang, 2022)
-  Real xx_mfup_max, xx_wcldbase;
-  int xx_kcldbase;
+  Real xx_mfup_max = {}, xx_wcldbase = {};
+  int xx_kcldbase = {};
 
   // turn on/off calculations for aerosols and trace gases
   const bool convproc_do_aer = true;
