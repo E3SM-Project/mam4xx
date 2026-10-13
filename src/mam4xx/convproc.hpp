@@ -2643,9 +2643,8 @@ ma_convproc_dp_intr(const ThreadTeam &team, const AeroSpeciesView &aero_species,
 }
 
 // =========================================================================================
-template<typename SubView> 
-KOKKOS_INLINE_FUNCTION
-void ma_convproc_intr(
+template <typename SubView>
+KOKKOS_INLINE_FUNCTION void ma_convproc_intr(
     const ThreadTeam &team, const AeroSpeciesView &aero_species,
     const Kokkos::View<Real *>
         scratch1Dviews[ConvProc::Col1DViewInd::NumScratch],
@@ -2657,8 +2656,7 @@ void ma_convproc_intr(
     const ConstColumnView &du, const ConstColumnView &eu,
     const ConstColumnView &ed, const ConstColumnView &dp, const int ktop,
     const int kbot, const int species_class[aero_model::pcnst],
-    const int mmtoo_prevap_resusp[aero_model::pcnst],
-    const SubView state_q,
+    const int mmtoo_prevap_resusp[aero_model::pcnst], const SubView state_q,
     Diagnostics::ColumnTracerView ptend_q, bool ptend_lq[aero_model::pcnst],
     Real aerdepwetis[aero_model::pcnst]) {
 
