@@ -2531,12 +2531,12 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
    in :: doconvproc[aero_model::pcnst] ! flag for doing convective transport
    out:: qsrflx[pcnst][nsrflx]
          ! process-specific column tracer tendencies [kg/m2/s]
-         !  1 = activation   of interstial to conv-cloudborne
-         !  2 = resuspension of conv-cloudborne to interstital
-         !  3 = aqueous chemistry (not implemented yet, so zero)
-         !  4 = wet removal
-         !  5 = actual precip-evap resuspension (what actually is applied to a species)
-         !  6 = pseudo precip-evap resuspension (for history file) 
+         !  0 = activation   of interstial to conv-cloudborne
+         !  1 = resuspension of conv-cloudborne to interstital
+         !  2 = aqueous chemistry (not implemented yet, so zero)
+         !  3 = wet removal
+         !  4 = actual precip-evap resuspension (what actually is applied to a species)
+         !  5 = pseudo precip-evap resuspension (for history file) 
    in :: species_class[:]  ! specify what kind of species it is. defined at physconst.F90
                                                 ! undefined  = 0
                                                 ! cldphysics = 1
@@ -3093,12 +3093,12 @@ void ma_convproc_intr(
     // update variables for output
     for (int icnst = 0; icnst < aero_model::pcnst; ++icnst) {
       // this used for surface coupling:
-      //  4 = wet removal
-      //  5 = actual precip-evap resuspension (what actually is applied to a
+      //  3 = wet removal
+      //  4 = actual precip-evap resuspension (what actually is applied to a
       //  species)
       if (dotend[icnst] &&
           species_class[icnst] == ConvProc::species_class::aerosol)
-        aerdepwetis[icnst] += qsrflx[icnst][4] + qsrflx[icnst][5];
+        aerdepwetis[icnst] += qsrflx[icnst][3] + qsrflx[icnst][4];
     }
   } // (convproc_do_aer || convproc_do_gas)
   team.team_barrier();
