@@ -371,7 +371,7 @@ public:
     bool convproc_do_aer = true;
     bool convproc_do_gas = false;
     int nlev = mam4::nlev;
-    int ktop = 47; // BAD_CONSTANT: only true for nlev == 72
+    int ktop = 0; 
     int kbot = mam4::nlev - 1;
     // Flags are defined in "enum ConvProc::species_class".
     int species_class[aero_model::pcnst] = {
