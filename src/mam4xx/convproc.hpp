@@ -2840,22 +2840,21 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
 
 // =========================================================================================
 template <typename SubView, typename ConstSubView>
-KOKKOS_INLINE_FUNCTION void
-ma_convproc_dp_intr(const ThreadTeam &team, const AeroSpeciesView &aero_species,
-                    const Kokkos::View<Real *>
-                        scratch1Dviews[ConvProc::Col1DViewInd::NumScratch],
-                    const int nlev, const Real temperature[/* nlev */],
-                    const Real pmid[/* nlev */], const Real dpdry[/* nlev */],
-                    const Real dt, const Real cldfrac[/* nlev */],
-                    const Real icwmr[/* nlev */], const Real rprddp[/* nlev */],
-                    const Real evapcdp[/* nlev */], const Real du[/* nlev */],
-                    const Real eu[/* nlev */], const Real ed[/* nlev */],
-                    const Real dp[/* nlev */], const int ktop, const int kbot,
-                    ConstSubView qnew,
-                    const int species_class[/* aero_model::pcnst */],
-                    const int mmtoo_prevap_resusp[/* aero_model::pcnst */],
-                    SubView dqdt, Real qsrflx[/* aero_model::pcnst */][nsrflx],
-                    bool dotend[aero_model::pcnst]) {
+KOKKOS_INLINE_FUNCTION void ma_convproc_dp_intr(
+    const ThreadTeam &team, const AeroSpeciesView &aero_species,
+    const Kokkos::View<Real *>
+        scratch1Dviews[ConvProc::Col1DViewInd::NumScratch],
+    const bool convproc_do_aer, const bool convproc_do_gas, const int nlev,
+    const Real temperature[/* nlev */], const Real pmid[/* nlev */],
+    const Real dpdry[/* nlev */], const Real dt, const Real cldfrac[/* nlev */],
+    const Real icwmr[/* nlev */], const Real rprddp[/* nlev */],
+    const Real evapcdp[/* nlev */], const Real du[/* nlev */],
+    const Real eu[/* nlev */], const Real ed[/* nlev */],
+    const Real dp[/* nlev */], const int ktop, const int kbot,
+    ConstSubView qnew, const int species_class[/* aero_model::pcnst */],
+    const int mmtoo_prevap_resusp[/* aero_model::pcnst */], SubView dqdt,
+    Real qsrflx[/* aero_model::pcnst */][nsrflx],
+    bool dotend[aero_model::pcnst]) {
 
   // clang-format off
   // ----------------------------------------------------------------------- 
@@ -2920,8 +2919,6 @@ ma_convproc_dp_intr(const ThreadTeam &team, const AeroSpeciesView &aero_species,
   int xx_kcldbase = {};
 
   // turn on/off calculations for aerosols and trace gases
-  const bool convproc_do_aer = true;
-  const bool convproc_do_gas = false;
   assign_dotend(species_class, convproc_do_aer, convproc_do_gas, dotend);
 
   // clang-format off
@@ -3079,10 +3076,11 @@ void ma_convproc_intr(
       dlfdp[j] = mam4::max((dlf[j]), 0.0);
     });
     team.team_barrier();
-    ma_convproc_dp_intr(team, aero_species, scratch1Dviews, nlev, temperature,
-                        pmid, dpdry, dt, dp_frac, icwmrdp, rprddp, evapcdp, du,
-                        eu, ed, dp, ktop, kbot, qnew, species_class,
-                        mmtoo_prevap_resusp, dqdt, qsrflx, dotend);
+    ma_convproc_dp_intr(team, aero_species, scratch1Dviews, convproc_do_aer,
+                        convproc_do_gas, nlev, temperature, pmid, dpdry, dt,
+                        dp_frac, icwmrdp, rprddp, evapcdp, du, eu, ed, dp, ktop,
+                        kbot, qnew, species_class, mmtoo_prevap_resusp, dqdt,
+                        qsrflx, dotend);
     team.team_barrier();
     // apply deep conv processing tendency
     Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int kk) {
