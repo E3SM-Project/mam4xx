@@ -10,7 +10,7 @@ using namespace skywalker;
 using namespace mam4::gas_chemistry;
 
 void newton_raphson_iter(Ensemble *ensemble) {
-
+  using View1DHost = typename mam4::HostType::view_1d<Real>;
   ensemble->process([=](const Input &input, Output &output) {
     const Real zero = 0;
     const auto lin_jac = input.get_array("lin_jac");
@@ -32,16 +32,20 @@ void newton_raphson_iter(Ensemble *ensemble) {
     bool converged[clscnt4] = {true};
     bool convergence = false;
 
+    View1DHost lsol_host(lsol.data(), lsol.size());
+
     newton_raphson_iter(dti, lin_jac.data(), lrxt.data(),
                         lhet.data(),           // & ! in
                         iter_invariant.data(), //              & ! in
-                        factor, lsol,
+                        factor, lsol_host,
                         solution.data(),        //              & ! inout
                         converged, convergence, //         & ! out
                         prod.data(), loss.data(), max_delta.data(),
                         // work arrays
                         epsilon);
 
+    for (int i = 0; i < lsol.size(); ++i) 
+      lsol[i] = lsol_host(i);
     std::vector<Real> converged_out;
     for (int i = 0; i < clscnt4; ++i) {
       if (converged[i]) {
