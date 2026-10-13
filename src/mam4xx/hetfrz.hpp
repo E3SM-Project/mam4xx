@@ -994,6 +994,7 @@ KOKKOS_INLINE_FUNCTION void calculate_coated_fraction(
   Real vol_shell[Hetfrz::hetfrz_aer_nspec];
   Real vol_core[Hetfrz::hetfrz_aer_nspec];
 
+  // BAD CONSTANT these are different than what is in aero_species.hpp
   const Real spechygro_so4 = 0.507; // Sulfate hygroscopicity
   const Real spechygro_soa = 0.14;  // SOA hygroscopicity
   const Real spechygro_pom = 0.1;   // POM hygroscopicity
