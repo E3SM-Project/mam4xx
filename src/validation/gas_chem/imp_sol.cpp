@@ -8,7 +8,7 @@
 
 using namespace skywalker;
 using namespace mam4::gas_chemistry;
-
+using View1DHost = typename mam4::HostType::view_1d<Real>;
 void imp_sol(Ensemble *ensemble) {
 
   ensemble->process([=](const Input &input, Output &output) {
@@ -29,11 +29,16 @@ void imp_sol(Ensemble *ensemble) {
     for (int i = 0; i < itermax; ++i) {
       factor[i] = true;
     }
+    View1DHost base_sol_host("base_sol", base_sol.size());
+    for (int i = 0; i < base_sol.size(); ++i)
+      base_sol_host(i) = base_sol[i];
 
-    imp_sol(base_sol, //    ! species mixing ratios [vmr] & !
+    imp_sol(base_sol_host, //    ! species mixing ratios [vmr] & !
             reaction_rates.data(), het_rates.data(), extfrc.data(), delt,
             factor, epsilon, prod_out.data(), loss_out.data());
 
+    for (int i = 0; i < base_sol.size(); ++i)
+      base_sol[i] = base_sol_host(i);
     output.set("base_sol", base_sol);
   });
 }
