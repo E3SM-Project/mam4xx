@@ -3172,5 +3172,135 @@ void ConvProc::compute_tendencies(const AeroConfig &config,
       rprddp, evapcdp, dlftot, du, eu, ed, dp, ktop, kbot, species_class,
       mmtoo_prevap_resusp, state_q, ptend_q, ptend_lq, aerdepwetis);
 }
+
+// Utility functions for convproc scratch array management
+namespace convproc {
+
+// Calculate work array size needed for convproc scratch arrays
+KOKKOS_INLINE_FUNCTION
+int get_scratch1d_work_len(const int nlev) {
+  constexpr int pcnst = aero_model::pcnst;
+  constexpr int pcnst_extd = ConvProc::pcnst_extd;
+  
+  int work_len = 0;
+  
+  // Index 0: q - tracer mixing ratios
+  work_len += nlev * pcnst;
+  
+  // Indices 1-2: mu, md - updraft/downdraft mass fluxes
+  work_len += 2 * (nlev + 1);
+  
+  // Indices 3-6: eudp, dudp, eddp, dddp - entrainment/detrainment × dp
+  work_len += 4 * nlev;
+  
+  // Index 7: rhoair - air density
+  work_len += nlev;
+  
+  // Index 8: zmagl - height above ground level
+  work_len += nlev;
+  
+  // Indices 9-12: gath, chat, conu, cond - gathered tracers and concentrations
+  work_len += 4 * (nlev + 1) * pcnst_extd;
+  
+  // Indices 13-14: dconudt_wetdep, dconudt_activa - updraft tendencies
+  work_len += 2 * (nlev + 1) * pcnst_extd;
+  
+  // Index 15: fa_u - updraft fractional area
+  work_len += nlev;
+  
+  // Indices 16-20: dcondt arrays - downdraft tendencies
+  work_len += 5 * nlev * pcnst_extd;
+  
+  // Indices 21-27: wd_flux and sum arrays
+  work_len += 7 * pcnst_extd;
+  
+  // Indices 28-29: dqdt, qnew - tracer tendency and updated values
+  work_len += 2 * nlev * pcnst;
+  
+  // Index 30: dlfdp - detrainment × dp
+  work_len += nlev;
+  
+  // Index 31: x_ratio - precipitation resuspension ratio
+  work_len += nlev;
+  
+  return work_len;
+}
+
+// Initialize scratch1Dviews array from work array for convective processing
+inline void init_scratch_1d_views(
+    Kokkos::View<Real *> scratch1Dviews[ConvProc::Col1DViewInd::NumScratch],
+    Real *work_ptr, const int nlev) {
+  constexpr int pcnst = aero_model::pcnst;
+  constexpr int pcnst_extd = ConvProc::pcnst_extd;
+  using View1D = typename DeviceType::view_1d<Real>;
+
+  // Allocate each scratch array from the work array
+  scratch1Dviews[ConvProc::q] = View1D(work_ptr, nlev * pcnst);
+  work_ptr += nlev * pcnst;
+  scratch1Dviews[ConvProc::mu] = View1D(work_ptr, nlev + 1);
+  work_ptr += nlev + 1;
+  scratch1Dviews[ConvProc::md] = View1D(work_ptr, nlev + 1);
+  work_ptr += nlev + 1;
+  scratch1Dviews[ConvProc::eudp] = View1D(work_ptr, nlev);
+  work_ptr += nlev;
+  scratch1Dviews[ConvProc::dudp] = View1D(work_ptr, nlev);
+  work_ptr += nlev;
+  scratch1Dviews[ConvProc::eddp] = View1D(work_ptr, nlev);
+  work_ptr += nlev;
+  scratch1Dviews[ConvProc::dddp] = View1D(work_ptr, nlev);
+  work_ptr += nlev;
+  scratch1Dviews[ConvProc::rhoair] = View1D(work_ptr, nlev);
+  work_ptr += nlev;
+  scratch1Dviews[ConvProc::zmagl] = View1D(work_ptr, nlev);
+  work_ptr += nlev;
+  scratch1Dviews[ConvProc::gath] = View1D(work_ptr, (nlev + 1) * pcnst_extd);
+  work_ptr += (nlev + 1) * pcnst_extd;
+  scratch1Dviews[ConvProc::chat] = View1D(work_ptr, (nlev + 1) * pcnst_extd);
+  work_ptr += (nlev + 1) * pcnst_extd;
+  scratch1Dviews[ConvProc::conu] = View1D(work_ptr, (nlev + 1) * pcnst_extd);
+  work_ptr += (nlev + 1) * pcnst_extd;
+  scratch1Dviews[ConvProc::cond] = View1D(work_ptr, (nlev + 1) * pcnst_extd);
+  work_ptr += (nlev + 1) * pcnst_extd;
+  scratch1Dviews[ConvProc::dconudt_wetdep] = View1D(work_ptr, (nlev + 1) * pcnst_extd);
+  work_ptr += (nlev + 1) * pcnst_extd;
+  scratch1Dviews[ConvProc::dconudt_activa] = View1D(work_ptr, (nlev + 1) * pcnst_extd);
+  work_ptr += (nlev + 1) * pcnst_extd;
+  scratch1Dviews[ConvProc::fa_u] = View1D(work_ptr, nlev);
+  work_ptr += nlev;
+  scratch1Dviews[ConvProc::dcondt] = View1D(work_ptr, nlev * pcnst_extd);
+  work_ptr += nlev * pcnst_extd;
+  scratch1Dviews[ConvProc::dcondt_wetdep] = View1D(work_ptr, nlev * pcnst_extd);
+  work_ptr += nlev * pcnst_extd;
+  scratch1Dviews[ConvProc::dcondt_prevap] = View1D(work_ptr, nlev * pcnst_extd);
+  work_ptr += nlev * pcnst_extd;
+  scratch1Dviews[ConvProc::dcondt_prevap_hist] = View1D(work_ptr, nlev * pcnst_extd);
+  work_ptr += nlev * pcnst_extd;
+  scratch1Dviews[ConvProc::dcondt_resusp] = View1D(work_ptr, nlev * pcnst_extd);
+  work_ptr += nlev * pcnst_extd;
+  scratch1Dviews[ConvProc::wd_flux] = View1D(work_ptr, pcnst_extd);
+  work_ptr += pcnst_extd;
+  scratch1Dviews[ConvProc::sumactiva] = View1D(work_ptr, pcnst_extd);
+  work_ptr += pcnst_extd;
+  scratch1Dviews[ConvProc::sumaqchem] = View1D(work_ptr, pcnst_extd);
+  work_ptr += pcnst_extd;
+  scratch1Dviews[ConvProc::sumprevap] = View1D(work_ptr, pcnst_extd);
+  work_ptr += pcnst_extd;
+  scratch1Dviews[ConvProc::sumprevap_hist] = View1D(work_ptr, pcnst_extd);
+  work_ptr += pcnst_extd;
+  scratch1Dviews[ConvProc::sumresusp] = View1D(work_ptr, pcnst_extd);
+  work_ptr += pcnst_extd;
+  scratch1Dviews[ConvProc::sumwetdep] = View1D(work_ptr, pcnst_extd);
+  work_ptr += pcnst_extd;
+  scratch1Dviews[ConvProc::dqdt] = View1D(work_ptr, nlev * pcnst);
+  work_ptr += nlev * pcnst;
+  scratch1Dviews[ConvProc::qnew] = View1D(work_ptr, nlev * pcnst);
+  work_ptr += nlev * pcnst;
+  scratch1Dviews[ConvProc::dlfdp] = View1D(work_ptr, nlev);
+  work_ptr += nlev;
+  scratch1Dviews[ConvProc::x_ratio] = View1D(work_ptr, nlev);
+  work_ptr += nlev;
+}
+
+} // namespace convproc
 } // namespace mam4
 #endif
