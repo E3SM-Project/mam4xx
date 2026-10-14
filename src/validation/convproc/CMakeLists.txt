@@ -30,6 +30,7 @@ add_executable(convproc_driver convproc_driver.cpp
                compute_updraft_mixing_ratio.cpp
                ma_convproc_tend.cpp
                ma_convproc_dp_intr.cpp
+               ma_convproc_intr.cpp
                compute_tendencies.cpp
                ma_resuspend_convproc.cpp)
 target_link_libraries(convproc_driver skywalker;validation)
@@ -77,6 +78,8 @@ foreach (input
          compute_updraft_mixing_ratio
          ma_convproc_tend
          ma_convproc_dp_intr
+         ma_convproc_intr_ts_355
+         ma_convproc_intr_only_aero_ts_355
          compute_tendencies
          )
 
@@ -100,6 +103,8 @@ foreach (input
   elseif (${input} STREQUAL ma_activate_convproc_54)
     set(TOL 6e-5)
   elseif (${input} STREQUAL ma_convproc_tend)
+    set(TOL 1e-4)
+  elseif (${input} STREQUAL ma_convproc_intr_ts_355)
     set(TOL 1e-4)
   elseif (${input} STREQUAL compute_updraft_mixing_ratio)
     set(TOL 2e-4)
