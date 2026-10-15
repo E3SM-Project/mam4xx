@@ -674,12 +674,10 @@ void calc_org_matter_seasalt(
     // use theta_help as work array -- theta_help = alpha(i) * x(i)
     theta_help[iorg] = data.alpha_org(iorg) * om_conc[iorg];
   }
-  // FIXME: this looks to be a bug since both are initialized to 0
-  // above, and the fortran has:
-  // alpha_help(:) = sum(theta, dim=2)
-  // I suspect it should be: alpha_help = sum(alpha_org)
+  // Burrows et al. (2014), Eq. 2: all organic classes compete through the
+  // dimensionless sum of their concentration-weighted Langmuir terms.
   for (int i = 0; i < n_organic_species; ++i) {
-    alpha_help += theta[i];
+    alpha_help += theta_help[i];
   }
 
   for (int iorg = 0; iorg < n_organic_species; ++iorg) {
