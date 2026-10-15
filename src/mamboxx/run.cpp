@@ -1,4 +1,3 @@
-#include "mam4xx/aero_modes.hpp"
 #include "mamboxx.hpp"
 #include <mam4xx/mam4.hpp>
 #include <mam4xx/atmosphere.hpp>
@@ -29,32 +28,6 @@ struct State {
   mam4::Prognostics prognostics;
 
   View2D invariants;
-};
-
-std::string mode_names[4] = {"accumulation", "aitken", "coarse", "primary_carbon"};
-std::unordered_map<mam4::AeroId, std::string> aero_species_names = {
-  {mam4::AeroId::BC,   "bc"},
-  {mam4::AeroId::DST,  "dst"},
-  {mam4::AeroId::MOM,  "mom"},
-  {mam4::AeroId::NaCl, "ncl"},
-  {mam4::AeroId::POM,  "pom"},
-  {mam4::AeroId::SO4,  "so4"},
-  {mam4::AeroId::SOA,  "soa"},
-};
-std::unordered_map<mam4::GasId, std::string> gas_species_names = {
-  {mam4::GasId::CCl3F,  "ccl3f"},
-  {mam4::GasId::CHCl2F, "chcl2f"},
-  {mam4::GasId::CH4,    "ch4"},
-  {mam4::GasId::CO2,    "co2"},
-  {mam4::GasId::DMS,    "dms"},
-  {mam4::GasId::H2O2,   "h2o2"},
-  {mam4::GasId::H2SO4,  "h2so4"},
-  {mam4::GasId::NH3,    "nh3"},
-  {mam4::GasId::N2O,    "n2o"},
-  {mam4::GasId::O2,     "o2"},
-  {mam4::GasId::O3,     "o3"},
-  {mam4::GasId::SOAG,   "soag"},
-  {mam4::GasId::SO2,    "so2"},
 };
 
 void copy_vector_to_view(mam4::ColumnView device_view, const std::vector<Real> &vec, HostColumnView host_view) {
@@ -117,6 +90,19 @@ void initialize(const Config &config, State &state) {
     }
   }
 
+  std::vector<std::string> mode_names(mode_indices_for_names.size());
+  for (auto iter = mode_indices_for_names.begin(); iter != mode_indices_for_names.end(); ++iter) {
+    mode_names[int(iter->second)] = iter->first;
+  }
+  std::vector<std::string> aero_species_names(aero_ids_for_names.size());
+  for (auto iter = aero_ids_for_names.begin(); iter != aero_ids_for_names.end(); ++iter) {
+    aero_species_names[int(iter->second)] = iter->first;
+  }
+  std::vector<std::string> gas_species_names(gas_ids_for_names.size());
+  for (auto iter = gas_ids_for_names.begin(); iter != gas_ids_for_names.end(); ++iter) {
+    gas_species_names[int(iter->second)] = iter->first;
+  }
+
   // copy data to the device
   auto host_view = create_host_column_view(nlev);
   copy_vector_to_view(state.atmosphere.temperature, config.atmosphere.temperature, host_view);
@@ -127,19 +113,18 @@ void initialize(const Config &config, State &state) {
     auto m_iter = config.aerosols.modes.find(mode_names[m]);
     EKAT_REQUIRE(m_iter != config.aerosols.modes.end(),
         "Missing aerosol mode: " << mode_names[m]);
-    copy_vector_to_view(state.prognostics.n_mode_i[m], m_iter->second.numc, host_view);
+    copy_vector_to_view(state.prognostics.n_mode_i[m], m_iter->second.number_mixing_ratio, host_view);
     for (int s = 0; s < 7; ++s) {
       auto aero_id = mam4::mode_aero_species(m, s);
-      auto aero_name = aero_species_names[aero_id];
-      auto s_iter = m_iter->second.mass_fractions.find(aero_name);
-      EKAT_REQUIRE(s_iter != m_iter->second.mass_fractions.end(),
+      auto aero_name = aero_species_names[int(aero_id)];
+      auto s_iter = m_iter->second.mass_mixing_ratios.find(aero_name);
+      EKAT_REQUIRE(s_iter != m_iter->second.mass_mixing_ratios.end(),
           "Missing aerosol species in mode " << mode_names[m] << ": " << aero_name);
-      // FIXME: convert mass fractions to mass mixing ratios
       copy_vector_to_view(state.prognostics.q_aero_i[m][s], s_iter->second, host_view);
       // FIXME: what about cloudborne aerosols?
     }
     for (int g = 0; g < int(mam4::GasId::NumSpecies); ++g) {
-      auto gas_name = gas_species_names[mam4::GasId(g)];
+      auto gas_name = gas_species_names[g];
       auto g_iter = config.gases.mass_mixing_ratios.find(gas_name);
       if (g_iter != config.gases.mass_mixing_ratios.end()) {
         copy_vector_to_view(state.prognostics.q_gas[g], g_iter->second, host_view);
@@ -227,30 +212,27 @@ void finalize(const State &state, Result &result) {
   auto host_view = create_host_column_view(mam4::nlev);
 
   // copy data out of the state
-  for (int m = 0; m < mam4::AeroConfig::num_modes(); ++m) {
-    copy_view_to_vector(state.prognostics.n_mode_i[m],
-                        result.aerosols.modes[mode_names[m]].numc,
+  for (auto iter = mode_indices_for_names.begin(); iter != mode_indices_for_names.end(); ++iter) {
+    std::string     mode_name = iter->first;
+    mam4::ModeIndex mode_index = iter->second;
+    copy_view_to_vector(state.prognostics.n_mode_i[int(mode_index)],
+                        result.aerosols.modes[mode_name].number_mixing_ratio,
                         host_view);
     // FIXME: what about cloudborne aerosols?
-    for (int s = 0; s < 7; ++s) {
-      auto aero_id = mam4::mode_aero_species(m, s);
-      auto aero_name = aero_species_names[aero_id];
-      // FIXME: convert mass mixing ratios to mass fractions?
-      copy_view_to_vector(state.prognostics.q_aero_i[m][s],
-                          result.aerosols.modes[mode_names[m]].mass_fractions,
+    for (auto iter = aero_ids_for_names.begin(); iter != aero_ids_for_names.end(); ++iter) {
+      std::string  aero_name = iter->first;
+      mam4::AeroId aero_id = iter->second;
+      copy_view_to_vector(state.prognostics.q_aero_i[int(mode_index)][int(aero_id)],
+                          result.aerosols.modes[mode_name].mass_mixing_ratios[aero_name],
                           host_view);
-      auto s_iter = m_iter->second.mass_fractions.find(aero_name);
-      EKAT_REQUIRE(s_iter != m_iter->second.mass_fractions.end(),
-          "Missing aerosol species in mode " << mode_names[m] << ": " << aero_name);
-      copy_vector_to_view(state.prognostics.q_aero_i[m][s], s_iter->second, host_view);
       // FIXME: what about cloudborne aerosols?
     }
-    for (int g = 0; g < int(mam4::GasId::NumSpecies); ++g) {
-      auto gas_name = gas_species_names[mam4::GasId(g)];
-      auto g_iter = config.gases.mass_mixing_ratios.find(gas_name);
-      if (g_iter != config.gases.mass_mixing_ratios.end()) {
-        copy_vector_to_view(state.prognostics.q_gas[g], g_iter->second, host_view);
-      }
+    for (auto iter = gas_ids_for_names.begin(); iter != gas_ids_for_names.end(); ++iter) {
+      std::string gas_name = iter->first;
+      mam4::GasId gas_id   = iter->second;
+      copy_view_to_vector(state.prognostics.q_gas[int(gas_id)],
+                          result.gases.mass_mixing_ratios[gas_name],
+                          host_view);
     }
   }
 }
