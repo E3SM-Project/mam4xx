@@ -1,4 +1,3 @@
-#include "mam4xx/aero_modes.hpp"
 #include "mamboxx.hpp"
 #include <mam4xx/mam4.hpp>
 #include <mam4xx/atmosphere.hpp>

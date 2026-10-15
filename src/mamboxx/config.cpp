@@ -212,7 +212,7 @@ AerosolConfig read_aerosols(const AtmosphereConfig &atmosphere, const ekat::Para
   }
   size_t n_levels = 0;
   for (auto iter = cfg.modes.begin(); iter != cfg.modes.end(); ++iter) {
-    size_t n = iter->second.numc.size();
+    size_t n = iter->second.number_mixing_ratio.size();
     if (n_levels == 0) {
       n_levels = n;
     } else {
