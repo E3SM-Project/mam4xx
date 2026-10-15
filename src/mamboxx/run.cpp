@@ -1,4 +1,4 @@
-#include "mam4xx/mo_setinv.hpp"
+#include "mam4xx/aero_modes.hpp"
 #include "mamboxx.hpp"
 #include <mam4xx/mam4.hpp>
 #include <mam4xx/atmosphere.hpp>
@@ -184,7 +184,7 @@ void external_forcing(State &state, Real dt) {
 }
 
 void set_invariants(State &state, Real dt) {
-  auto policy = TeamPolicyFactory::get_default_team_policy(1, state.n_lev);
+  auto policy = TeamPolicyFactory::get_default_team_policy(1, mam4::nlev);
   View1D cnst_offline[mam4::mo_setinv::num_tracer_cnst];
   // FIXME: populate offline constituents 
   Kokkos::parallel_for("mamboxx::set_invariants", policy, KOKKOS_LAMBDA(const ThreadTeam &team) {
@@ -223,7 +223,6 @@ void vmr2mmr_cw(State &state, Real dt) {
 
 void linoz(State &state, Real dt) {
 }
-
 
 void step(State &state, Real dt) {
   size_t n_lev = state.atmosphere.temperature.size();
