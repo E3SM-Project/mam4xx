@@ -57,8 +57,9 @@ void compute_massflux(Ensemble *ensemble) {
     mu_i_dev = mam4::validation::create_column_view(nlev + 1);
     md_i_dev = mam4::validation::create_column_view(nlev + 1);
     xx_mfup_max_dev = mam4::validation::create_column_view(1);
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "compute_massflux", 1, KOKKOS_LAMBDA(int) {
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           Real dpdry_i[nlev];
           for (int i = 0; i < nlev; ++i)
             dpdry_i[i] = dpdry_i_dev[i];
@@ -74,8 +75,8 @@ void compute_massflux(Ensemble *ensemble) {
           Real mu_i[nlev + 1];
           Real md_i[nlev + 1];
           Real mfup_max = xx_mfup_max;
-          mam4::convproc::compute_massflux(nlev, ktop, kbot, dpdry_i, du, eu,
-                                           ed, mu_i, md_i, mfup_max);
+          mam4::convproc::compute_massflux(team, nlev, ktop, kbot, dpdry_i, du,
+                                           eu, ed, mu_i, md_i, mfup_max);
           for (int i = 0; i < nlev + 1; ++i)
             mu_i_dev[i] = mu_i[i];
           for (int i = 0; i < nlev + 1; ++i)

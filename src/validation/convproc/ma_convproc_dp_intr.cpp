@@ -64,6 +64,7 @@ void init_scratch(
                  mam4::ConvProc::pcnst_extd);
   Kokkos::resize(scratch1Dviews[mam4::ConvProc::sumwetdep],
                  mam4::ConvProc::pcnst_extd);
+  Kokkos::resize(scratch1Dviews[mam4::ConvProc::x_ratio], config_.nlev);
 }
 
 void get_input(const Input &input, const std::string &name, const int size,
@@ -186,9 +187,9 @@ void ma_convproc_dp_intr(Ensemble *ensemble) {
     Kokkos::View<Real *>
         scratch1Dviews[mam4::ConvProc::Col1DViewInd::NumScratch];
     init_scratch(scratch1Dviews);
-
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "ma_convproc_dp_intr", 1, KOKKOS_LAMBDA(int) {
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           Real cldfrac[nlev], icwmr[nlev], pmid[nlev], rprd[nlev], dpdry[nlev],
               evapc[nlev], du[nlev], eu[nlev], ed[nlev], dp[nlev],
               temperature[nlev], dqdt[nlev][pcnst], qsrflx[pcnst][nsrflx];
@@ -212,9 +213,12 @@ void ma_convproc_dp_intr(Ensemble *ensemble) {
           }
           auto dqdt_view = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
               &dqdt[0][0], nlev, pcnst);
+          const bool convproc_do_aer = true;
+          const bool convproc_do_gas = false;
           mam4::convproc::ma_convproc_dp_intr(
-              aero_species, scratch1Dviews, nlev, temperature, pmid, dpdry, dt,
-              cldfrac, icwmr, rprd, evapc, du, eu, ed, dp, ktop, kbot, qnew_dev,
+              team, aero_species, scratch1Dviews, convproc_do_aer,
+              convproc_do_gas, nlev, temperature, pmid, dpdry, dt, cldfrac,
+              icwmr, rprd, evapc, du, eu, ed, dp, ktop, kbot, qnew_dev,
               species_class, mmtoo_prevap_resusp, dqdt_view, qsrflx, dotend);
 
           for (int i = 0; i < nlev; ++i) {

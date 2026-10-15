@@ -147,8 +147,9 @@ void compute_updraft_mixing_ratio(Ensemble *ensemble) {
       host(1) = xx_kcldbase;
       Kokkos::deep_copy(scalars_dev, host);
     }
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "compute_updraft_mixing_ratio", 1, KOKKOS_LAMBDA(int) {
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           bool doconvproc_extd[pcnst_extd];
           Real dp_i[nlev];
           Real dpdry_i[nlev];
@@ -185,10 +186,11 @@ void compute_updraft_mixing_ratio(Ensemble *ensemble) {
           Real wcldbase = xx_wcldbase;
           int kcldbase = xx_kcldbase;
           mam4::convproc::compute_updraft_mixing_ratio(
-              aero_species, doconvproc_extd, nlev, ktop, kbot, iconvtype, dt,
-              dp_i, dpdry_i, cldfrac, rhoair_i, zmagl, dz, mu_i, eudp, gath_dev,
-              temperature, aqfrac, icwmr, rprd, fa_u, dconudt_wetdep_dev,
-              dconudt_activa_dev, conu_dev, wcldbase, kcldbase);
+              team, aero_species, doconvproc_extd, nlev, ktop, kbot, iconvtype,
+              dt, dp_i, dpdry_i, cldfrac, rhoair_i, zmagl, dz, mu_i, eudp,
+              gath_dev, temperature, aqfrac, icwmr, rprd, fa_u,
+              dconudt_wetdep_dev, dconudt_activa_dev, conu_dev, wcldbase,
+              kcldbase);
           scalars_dev(0) = wcldbase;
           scalars_dev(1) = kcldbase;
           for (int i = 0; i < nlev; ++i)

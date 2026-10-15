@@ -131,10 +131,15 @@ void ma_precpprod(Ensemble *ensemble) {
           Real flux = pr_flux;
           Real flux_tmp = pr_flux_tmp;
           Real flux_base = pr_flux_base;
+          // local precip flux [(kg/kg/s)*mb]
+          const Real flux_local = mam4::max(0.0, rprd[kk] * dpdry_i[kk]);
+          flux_base = mam4::max(0.0, flux_base + flux_local);
+          flux =
+              mam4::utils::min_max_bound(0.0, flux_base, flux_tmp + flux_local);
           mam4::convproc::ma_precpprod(
               rprd[kk], dpdry_i[kk], doconvproc_extd, x_ratio, species_class,
-              mmtoo_prevap_resusp, flux, flux_tmp, flux_base, wd_flux_dev,
-              dcondt_wetdep, dcondt, dcondt_prevap, dcondt_prevap_hist);
+              mmtoo_prevap_resusp, wd_flux_dev, dcondt_wetdep, dcondt,
+              dcondt_prevap, dcondt_prevap_hist);
           return_vals[0] = flux;
           return_vals[1] = flux_tmp;
           return_vals[2] = flux_base;
@@ -198,10 +203,15 @@ void ma_precpprod(Ensemble *ensemble) {
         Real flux_base = 0;
         Real x_ratio = 0;
         int kk = 1;
+        // local precip flux [(kg/kg/s)*mb]
+        const Real flux_local = mam4::max(0.0, rprd[kk] * dpdry_i[kk]);
+        flux_base = mam4::max(0.0, flux_base + flux_local);
+        flux =
+            mam4::utils::min_max_bound(0.0, flux_base, flux_tmp + flux_local);
         mam4::convproc::ma_precpprod(
             rprd[kk], dpdry_i[kk], doconvproc_extd, x_ratio, species_class,
-            mmtoo_prevap_resusp, flux, flux_tmp, flux_base, wd_flux,
-            dcondt_wetdep, dcondt, dcondt_prevap, dcondt_prevap_hist);
+            mmtoo_prevap_resusp, wd_flux, dcondt_wetdep, dcondt, dcondt_prevap,
+            dcondt_prevap_hist);
         return_vals[0] = flux;
         return_vals[1] = flux_tmp;
         return_vals[2] = flux_base;
