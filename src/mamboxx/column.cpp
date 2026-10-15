@@ -89,4 +89,8 @@ mam4::ColumnView create_column_view(int num_levels) {
   return iter->second->column_view();
 }
 
+HostColumnView create_host_column_view(int num_levels) {
+  return HostColumnView("host view", num_levels);
+}
+
 }

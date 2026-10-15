@@ -1,6 +1,6 @@
 include(GNUInstallDirs)
 
-# Generate aero_config.hpp, which contains build-time parameters.
+# Generate a config file containing build-time parameters.
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/mam4_config.hpp.in
   ${CMAKE_CURRENT_BINARY_DIR}/mam4_config.hpp

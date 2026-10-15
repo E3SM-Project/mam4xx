@@ -38,6 +38,7 @@ struct AtmosphereConfig {
   std::vector<Real> relative_humidity;  // for clear air [-]
   // FIXME: add input for vapor_mixing_ratio
   std::vector<Real> vapor_mixing_ratio; // water vapor MMR [kg vapor/kg air]
+  Real pblh; // planetary boundary layer height;
 };
 
 // aerosol mode (column) data
@@ -53,13 +54,13 @@ struct AerosolModeConfig {
 // FIXME: need to distinguish between XConfig (using vectors, maps) and
 // FIXME: XState (using views)
 
-struct AerosolState {
+struct AerosolConfig {
   // mapping of aerosol mode names to their data
   std::map<std::string, AerosolModeConfig> modes;
   // (can place diagnostics here if needed)
 };
 
-struct GasState {
+struct GasConfig {
   // mapping of gas names to their mass mixing ratios (column data)
   std::map<std::string, std::vector<Real>> mass_mixing_ratios;
 };
@@ -71,16 +72,16 @@ struct Config {
   TimeConfig       time;
   ControlConfig    control;
   AtmosphereConfig atmosphere;
-  AerosolState     aerosols;
-  GasState         gases;
+  AerosolConfig    aerosols;
+  GasConfig        gases;
 };
 
 struct Result {
-  bool         success;
-  std::string  error;    // if !success
-  AerosolState aerosols; // final aerosol state
-  GasState     gases;    // final gas state
-  Diagnostics  diagnostics;
+  bool          success;
+  std::string   error;    // if !success
+  AerosolConfig aerosols; // final aerosol state
+  GasConfig     gases;    // final gas state
+  Diagnostics   diagnostics;
 };
 
 // reads a mamboxx config file, returning a Config struct storing its contents
@@ -90,8 +91,12 @@ Config read_config(const std::string &filename);
 // indicating success/failure and containing final states
 Result run(const Config &config);
 
-// Creates a new column with the given number of vertical levels.
+// Creates a new column on the device with the given number of vertical levels.
 mam4::ColumnView create_column_view(int num_levels);
+
+// Creates a new column on the host with the given number of vertical levels.
+using HostColumnView = typename mam4::HostType::view_1d<Real>;
+HostColumnView create_host_column_view(int num_levels);
 
 }
 
