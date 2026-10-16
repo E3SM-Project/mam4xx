@@ -121,7 +121,7 @@ if (MAM4XX_STANDALONE)
   FetchContent_Declare(
     EKAT
     GIT_REPOSITORY https://github.com/E3SM-Project/EKAT.git
-    GIT_TAG        007bdcff6cb26948517d2d26f3d7ca005363d119 # 2026/04/13
+    GIT_TAG        ae5e7f8227943a25c66b1a1822973ec665d224e4 # 2026/10/16
   )
   list(APPEND mam4xx_tpls EKAT)
 
@@ -170,7 +170,7 @@ if (MAM4XX_ENABLE_SKYWALKER)
   FetchContent_Declare(
     mam_x_validation
     GIT_REPOSITORY https://github.com/E3SM-Project/mam_x_validation.git
-    GIT_TAG        fe7c949915c3a438f1a7be5b929963f2c15b027e # 2026/10/14
+    GIT_TAG        5461a2a36b338cb7b987c6edd6f46dc26161d1e4 # 2026/10/14
   )
   list(APPEND mam4xx_tpls mam_x_validation)
 endif()
