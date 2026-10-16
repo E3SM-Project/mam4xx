@@ -21,34 +21,48 @@ target_link_libraries(mam4xx_tests mam4xx)
 # 1. LIBS mam4xx_tests <-- links against mam4xx
 # 2. USER_DEFINED_TEST_SESSION <-- uses mam4xx's setup/breakdown functions
 
-EkatCreateUnitTest(utils_unit_tests utils_unit_tests.cpp
+EkatCreateUnitTest(utils_unit_tests
+  SOURCES utils_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
-EkatCreateUnitTest(mam4_gasaerexch_unit_tests mam4_gasaerexch_unit_tests.cpp
+EkatCreateUnitTest(mam4_gasaerexch_unit_tests
+  SOURCES mam4_gasaerexch_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
-EkatCreateUnitTest(mam4_coagulation_unit_tests mam4_coagulation_unit_tests.cpp
+EkatCreateUnitTest(mam4_coagulation_unit_tests
+  SOURCES mam4_coagulation_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
-EkatCreateUnitTest(mam4_convproc_unit_tests mam4_convproc_unit_tests.cpp
+EkatCreateUnitTest(mam4_convproc_unit_tests
+  SOURCES mam4_convproc_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
-EkatCreateUnitTest(mam4_rename_unit_tests mam4_rename_unit_tests.cpp
+EkatCreateUnitTest(mam4_rename_unit_tests
+  SOURCES mam4_rename_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
-EkatCreateUnitTest(mam4_aging_unit_tests mam4_aging_unit_tests.cpp
+EkatCreateUnitTest(mam4_aging_unit_tests
+  SOURCES mam4_aging_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
-# EkatCreateUnitTest(mam4_amicphys_1gridcell_tests mam4_amicphys_1gridcell.cpp
+# EkatCreateUnitTest(mam4_amicphys_1gridcell_tests
+#   SOURCES mam4_amicphys_1gridcell.cpp
 #   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
-EkatCreateUnitTest(mam4_nucleate_ice_unit_tests mam4_nucleate_ice_unit_tests.cpp
+EkatCreateUnitTest(mam4_nucleate_ice_unit_tests
+  SOURCES mam4_nucleate_ice_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
-EkatCreateUnitTest(mam4_wet_deposition_unit_tests mam4_wet_deposition_unit_tests.cpp
+EkatCreateUnitTest(mam4_wet_deposition_unit_tests
+  SOURCES mam4_wet_deposition_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
-EkatCreateUnitTest(mam4_dry_deposition_unit_tests mam4_dry_deposition_unit_tests.cpp
+EkatCreateUnitTest(mam4_dry_deposition_unit_tests
+  SOURCES mam4_dry_deposition_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
-EkatCreateUnitTest(mam4_spitfire_transport_unit_tests mam4_spitfire_transport_unit_tests.cpp
+EkatCreateUnitTest(mam4_spitfire_transport_unit_tests
+  SOURCES mam4_spitfire_transport_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
-EkatCreateUnitTest(mam4_mo_setsox_unit_tests mam4_mo_setsox_unit_tests.cpp
+EkatCreateUnitTest(mam4_mo_setsox_unit_tests
+  SOURCES mam4_mo_setsox_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
-EkatCreateUnitTest(mam4_aero_emissions_unit_tests mam4_aero_emissions_unit_tests.cpp
+EkatCreateUnitTest(mam4_aero_emissions_unit_tests
+  SOURCES mam4_aero_emissions_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
 
-EkatCreateUnitTest(mam4_photo_setcol mam4_photo_setcol.cpp
+EkatCreateUnitTest(mam4_photo_setcol
+  SOURCES mam4_photo_setcol.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
 
 if (NOT ${CMAKE_CXX_COMPILER_ID} STREQUAL "Intel") #The Intel compiler always emit a warning for inline functions.
@@ -65,14 +79,18 @@ if (NOT ${CMAKE_CXX_COMPILER_ID} STREQUAL "Intel") #The Intel compiler always em
   target_compile_options(mam4_aero_emissions_unit_tests PRIVATE)
 endif ()
 
-EkatCreateUnitTest(mam4_ndrop_unit_tests mam4_ndrop_unit_tests.cpp
+EkatCreateUnitTest(mam4_ndrop_unit_tests
+  SOURCES mam4_ndrop_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
 
-EkatCreateUnitTest(aero_modes_unit_tests aero_modes_tests.cpp
+EkatCreateUnitTest(aero_modes_unit_tests
+  SOURCES aero_modes_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
 
-EkatCreateUnitTest(aero_config_unit_tests aero_config_unit_tests.cpp
+EkatCreateUnitTest(aero_config_unit_tests
+  SOURCES aero_config_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
 
-EkatCreateUnitTest(conversions_unit_tests conversions_unit_tests.cpp
+EkatCreateUnitTest(conversions_unit_tests
+  SOURCES conversions_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
