@@ -89,6 +89,11 @@ void ma_convproc_intr(Ensemble *ensemble) {
     // Read scalar inputs
     const bool convproc_do_aer = std::round(input.get_array("convproc_do_aer")[0]);
     const bool convproc_do_gas = std::round(input.get_array("convproc_do_gas")[0]);
+
+    const mam4::ConvProc::Config convproc_config;
+    const int *species_class = convproc_config.species_class;
+    const int *mmtoo_prevap_resusp = convproc_config.mmtoo_prevap_resusp;
+
     // dt is an array with one element for single column
     const auto dt_array = input.get_array("dt");
     const Real dt = dt_array[0];
@@ -98,26 +103,23 @@ void ma_convproc_intr(Ensemble *ensemble) {
     const int ktop = Kokkos::round(jt_array[0] - 1); // Convert to C++ index (jt is 1-indexed Fortran)
     const int kbot = Kokkos::round(maxg_array[0]); 
 
-    // Prepare resuspension array
-    int mmtoo_prevap_resusp[pcnst];
-    {
-      if (input.has("mmtoo_prevap_resusp")) {
-        const auto resusp_db = input.get_array("mmtoo_prevap_resusp");
-        for (int i = 0; i < pcnst; ++i)
-          mmtoo_prevap_resusp[i] = resusp_db[i] - 1; // Convert to C++ index
-      } else {
-        // Default: no resuspension mapping (use -1 for all species)
-        for (int i = 0; i < pcnst; ++i)
-          mmtoo_prevap_resusp[i] = -1;
+    // Compare input against convproc_config values
+    if (input.has("mmtoo_prevap_resusp")) {
+      const auto resusp_db = input.get_array("mmtoo_prevap_resusp");
+      for (int i = 0; i < pcnst; ++i) {
+        EKAT_ASSERT_MSG(
+            static_cast<int>(std::round(resusp_db[i] - 1)) == mmtoo_prevap_resusp[i],
+            "Mismatch in mmtoo_prevap_resusp at index " + std::to_string(i));
       }
     }
 
-    // Prepare species_class array
-    int species_class[pcnst];
-    {
+    if (input.has("species_class")) {
       const auto species_class_db = input.get_array("species_class");
-      for (int i = 0; i < pcnst; ++i)
-        species_class[i] = species_class_db[i];
+      for (int i = 0; i < pcnst; ++i) {
+        EKAT_ASSERT_MSG(
+            static_cast<int>(std::round(species_class_db[i])) == species_class[i],
+            "Mismatch in species_class at index " + std::to_string(i));
+      }
     }
 
     // Read 1D input arrays
