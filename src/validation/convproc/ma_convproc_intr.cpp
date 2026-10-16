@@ -85,7 +85,6 @@ void ma_convproc_intr(Ensemble *ensemble) {
   ensemble->process([=](const Input &input, Output &output) {
     const int nlev = 72;
     const int pcnst = mam4::aero_model::pcnst;
-    const int ncol = 1; // Single column validation
 
     // Read scalar inputs
     const bool convproc_do_aer = input.has("convproc_do_aer") ? input.get("convproc_do_aer") != 0 : true;
