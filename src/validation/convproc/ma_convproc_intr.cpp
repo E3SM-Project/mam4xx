@@ -87,8 +87,8 @@ void ma_convproc_intr(Ensemble *ensemble) {
     const int pcnst = mam4::aero_model::pcnst;
 
     // Read scalar inputs
-    const bool convproc_do_aer = input.has("convproc_do_aer") ? input.get("convproc_do_aer") != 0 : true;
-    const bool convproc_do_gas = input.has("convproc_do_gas") ? input.get("convproc_do_gas") != 0 : true;
+    const bool convproc_do_aer = std::round(input.get_array("convproc_do_aer")[0]);
+    const bool convproc_do_gas = std::round(input.get_array("convproc_do_gas")[0]);
     // dt is an array with one element for single column
     const auto dt_array = input.get_array("dt");
     const Real dt = dt_array[0];
