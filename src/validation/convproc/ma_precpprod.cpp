@@ -67,77 +67,64 @@ void ma_precpprod(Ensemble *ensemble) {
   // Settings settings = ensemble->settings();
   // Run the ensemble.
   ensemble->process([=](const Input &input, Output &output) {
-    const int nlev = 72;
     // Fetch ensemble parameters
     // Convert to C++ index by subtracting one.
-    const int kk = input.get("kk") - 1;
-    EKAT_ASSERT(53 == kk);
-    const int pcnst_extd = input.get("pcnst_extd");
-    EKAT_ASSERT(mam4::ConvProc::pcnst_extd == pcnst_extd);
-    const Real x_ratio = input.get("x_ratio");
-    Real pr_flux = input.get("pr_flux");
-    Real pr_flux_tmp = input.get("pr_flux_tmp");
-    Real pr_flux_base = input.get("pr_flux_base");
+    const int pcnst_extd = mam4::ConvProc::pcnst_extd;
+    const Real x_ratio = input.get_array("x_ratio")[0];
+    Real pr_flux = input.get_array("pr_flux")[0];
+    Real pr_flux_tmp = input.get_array("pr_flux_tmp")[0];
+    Real pr_flux_base = input.get_array("pr_flux_base")[0];
+
+    const mam4::ConvProc::Config convproc_config;
+    const int *species_class = convproc_config.species_class;
+    const int *mmtoo_prevap_resusp = convproc_config.mmtoo_prevap_resusp;
 
     std::vector<Real> rprd_host, dpdry_i_host, dcondt_wetdep_host,
-        doconvproc_extd_host, species_class_host, wd_flux_host, dcondt_host,
-        dcondt_prevap_host, dcondt_prevap_hist_host, mmtoo_prevap_resusp_host;
+        doconvproc_extd_host, wd_flux_host, dcondt_host,
+        dcondt_prevap_host, dcondt_prevap_hist_host;
     mam4::ColumnView rprd_dev, dpdry_i_dev, doconvproc_extd_dev,
-        species_class_dev, wd_flux_dev, mmtoo_prevap_resusp_dev;
-    get_input(input, "rprd", nlev, rprd_host, rprd_dev);
-    get_input(input, "dpdry_i", nlev, dpdry_i_host, dpdry_i_dev);
+        wd_flux_dev;
+    // New YAML file contains only one level's data
+    get_input(input, "rprd", 1, rprd_host, rprd_dev);
+    get_input(input, "dpdry_i", 1, dpdry_i_host, dpdry_i_dev);
     Kokkos::View<Real **, Kokkos::MemoryUnmanaged> dcondt_wetdep_dev,
         dcondt_dev, dcondt_prevap_dev, dcondt_prevap_hist_dev;
-    get_input(input, "dcondt_wetdep", nlev, pcnst_extd, dcondt_wetdep_host,
+    get_input(input, "dcondt_wetdep", 1, pcnst_extd, dcondt_wetdep_host,
               dcondt_wetdep_dev);
-    get_input(input, "species_class", mam4::aero_model::pcnst,
-              species_class_host, species_class_dev);
     get_input(input, "doconvproc_extd", pcnst_extd, doconvproc_extd_host,
               doconvproc_extd_dev);
     get_input(input, "wd_flux", pcnst_extd, wd_flux_host, wd_flux_dev);
-    get_input(input, "dcondt", nlev, pcnst_extd, dcondt_host, dcondt_dev);
-    get_input(input, "dcondt_prevap", nlev, pcnst_extd, dcondt_prevap_host,
+    get_input(input, "dcondt", 1, pcnst_extd, dcondt_host, dcondt_dev);
+    get_input(input, "dcondt_prevap", 1, pcnst_extd, dcondt_prevap_host,
               dcondt_prevap_dev);
-    get_input(input, "dcondt_prevap_hist", nlev, pcnst_extd,
+    get_input(input, "dcondt_prevap_hist", 1, pcnst_extd,
               dcondt_prevap_hist_host, dcondt_prevap_hist_dev);
-    get_input(input, "mmtoo_prevap_resusp", mam4::aero_model::pcnst,
-              mmtoo_prevap_resusp_host, mmtoo_prevap_resusp_dev);
     mam4::ColumnView return_vals = mam4::validation::create_column_view(3);
     Kokkos::parallel_for(
         "ma_precpprod", 1, KOKKOS_LAMBDA(int) {
-          Real rprd[nlev];
-          for (int i = 0; i < nlev; ++i)
-            rprd[i] = rprd_dev(i);
-          Real dpdry_i[nlev];
-          for (int i = 0; i < nlev; ++i)
-            dpdry_i[i] = dpdry_i_dev(i);
+          Real rprd = rprd_dev(0);
+          Real dpdry_i = dpdry_i_dev(0);
           bool doconvproc_extd[mam4::ConvProc::pcnst_extd];
           for (int i = 0; i < mam4::ConvProc::pcnst_extd; ++i)
             doconvproc_extd[i] = doconvproc_extd_dev[i];
-          int species_class[mam4::aero_model::pcnst];
-          for (int i = 0; i < mam4::aero_model::pcnst; ++i)
-            species_class[i] = species_class_dev[i];
-          int mmtoo_prevap_resusp[mam4::aero_model::pcnst];
-          for (int i = 0; i < mam4::aero_model::pcnst; ++i)
-            mmtoo_prevap_resusp[i] = mmtoo_prevap_resusp_dev[i] - 1;
 
           auto dcondt_wetdep =
-              Kokkos::subview(dcondt_wetdep_dev, kk, Kokkos::ALL());
-          auto dcondt = Kokkos::subview(dcondt_dev, kk, Kokkos::ALL());
+              Kokkos::subview(dcondt_wetdep_dev, 0, Kokkos::ALL());
+          auto dcondt = Kokkos::subview(dcondt_dev, 0, Kokkos::ALL());
           auto dcondt_prevap =
-              Kokkos::subview(dcondt_prevap_dev, kk, Kokkos::ALL());
+              Kokkos::subview(dcondt_prevap_dev, 0, Kokkos::ALL());
           auto dcondt_prevap_hist =
-              Kokkos::subview(dcondt_prevap_hist_dev, kk, Kokkos::ALL());
+              Kokkos::subview(dcondt_prevap_hist_dev, 0, Kokkos::ALL());
           Real flux = pr_flux;
           Real flux_tmp = pr_flux_tmp;
           Real flux_base = pr_flux_base;
           // local precip flux [(kg/kg/s)*mb]
-          const Real flux_local = mam4::max(0.0, rprd[kk] * dpdry_i[kk]);
+          const Real flux_local = mam4::max(0.0, rprd * dpdry_i);
           flux_base = mam4::max(0.0, flux_base + flux_local);
           flux =
               mam4::utils::min_max_bound(0.0, flux_base, flux_tmp + flux_local);
           mam4::convproc::ma_precpprod(
-              rprd[kk], dpdry_i[kk], doconvproc_extd, x_ratio, species_class,
+              rprd, dpdry_i, doconvproc_extd, x_ratio, species_class,
               mmtoo_prevap_resusp, wd_flux_dev, dcondt_wetdep, dcondt,
               dcondt_prevap, dcondt_prevap_hist);
           return_vals[0] = flux;
@@ -150,13 +137,12 @@ void ma_precpprod(Ensemble *ensemble) {
     output.set("pr_flux_tmp", pr_flux_tmp);
     output.set("pr_flux_base", pr_flux_base);
     set_output(output, "wd_flux", pcnst_extd, wd_flux_host, wd_flux_dev);
-    set_output(output, "dcondt", nlev, pcnst_extd, dcondt_host, dcondt_dev);
-    set_output(output, "dcondt_prevap", nlev, pcnst_extd, dcondt_prevap_host,
+    set_output(output, "dcondt", 1, pcnst_extd, dcondt_host, dcondt_dev);
+    set_output(output, "dcondt_prevap", 1, pcnst_extd, dcondt_prevap_host,
                dcondt_prevap_dev);
-    set_output(output, "dcondt_prevap_hist", nlev, pcnst_extd,
+    set_output(output, "dcondt_prevap_hist", 1, pcnst_extd,
                dcondt_prevap_hist_host, dcondt_prevap_hist_dev);
   });
-
   // Check some corner cases.
   const int nlev = 72;
   mam4::ColumnView return_vals = mam4::validation::create_column_view(6);
@@ -187,7 +173,6 @@ void ma_precpprod(Ensemble *ensemble) {
         int mmtoo_prevap_resusp[mam4::aero_model::pcnst];
         for (int i = 0; i < mam4::aero_model::pcnst; ++i)
           mmtoo_prevap_resusp[i] = 1;
-
         for (int i = 0; i < mam4::ConvProc::pcnst_extd; ++i)
           wd_flux[i] = 1;
         for (int i = 0; i < mam4::ConvProc::pcnst_extd; ++i)
