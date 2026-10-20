@@ -1047,7 +1047,7 @@ ma_precpprod(const Real rprd, const Real dpdry,
       // (mmtoo>0).  mmtoo<=0 represents aerosol number species
       const int mmtoo = mmtoo_prevap_resusp[icnst2];
       if (species_class[icnst2] == ConvProc::species_class::aerosol) {
-        if (mmtoo >= 0) {
+        if (mmtoo > 0) {
           // add the precip-evap (resuspension) to the history-tendency of the
           // current species
           dcondt_prevap_hist[icnst] += dcondt_wdflux;
