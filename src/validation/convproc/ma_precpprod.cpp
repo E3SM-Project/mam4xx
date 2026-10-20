@@ -133,9 +133,9 @@ void ma_precpprod(Ensemble *ensemble) {
         });
     auto host_view = Kokkos::create_mirror_view(return_vals);
     Kokkos::deep_copy(host_view, return_vals);
-    output.set("pr_flux", pr_flux);
-    output.set("pr_flux_tmp", pr_flux_tmp);
-    output.set("pr_flux_base", pr_flux_base);
+    output.set("pr_flux", host_view(0));
+    output.set("pr_flux_tmp", host_view(1));
+    output.set("pr_flux_base", host_view(2));
     set_output(output, "wd_flux", pcnst_extd, wd_flux_host, wd_flux_dev);
     set_output(output, "dcondt", 1, pcnst_extd, dcondt_host, dcondt_dev);
     set_output(output, "dcondt_prevap", 1, pcnst_extd, dcondt_prevap_host,
