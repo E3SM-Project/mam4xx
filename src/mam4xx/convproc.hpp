@@ -362,10 +362,13 @@ public:
   struct Config {
 
     // default constructor -- sets default values for parameters
+    KOKKOS_INLINE_FUNCTION
     Config() {}
-
+    KOKKOS_INLINE_FUNCTION
     Config(const Config &) = default;
+    KOKKOS_INLINE_FUNCTION
     ~Config() = default;
+    KOKKOS_INLINE_FUNCTION
     Config &operator=(const Config &) = default;
 
     bool convproc_do_aer = true;
