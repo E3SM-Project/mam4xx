@@ -186,6 +186,7 @@ void ma_convproc_intr(Ensemble *ensemble) {
 
           const mam4::ConvProc::Config convproc_config;
           const int *species_class = convproc_config.species_class;
+          const int *mmtoo_prevap_resusp = convproc_config.mmtoo_prevap_resusp;
           // Initialize output arrays based on species_class and flags
           // ptend_lq[i] is true if species i should have a tendency:
           //   - aerosol species when convproc_do_aer is true
