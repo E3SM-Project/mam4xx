@@ -78,9 +78,6 @@ void set_output(Output &output, const std::string &name, const int rows,
 } // namespace
 
 void ma_convproc_intr(Ensemble *ensemble) {
-  // Create AeroConfig with default aero species (matches eamxx pattern)
-  const mam4::AeroConfig aero_config;
-  const auto aero_species = aero_config.aero_species;
 
   ensemble->process([=](const Input &input, Output &output) {
     const int nlev = 72;
@@ -183,6 +180,11 @@ void ma_convproc_intr(Ensemble *ensemble) {
           bool ptend_lq[pcnst];
           Real aerdepwetis[pcnst];
 
+          // Create AeroConfig with default aero species (matches eamxx pattern)
+          const mam4::AeroConfig aero_config;
+          const auto aero_species = aero_config.aero_species;
+          const mam4::ConvProc::Config convproc_config;
+          const int *species_class = convproc_config.species_class;
           // Initialize output arrays based on species_class and flags
           // ptend_lq[i] is true if species i should have a tendency:
           //   - aerosol species when convproc_do_aer is true
@@ -195,7 +197,6 @@ void ma_convproc_intr(Ensemble *ensemble) {
                  convproc_do_gas);
             aerdepwetis[i] = aerdepwetis_dev[i];
           }
-
           // Call the function
           mam4::convproc::ma_convproc_intr(
               team, aero_species, scratch1Dviews, convproc_do_aer,
@@ -212,7 +213,7 @@ void ma_convproc_intr(Ensemble *ensemble) {
             aerdepwetis_dev[i] = aerdepwetis[i];
           }
         });
-
+    Kokkos::fence();
     // Set outputs
     set_output(output, "ptend_q", nlev, pcnst, ptend_q_host, ptend_q_dev);
 
