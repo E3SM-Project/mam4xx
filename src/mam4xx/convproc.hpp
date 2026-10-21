@@ -1557,7 +1557,7 @@ void compute_massflux(const ThreadTeam &team, const int nlev, const int ktop,
                        [&](int i) { mu[i] = 0, md[i] = 0; });
   team.team_barrier();
   // (eu-du) = d(mu)/dp -- integrate upwards, multiplying by dpdry
-  Kokkos::parallel_scan(Kokkos::TeamVectorRange(team, 1, nlev + 1),
+  Kokkos::parallel_scan(Kokkos::TeamThreadRange(team, 1, nlev + 1),
                         [&](int i, Real &accumulator, const bool last) {
                           const int kk = nlev - i;
                           if (1 == i)
@@ -1576,7 +1576,7 @@ void compute_massflux(const ThreadTeam &team, const int nlev, const int ktop,
       Kokkos::Max<Real>(xx_mfup_max));
   team.team_barrier();
   // (ed) = d(md)/dp -- integrate downwards, multiplying by dpdry
-  Kokkos::parallel_scan(Kokkos::TeamVectorRange(team, 1, nlev),
+  Kokkos::parallel_scan(Kokkos::TeamThreadRange(team, 1, nlev),
                         [&](int kk, Real &accumulator, const bool last) {
                           if (1 == kk)
                             accumulator += md[kk - 1];
@@ -1708,7 +1708,7 @@ void compute_midlev_height(const ThreadTeam &team, const int nlev,
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev),
                        [&](int i) { zmagl[i] = 0; });
   team.team_barrier();
-  Kokkos::parallel_scan(Kokkos::TeamVectorRange(team, 1, surface + 1),
+  Kokkos::parallel_scan(Kokkos::TeamThreadRange(team, 1, surface + 1),
                         [&](const int i, Real &accumulator, const bool last) {
                           const int kk = surface - i;
                           // add half layer below
