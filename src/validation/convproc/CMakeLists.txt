@@ -75,7 +75,7 @@ foreach (input
          ma_activate_convproc_68
          compute_activation_tend_do_act_true
          compute_activation_tend_do_act_false
-         compute_updraft_mixing_ratio
+         compute_updraft_mixing_ratio_ts_3
          ma_convproc_tend
          ma_convproc_dp_intr
          ma_convproc_intr_ts_355
@@ -106,8 +106,8 @@ foreach (input
     set(TOL 1e-4)
   elseif (${input} STREQUAL ma_convproc_intr_ts_355)
     set(TOL 1e-4)
-  elseif (${input} STREQUAL compute_updraft_mixing_ratio)
-    set(TOL 2e-4)
+  elseif (${input} STREQUAL compute_updraft_mixing_ratio_ts_3)
+    set(TOL 1e-6)
   else ()
     set(TOL 2e-6)
   endif ()
