@@ -77,21 +77,28 @@ void compute_updraft_mixing_ratio(Ensemble *ensemble) {
     const int nlev = 72;
     const int pcnst_extd = mam4::ConvProc::pcnst_extd;
     // Fetch ensemble parameters
-    const Real dt = input.get("dt");
-    EKAT_ASSERT(std::abs(dt - 3600) < 1);
-    const Real dz = input.get("dz");
-    EKAT_ASSERT(std::abs(dz - 2799.6947) < 1);
+    // Handle array format
+    auto dt_arr = input.get_array("dt");
+    const Real dt = dt_arr[0];
+    
+    auto dz_arr = input.get_array("dz");
+    const Real dz = dz_arr[0];
+    
     // Convert to C++ index by subtracting one.
-    const int ktop = input.get("ktop") - 1;
-    EKAT_ASSERT(47 == ktop);
-    const int kbot = input.get("kbot");
-    EKAT_ASSERT(71 == kbot);
-    const int iconvtype = input.get("iconvtype");
-    EKAT_ASSERT(1 == iconvtype);
-    Real xx_wcldbase = input.get("xx_wcldbase");
-    EKAT_ASSERT(0 == xx_wcldbase);
-    int xx_kcldbase = input.get("xx_kcldbase");
-    EKAT_ASSERT(0 == xx_kcldbase);
+    auto ktop_arr = input.get_array("ktop");
+    const int ktop = static_cast<int>(ktop_arr[0]) - 1;
+    
+    auto kbot_arr = input.get_array("kbot");
+    const int kbot = static_cast<int>(kbot_arr[0]);
+    
+    auto iconvtype_arr = input.get_array("iconvtype");
+    const int iconvtype = static_cast<int>(iconvtype_arr[0]);
+    
+    auto xx_wcldbase_arr = input.get_array("xx_wcldbase");
+    Real xx_wcldbase = xx_wcldbase_arr[0];
+    
+    auto xx_kcldbase_arr = input.get_array("xx_kcldbase");
+    int xx_kcldbase = static_cast<int>(xx_kcldbase_arr[0]);
 
     std::vector<Real> doconvproc_extd_host, dp_i_host, dpdry_i_host,
         cldfrac_host, rhoair_i_host, zmagl_host, mu_i_host, eudp_host,
@@ -121,24 +128,11 @@ void compute_updraft_mixing_ratio(Ensemble *ensemble) {
     get_input(input, "const", nlev, pcnst_extd, gath_host, gath_dev);
     get_input(input, "conu", nlev + 1, pcnst_extd, conu_host, conu_dev);
 
-    fa_u_host.resize(nlev);
-    fa_u_dev = mam4::validation::create_column_view(nlev);
-    {
-      dconudt_wetdep_host.resize((nlev + 1) * pcnst_extd);
-      mam4::ColumnView dev =
-          mam4::validation::create_column_view((nlev + 1) * pcnst_extd);
-      dconudt_wetdep_dev =
-          Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-              dev.data(), nlev + 1, pcnst_extd);
-    }
-    {
-      dconudt_activa_host.resize((nlev + 1) * pcnst_extd);
-      mam4::ColumnView dev =
-          mam4::validation::create_column_view((nlev + 1) * pcnst_extd);
-      dconudt_activa_dev =
-          Kokkos::View<Real *[pcnst_extd], Kokkos::MemoryUnmanaged>(
-              dev.data(), nlev + 1, pcnst_extd);
-    }
+    get_input(input, "fa_u", nlev, fa_u_host, fa_u_dev);
+    get_input(input, "dconudt_wetdep", nlev + 1, pcnst_extd,
+              dconudt_wetdep_host, dconudt_wetdep_dev);
+    get_input(input, "dconudt_activa", nlev + 1, pcnst_extd,
+              dconudt_activa_host, dconudt_activa_dev);
 
     scalars_dev = mam4::validation::create_column_view(2);
     {
@@ -157,7 +151,7 @@ void compute_updraft_mixing_ratio(Ensemble *ensemble) {
           Real rhoair_i[nlev];
           Real zmagl[nlev];
           Real mu_i[nlev + 1];
-          Real eudp[nlev + 1];
+          Real eudp[nlev];
           Real temperature[nlev];
           Real aqfrac[pcnst_extd];
           Real icwmr[nlev];
@@ -180,8 +174,9 @@ void compute_updraft_mixing_ratio(Ensemble *ensemble) {
             aqfrac[i] = aqfrac_dev(i);
             icwmr[i] = icwmr_dev(i);
             rprd[i] = rprd_dev(i);
-            fa_u[i] = 0;
+            fa_u[i] = fa_u_dev(i);
           }
+          mu_i[nlev] = mu_i_dev(nlev);
 
           Real wcldbase = xx_wcldbase;
           int kcldbase = xx_kcldbase;
