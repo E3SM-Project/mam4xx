@@ -173,6 +173,10 @@ void ma_convproc_intr(Ensemble *ensemble) {
         scratch1Dviews[mam4::ConvProc::Col1DViewInd::NumScratch];
     mam4::convproc::init_scratch_1d_views(scratch1Dviews, work_ptr, nlev);
 
+    // Create AeroConfig with default aero species (matches eamxx pattern)
+    const mam4::AeroConfig aero_config;
+    const auto aero_species = aero_config.aero_species;
+
     // Execute the function
     auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
@@ -180,9 +184,6 @@ void ma_convproc_intr(Ensemble *ensemble) {
           bool ptend_lq[pcnst];
           Real aerdepwetis[pcnst];
 
-          // Create AeroConfig with default aero species (matches eamxx pattern)
-          const mam4::AeroConfig aero_config;
-          const auto aero_species = aero_config.aero_species;
           const mam4::ConvProc::Config convproc_config;
           const int *species_class = convproc_config.species_class;
           // Initialize output arrays based on species_class and flags
