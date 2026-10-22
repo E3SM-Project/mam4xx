@@ -123,24 +123,26 @@ void ma_convproc_dp_intr(Ensemble *ensemble) {
   // Run the ensemble.
   ensemble->process([=](const Input &input, Output &output) {
     const int nlev = 72;
-    const int ktop = 47;
-    const int kbot = 71;
-    const Real dt = 36000;
-    // const int pcnst_extd = mam4::ConvProc::pcnst_extd;
-    const int pcnst = mam4::aero_model::pcnst;
     const int nsrflx = 6;
-    // Fetch ensemble parameters
+    const int pcnst = mam4::aero_model::pcnst;
+    
+    // Fetch ensemble parameters as arrays
+    auto dt_arr = input.get_array("dt");
+    auto nsrflx_arr = input.get_array("nsrflx");
+    auto jt_arr = input.get_array("jt");
+    auto maxg_arr = input.get_array("maxg");
+    auto ideep_arr = input.get_array("ideep");
+    auto lengath_arr = input.get_array("lengath");
+    
+    const Real dt = dt_arr[0];
+    const int jt = std::round(jt_arr[0]);
+    const int maxg = std::round(maxg_arr[0]);
+    const int ideep = std::round(ideep_arr[0]);
+    const int lengath = std::round(lengath_arr[0]);
+    
     // Convert to C++ index by subtracting one.
-    // ktop is jt(il1g) to jt(il2g) in Fortran
-    // but jt is just a scalar and il1g=il2g=48;
-    // kbot is mx(il1g) to jt(il2g) in Fortran
-    // but mx is just a scalar iand l1g=il2g=71;
-    EKAT_ASSERT(input.get("dt") == 3600);
-    EKAT_ASSERT(input.get("nsrflx") == 6);
-    EKAT_ASSERT(input.get("jt") == 48);
-    EKAT_ASSERT(input.get("maxg") == 71);
-    EKAT_ASSERT(input.get("ideep") == 2);
-    EKAT_ASSERT(input.get("lengath") == 1);
+    const int ktop = jt - 1;
+    const int kbot = maxg;
 
     int mmtoo_prevap_resusp[pcnst];
     {
