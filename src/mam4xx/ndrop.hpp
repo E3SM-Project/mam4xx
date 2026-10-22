@@ -426,7 +426,8 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
                     const Real aten, Real fn[AeroConfig::num_modes()],
                     Real fm[AeroConfig::num_modes()],
                     Real fluxn[AeroConfig::num_modes()],
-                    Real fluxm[AeroConfig::num_modes()], Real &flux_fullact) {
+                    Real fluxm[AeroConfig::num_modes()], Real &flux_fullact,
+                    const Real smax_prescribed = mam4::max()) {
   //    ---------------------------------------------------------------------------------
   // Calculates number, surface, and mass fraction of aerosols activated as CCN
   // calculates flux of cloud droplets, surface area, and aerosol mass into
@@ -581,9 +582,10 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
     eta[imode] = etafactor1 * etafactor2[imode];
   } // end imode
 
-  Real supersat = zero;
+  Real supersat = smax_prescribed;
+  if (smax_prescribed == mam4::max())
+    maxsat(zeta, eta, nmode, ssat_crit_imode, supersat);
 
-  maxsat(zeta, eta, nmode, ssat_crit_imode, supersat);
   // ([fraction]))
   const Real lnsupersat = mam4::log(supersat);
 
@@ -603,7 +605,6 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
   // is vertical velocity equal to flux of activated aerosol fraction assuming
   // 100% activation [m/s]?
   flux_fullact = w_in;
-
 } // activate_modal
 
 KOKKOS_INLINE_FUNCTION
