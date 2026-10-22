@@ -127,7 +127,7 @@ void ma_convproc_tend(Ensemble *ensemble) {
     const int nsrflx = 6;
     const mam4::ConvProc::convtype convtype = mam4::ConvProc::Deep;
     const int pcnst = mam4::aero_model::pcnst;
-    
+
     // Fetch ensemble parameters as arrays
     auto jt_arr = input.get_array("jt");
     auto mx_arr = input.get_array("mx");
@@ -135,14 +135,11 @@ void ma_convproc_tend(Ensemble *ensemble) {
     auto il2g_arr = input.get_array("il2g");
     auto dt_arr = input.get_array("dt");
     auto ncnst_arr = input.get_array("ncnst");
-    
+
     const int jt = std::round(jt_arr[0]);
     const int mx = std::round(mx_arr[0]);
-    const int il1g = std::round(il1g_arr[0]);
-    const int il2g = std::round(il2g_arr[0]);
     const Real dt = dt_arr[0];
-    const int ncnst = std::round(ncnst_arr[0]);
-    
+
     // Convert to C++ index by subtracting one.
     // ktop is jt(il1g) to jt(il2g) in Fortran
     // kbot is mx(il1g) to mx(il2g) in Fortran
