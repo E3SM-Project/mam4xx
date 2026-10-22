@@ -128,7 +128,7 @@ void ndrop_int(Real exp45logsig[AeroConfig::num_modes()],
   aten = two * mwh2o * surften / (r_universal * t0 * rhoh2o);
 
 } // end ndrop_int
-
+#if 0
 KOKKOS_INLINE_FUNCTION
 void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
                     const Real rhoair, Real na[AeroConfig::num_modes()],
@@ -331,9 +331,8 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
   // is vertical velocity equal to flux of activated aerosol fraction assuming
   // 100% activation [m/s]?
   flux_fullact = w_in;
-
 } // activate_modal
-
+#endif
 } // namespace ndrop_od
 
 /// @class ConvProc
@@ -482,10 +481,12 @@ public:
        mam4::max(),
        mam4::max(),
        aero_species(int(AeroId::POM)).hygroscopicity,
-       aero_species(int(AeroId::SOA)).hygroscopicity,
+       //aero_species(int(AeroId::SOA)).hygroscopicity,
+       0.1400000000e+00, // FIXME: should be aero_species(int(AeroId::SOA)).hygroscopicity
        aero_species(int(AeroId::BC)).hygroscopicity,
        aero_species(int(AeroId::NaCl)).hygroscopicity,
-       aero_species(int(AeroId::DST)).hygroscopicity,
+       //aero_species(int(AeroId::DST)).hygroscopicity,
+       0.6800000000e-01, // FIXME: should be aero_species(int(AeroId::DST)).hygroscopicity,
        aero_species(int(AeroId::MOM)).hygroscopicity,
        0, 0, 0, 0, 0};
     // clang-format on
@@ -2139,15 +2140,15 @@ ma_activate_convproc(const AeroSpeciesView &aero_species, SubView conu,
 
   if (kk == kactfirst) {
     // at cloud base - do primary activation
-    ndrop_od::activate_modal(wbar, wmaxf, tair, rhoair, naerosol, vaerosol,
-                             hygro, exp45logsig, alogsig, aten, fn, fm, fluxn,
-                             fluxm, flux_fullact);
+    ndrop::activate_modal(wbar, wmaxf, tair, rhoair, naerosol, vaerosol, hygro,
+                          exp45logsig, alogsig, aten, fn, fm, fluxn, fluxm,
+                          flux_fullact);
   } else {
     // above cloud base - do secondary activation with prescribed supersat
     // that is constant with height
-    ndrop_od::activate_modal(wbar, wmaxf, tair, rhoair, naerosol, vaerosol,
-                             hygro, exp45logsig, alogsig, aten, fn, fm, fluxn,
-                             fluxm, flux_fullact, activate_smaxmax);
+    ndrop::activate_modal(wbar, wmaxf, tair, rhoair, naerosol, vaerosol, hygro,
+                          exp45logsig, alogsig, aten, fn, fm, fluxn, fluxm,
+                          flux_fullact, activate_smaxmax);
   }
 
   //  apply the activation fractions to the updraft aerosol mixing ratios
