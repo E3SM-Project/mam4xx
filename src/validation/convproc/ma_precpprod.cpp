@@ -80,10 +80,9 @@ void ma_precpprod(Ensemble *ensemble) {
     const int *mmtoo_prevap_resusp = convproc_config.mmtoo_prevap_resusp;
 
     std::vector<Real> rprd_host, dpdry_i_host, dcondt_wetdep_host,
-        doconvproc_extd_host, wd_flux_host, dcondt_host,
-        dcondt_prevap_host, dcondt_prevap_hist_host;
-    mam4::ColumnView rprd_dev, dpdry_i_dev, doconvproc_extd_dev,
-        wd_flux_dev;
+        doconvproc_extd_host, wd_flux_host, dcondt_host, dcondt_prevap_host,
+        dcondt_prevap_hist_host;
+    mam4::ColumnView rprd_dev, dpdry_i_dev, doconvproc_extd_dev, wd_flux_dev;
     // New YAML file contains only one level's data
     get_input(input, "rprd", 1, rprd_host, rprd_dev);
     get_input(input, "dpdry_i", 1, dpdry_i_host, dpdry_i_dev);
@@ -123,10 +122,10 @@ void ma_precpprod(Ensemble *ensemble) {
           flux_base = mam4::max(0.0, flux_base + flux_local);
           flux =
               mam4::utils::min_max_bound(0.0, flux_base, flux_tmp + flux_local);
-          mam4::convproc::ma_precpprod(
-              rprd, dpdry_i, doconvproc_extd, x_ratio, species_class,
-              mmtoo_prevap_resusp, wd_flux_dev, dcondt_wetdep, dcondt,
-              dcondt_prevap, dcondt_prevap_hist);
+          mam4::convproc::ma_precpprod(rprd, dpdry_i, doconvproc_extd, x_ratio,
+                                       species_class, mmtoo_prevap_resusp,
+                                       wd_flux_dev, dcondt_wetdep, dcondt,
+                                       dcondt_prevap, dcondt_prevap_hist);
           return_vals[0] = flux;
           return_vals[1] = flux_tmp;
           return_vals[2] = flux_base;
