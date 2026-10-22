@@ -80,23 +80,23 @@ void compute_updraft_mixing_ratio(Ensemble *ensemble) {
     // Handle array format
     auto dt_arr = input.get_array("dt");
     const Real dt = dt_arr[0];
-    
+
     auto dz_arr = input.get_array("dz");
     const Real dz = dz_arr[0];
-    
+
     // Convert to C++ index by subtracting one.
     auto ktop_arr = input.get_array("ktop");
     const int ktop = static_cast<int>(ktop_arr[0]) - 1;
-    
+
     auto kbot_arr = input.get_array("kbot");
     const int kbot = static_cast<int>(kbot_arr[0]);
-    
+
     auto iconvtype_arr = input.get_array("iconvtype");
     const int iconvtype = static_cast<int>(iconvtype_arr[0]);
-    
+
     auto xx_wcldbase_arr = input.get_array("xx_wcldbase");
     Real xx_wcldbase = xx_wcldbase_arr[0];
-    
+
     auto xx_kcldbase_arr = input.get_array("xx_kcldbase");
     int xx_kcldbase = static_cast<int>(xx_kcldbase_arr[0]);
 

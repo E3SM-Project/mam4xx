@@ -39,10 +39,9 @@ void set_output(Output &output, const std::string &name, const int size,
 }
 
 void get_input(const Input &input, const std::string &name, const int rows,
-               const int cols, std::vector<Real> &host,
-               View2D &dev) {
+               const int cols, std::vector<Real> &host, View2D &dev) {
   host = input.get_array(name);
-  dev =View2D(name,rows,cols);                                           
+  dev = View2D(name, rows, cols);
   EKAT_ASSERT(host.size() == rows * cols);
   mam4::validation::convert_1d_vector_to_2d_view_device(host, dev);
 }
@@ -84,8 +83,10 @@ void ma_convproc_intr(Ensemble *ensemble) {
     const int pcnst = mam4::aero_model::pcnst;
 
     // Read scalar inputs
-    const bool convproc_do_aer = std::round(input.get_array("convproc_do_aer")[0]);
-    const bool convproc_do_gas = std::round(input.get_array("convproc_do_gas")[0]);
+    const bool convproc_do_aer =
+        std::round(input.get_array("convproc_do_aer")[0]);
+    const bool convproc_do_gas =
+        std::round(input.get_array("convproc_do_gas")[0]);
 
     const mam4::ConvProc::Config convproc_config;
     const int *species_class = convproc_config.species_class;
@@ -97,25 +98,28 @@ void ma_convproc_intr(Ensemble *ensemble) {
     // jt and maxg are arrays with one element for single column
     const auto jt_array = input.get_array("jt");
     const auto maxg_array = input.get_array("maxg");
-    const int ktop = Kokkos::round(jt_array[0] - 1); // Convert to C++ index (jt is 1-indexed Fortran)
-    const int kbot = Kokkos::round(maxg_array[0]); 
+    const int ktop = Kokkos::round(
+        jt_array[0] - 1); // Convert to C++ index (jt is 1-indexed Fortran)
+    const int kbot = Kokkos::round(maxg_array[0]);
 
     // Compare input against convproc_config values
     if (input.has("mmtoo_prevap_resusp")) {
       const auto resusp_db = input.get_array("mmtoo_prevap_resusp");
       for (int i = 0; i < pcnst; ++i) {
-        EKAT_ASSERT_MSG(
-            static_cast<int>(std::round(resusp_db[i] - 1)) == mmtoo_prevap_resusp[i],
-            "Mismatch in mmtoo_prevap_resusp at index " + std::to_string(i));
+        EKAT_ASSERT_MSG(static_cast<int>(std::round(resusp_db[i] - 1)) ==
+                            mmtoo_prevap_resusp[i],
+                        "Mismatch in mmtoo_prevap_resusp at index " +
+                            std::to_string(i));
       }
     }
 
     if (input.has("species_class")) {
       const auto species_class_db = input.get_array("species_class");
       for (int i = 0; i < pcnst; ++i) {
-        EKAT_ASSERT_MSG(
-            static_cast<int>(std::round(species_class_db[i])) == species_class[i],
-            "Mismatch in species_class at index " + std::to_string(i));
+        EKAT_ASSERT_MSG(static_cast<int>(std::round(species_class_db[i])) ==
+                            species_class[i],
+                        "Mismatch in species_class at index " +
+                            std::to_string(i));
       }
     }
 
@@ -123,9 +127,8 @@ void ma_convproc_intr(Ensemble *ensemble) {
     std::vector<Real> temperature_host, pmid_host, dpdry_host, dp_frac_host,
         icwmrdp_host, rprddp_host, evapcdp_host, dlf_host, du_host, eu_host,
         ed_host, dp_host;
-    View1D temperature_dev, pmid_dev, dpdry_dev, dp_frac_dev,
-        icwmrdp_dev, rprddp_dev, evapcdp_dev, dlf_dev, du_dev, eu_dev, ed_dev,
-        dp_dev;
+    View1D temperature_dev, pmid_dev, dpdry_dev, dp_frac_dev, icwmrdp_dev,
+        rprddp_dev, evapcdp_dev, dlf_dev, du_dev, eu_dev, ed_dev, dp_dev;
 
     get_input(input, "state_t", nlev, temperature_host, temperature_dev);
     get_input(input, "state_pmid", nlev, pmid_host, pmid_dev);
@@ -230,7 +233,6 @@ void ma_convproc_intr(Ensemble *ensemble) {
     output.set("ptend_lq", ptend_lq_host);
 
     // Output aerdepwetis
-    set_output(output, "aerdepwetis", pcnst, aerdepwetis_host,
-               aerdepwetis_dev);
+    set_output(output, "aerdepwetis", pcnst, aerdepwetis_host, aerdepwetis_dev);
   });
 }

@@ -374,7 +374,7 @@ public:
     bool convproc_do_aer = true;
     bool convproc_do_gas = false;
     int nlev = mam4::nlev;
-    int ktop = 0; 
+    int ktop = 0;
     int kbot = mam4::nlev - 1;
     // Flags are defined in "enum ConvProc::species_class".
     int species_class[aero_model::pcnst] = {
@@ -1444,9 +1444,8 @@ aer_vol_num_hygro(const AeroSpeciesView &aero_species, const SubView conu,
       // total aerosol volume
       tmp_vol += tmp_vol_spec;
       //  volume*hygro suming up for all species
-      tmp_hygro += tmp_vol_spec *
-                   ConvProc::spechygro(aero_species,
-                                       ConvProc::lspectype_amode(ispec, imode));
+      tmp_hygro += tmp_vol_spec * AeroConfig::spechygro(
+                                      ConvProc::lspectype_amode(ispec, imode));
     }
     // change volume from m3/kgair to m3/m3air
     vaerosol[imode] = tmp_vol * rhoair;
@@ -3184,48 +3183,48 @@ KOKKOS_INLINE_FUNCTION
 int get_scratch1d_work_len(const int nlev) {
   constexpr int pcnst = aero_model::pcnst;
   constexpr int pcnst_extd = ConvProc::pcnst_extd;
-  
+
   int work_len = 0;
-  
+
   // Index 0: q - tracer mixing ratios
   work_len += nlev * pcnst;
-  
+
   // Indices 1-2: mu, md - updraft/downdraft mass fluxes
   work_len += 2 * (nlev + 1);
-  
+
   // Indices 3-6: eudp, dudp, eddp, dddp - entrainment/detrainment × dp
   work_len += 4 * nlev;
-  
+
   // Index 7: rhoair - air density
   work_len += nlev;
-  
+
   // Index 8: zmagl - height above ground level
   work_len += nlev;
-  
+
   // Indices 9-12: gath, chat, conu, cond - gathered tracers and concentrations
   work_len += 4 * (nlev + 1) * pcnst_extd;
-  
+
   // Indices 13-14: dconudt_wetdep, dconudt_activa - updraft tendencies
   work_len += 2 * (nlev + 1) * pcnst_extd;
-  
+
   // Index 15: fa_u - updraft fractional area
   work_len += nlev;
-  
+
   // Indices 16-20: dcondt arrays - downdraft tendencies
   work_len += 5 * nlev * pcnst_extd;
-  
+
   // Indices 21-27: wd_flux and sum arrays
   work_len += 7 * pcnst_extd;
-  
+
   // Indices 28-29: dqdt, qnew - tracer tendency and updated values
   work_len += 2 * nlev * pcnst;
-  
+
   // Index 30: dlfdp - detrainment × dp
   work_len += nlev;
-  
+
   // Index 31: x_ratio - precipitation resuspension ratio
   work_len += nlev;
-  
+
   return work_len;
 }
 
@@ -3264,9 +3263,11 @@ inline void init_scratch_1d_views(
   work_ptr += (nlev + 1) * pcnst_extd;
   scratch1Dviews[ConvProc::cond] = View1D(work_ptr, (nlev + 1) * pcnst_extd);
   work_ptr += (nlev + 1) * pcnst_extd;
-  scratch1Dviews[ConvProc::dconudt_wetdep] = View1D(work_ptr, (nlev + 1) * pcnst_extd);
+  scratch1Dviews[ConvProc::dconudt_wetdep] =
+      View1D(work_ptr, (nlev + 1) * pcnst_extd);
   work_ptr += (nlev + 1) * pcnst_extd;
-  scratch1Dviews[ConvProc::dconudt_activa] = View1D(work_ptr, (nlev + 1) * pcnst_extd);
+  scratch1Dviews[ConvProc::dconudt_activa] =
+      View1D(work_ptr, (nlev + 1) * pcnst_extd);
   work_ptr += (nlev + 1) * pcnst_extd;
   scratch1Dviews[ConvProc::fa_u] = View1D(work_ptr, nlev);
   work_ptr += nlev;
@@ -3276,7 +3277,8 @@ inline void init_scratch_1d_views(
   work_ptr += nlev * pcnst_extd;
   scratch1Dviews[ConvProc::dcondt_prevap] = View1D(work_ptr, nlev * pcnst_extd);
   work_ptr += nlev * pcnst_extd;
-  scratch1Dviews[ConvProc::dcondt_prevap_hist] = View1D(work_ptr, nlev * pcnst_extd);
+  scratch1Dviews[ConvProc::dcondt_prevap_hist] =
+      View1D(work_ptr, nlev * pcnst_extd);
   work_ptr += nlev * pcnst_extd;
   scratch1Dviews[ConvProc::dcondt_resusp] = View1D(work_ptr, nlev * pcnst_extd);
   work_ptr += nlev * pcnst_extd;
