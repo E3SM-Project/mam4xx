@@ -40,7 +40,7 @@ void compute_massflux(Ensemble *ensemble) {
     // Fetch ensemble parameters
     // Convert to C++ index by subtracting one.
     const int ktop = input.get("ktop") - 1;
-    EKAT_ASSERT(ktop == 47);
+    EKAT_ASSERT(ktop == 56 || ktop == 47);
     const int kbot = input.get("kbot");
     EKAT_ASSERT(kbot == 71);
     Real xx_mfup_max = input.get("xx_mfup_max");
