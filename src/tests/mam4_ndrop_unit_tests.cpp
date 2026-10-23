@@ -227,15 +227,14 @@ TEST_CASE("test_maxsat", "mam4_ndrop") {
     smc[m] = 1;
   }
 
-  mam4::ndrop::maxsat(zeta, eta, nmodes, smc, smax);
+  smax = mam4::ndrop::maxsat(zeta, eta, nmodes, smc);
   logger.info("smax = {}", smax);
   REQUIRE(mam4::FloatingPoint<Real>::equiv(smax, 1e-20));
 
   for (int m = 0; m < nmodes; m++) {
     smc[m] = 0;
   }
-  smax = 0;
-  mam4::ndrop::maxsat(zeta, eta, nmodes, smc, smax);
+  smax = mam4::ndrop::maxsat(zeta, eta, nmodes, smc);
   logger.info("smax = {}", smax);
   REQUIRE(mam4::FloatingPoint<Real>::equiv(smax, 1e-10));
 
@@ -244,11 +243,10 @@ TEST_CASE("test_maxsat", "mam4_ndrop") {
     eta[m] = 1;
     smc[m] = 1;
   }
-  smax = 0;
   const Real double_answer = 0.4698982924029698;
   const Real single_answer = 0.46989828;
 
-  mam4::ndrop::maxsat(zeta, eta, nmodes, smc, smax);
+  smax = mam4::ndrop::maxsat(zeta, eta, nmodes, smc);
   logger.info("smax = {}", smax);
   logger.info("double_answer = {}, single_answer = {}", double_answer,
               single_answer);
