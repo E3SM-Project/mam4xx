@@ -72,7 +72,7 @@ foreach (input
          update_qnew_ptend_false
          compute_wetdep_tend
          ma_activate_convproc_ts_3
-         compute_activation_tend_do_act_true_ts_3
+         compute_activation_tend_ts_3
          compute_updraft_mixing_ratio_ts_3
          ma_convproc_tend_ts_3
          ma_convproc_dp_intr_ts_3

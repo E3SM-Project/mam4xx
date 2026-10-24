@@ -106,12 +106,24 @@ void compute_activation_tend(Ensemble *ensemble) {
     auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
         team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
+          // Extract scalars from device views to local variables
+          int kactcnt_local = kactcnt_dev(0);
+          int kactfirst_local = kactfirst_dev(0);
+          Real xx_wcldbase_local = xx_wcldbase_dev(0);
+          int xx_kcldbase_local = xx_kcldbase_dev(0);
+          
           mam4::convproc::compute_activation_tend(
               aero_species, f_ent, cldfrac_i_kk[0], rhoair_i_kk[0],
               mu_i_kk[0], mu_i_kp1[0], dt_u_kk[0], wup_kk[0], icwmr_kk[0],
-              temperature_kk[0], kk, kactcnt_dev(0), kactfirst_dev(0),
-              conu_dev, dconudt_activa_dev, xx_wcldbase_dev(0),
-              xx_kcldbase_dev(0));
+              temperature_kk[0], kk, kactcnt_local, kactfirst_local,
+              conu_dev, dconudt_activa_dev, xx_wcldbase_local,
+              xx_kcldbase_local);
+          
+          // Copy modified scalars back to device views
+          kactcnt_dev(0) = kactcnt_local;
+          kactfirst_dev(0) = kactfirst_local;
+          xx_wcldbase_dev(0) = xx_wcldbase_local;
+          xx_kcldbase_dev(0) = xx_kcldbase_local;
         });
     Kokkos::fence();
 
@@ -121,11 +133,11 @@ void compute_activation_tend(Ensemble *ensemble) {
     Kokkos::deep_copy(xx_wcldbase_host_view, xx_wcldbase_dev);
     Kokkos::deep_copy(xx_kcldbase_host_view, xx_kcldbase_dev);
     
-    set_output(output, "conu", pcnst_extd, conu_host, conu_dev);
-    set_output(output, "dconudt_activa", pcnst_extd, dconudt_activa_host, dconudt_activa_dev);
+    set_output(output, "conu_kk", pcnst_extd, conu_host, conu_dev);
+    set_output(output, "dconudt_activa_kk", pcnst_extd, dconudt_activa_host, dconudt_activa_dev);
     output.set("kactcnt", (int)kactcnt_host_view(0));
     output.set("kactfirst", 1 + (int)kactfirst_host_view(0));
-    output.set("xx_wcldbase", xx_wcldbase_host_view(0));
-    output.set("xx_kcldbase", (int)xx_kcldbase_host_view(0));
+    output.set("xx_wcldbase_icol", xx_wcldbase_host_view(0));
+    output.set("xx_kcldbase_icol", (int)xx_kcldbase_host_view(0));
   });
 }

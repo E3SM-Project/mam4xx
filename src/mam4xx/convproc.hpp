@@ -71,8 +71,23 @@ Real faer_resusp_vs_fprec_evap_mpln(const Real fprec_evap, const int) {
   //
 namespace ndrop_od {
 
+// Does linear interpolation from nearest values found in table (estbl),
+// matching elemental function estblf(t) in E3SM wv_saturation.F90.
+template <typename TableType>
 KOKKOS_INLINE_FUNCTION
-void qsat(const Real t, const Real p, Real &es, Real &qs) {
+Real estblf(const Real t, const TableType &estbl) {
+  return wv_sat_methods::estblf(t, estbl);
+}
+
+KOKKOS_INLINE_FUNCTION
+Real estblf(const Real t) {
+  // Direct calculation of mixed-phase saturation vapor pressure matching E3SM svp_trans(t)
+  return wv_sat_methods::wv_sat_svp_trans(t);
+}
+
+template <typename TableType>
+KOKKOS_INLINE_FUNCTION
+void qsat(const Real t, const Real p, Real &es, Real &qs, const TableType &estbl) {
   //  ------------------------------------------------------------------!
   // ! Purpose:                                                         !
   // !   Look up and return saturation vapor pressure from precomputed  !
@@ -83,17 +98,28 @@ void qsat(const Real t, const Real p, Real &es, Real &qs) {
   // Inputs
   // @param [in] t    ! Temperature
   // @param [in] p    ! Pressure
+  // @param [in] estbl! Precomputed saturation vapor pressure table
   // Outputs
   // @param [out] es  ! Saturation vapor pressure
   // @param [out] qs  ! Saturation specific humidity
 
-  // Note. Fortran code uses a table lookup. In C++ version, we compute directly
-  // from the function.
-  es = wv_sat_methods::wv_sat_svp_trans(t);
+  // In E3SM Fortran wv_saturation.F90, es is calculated via 1-degree lookup table estblf.
+  es = estblf(t, estbl);
   qs = wv_sat_methods::wv_sat_svp_to_qsat(es, p);
   // Ensures returned es is consistent with limiters on qs.
   es = mam4::min(es, p);
 } // qsat
+
+KOKKOS_INLINE_FUNCTION
+void qsat(const Real t, const Real p, Real &es, Real &qs) {
+  // Saturation vapor pressure table initialized matching E3SM Fortran wv_saturation.F90 wv_sat_init:
+  //   do i = 1, plenest
+  //      estbl(i) = svp_trans(tmin + real(i-1, r8))
+  //   end do
+  Real estbl[wv_sat_methods::estbl_plen];
+  wv_sat_methods::init_estbl(estbl);
+  qsat(t, p, es, qs, estbl);
+}
 
 KOKKOS_INLINE_FUNCTION
 void ndrop_int(Real exp45logsig[AeroConfig::num_modes()],
@@ -122,13 +148,14 @@ void ndrop_int(Real exp45logsig[AeroConfig::num_modes()],
 
   // SHR_CONST_RHOFW   = 1.000e3_R8      ! density of fresh water     ~ kg/m^3
   const Real rhoh2o = Constants::density_h2o;
-  const Real r_universal = Constants::r_gas * one_thousand;      //[J/K/kmole]
+  // Use E3SM physical constants (SHR_CONST_AVOGAD * SHR_CONST_BOLTZ)
+  const Real r_universal = 8314.467591;                          // [J/K/kmole]
   const Real mwh2o = Constants::molec_weight_h2o * one_thousand; // [kg/kmol]
   // BAD CONSTANT
   aten = two * mwh2o * surften / (r_universal * t0 * rhoh2o);
 
 } // end ndrop_int
-#if 0
+
 KOKKOS_INLINE_FUNCTION
 void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
                     const Real rhoair, Real na[AeroConfig::num_modes()],
@@ -208,9 +235,10 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
   if (smax_prescribed <= 0.0)
     return;
 
-  // Dry air gas constant [J/K/kg]
-  const Real rair = Constants::r_gas_dry_air;
-  const Real rh2o = Constants::r_gas_h2o_vapor;
+  // Use E3SM physical constants (SHR_CONST_AVOGAD * SHR_CONST_BOLTZ)
+  const Real r_universal = 8314.467591;
+  const Real rair = r_universal / (Constants::molec_weight_dry_air * 1000.0);
+  const Real rh2o = r_universal / (Constants::molec_weight_h2o * 1000.0);
   // latent heat of evaporation [J/kg]
   const Real latvap = Constants::latent_heat_evap;
   // specific heat of dry air [J/kg/K]
@@ -332,7 +360,6 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
   // 100% activation [m/s]?
   flux_fullact = w_in;
 } // activate_modal
-#endif
 } // namespace ndrop_od
 
 /// @class ConvProc
@@ -1506,7 +1533,7 @@ Real compute_wup(const int iconvtype, const Real mu_i_kk, const Real mu_i_kp1,
     // and Thunderstorm Project data which they also show
     // the vertical profile shape is a crude fit to their median updraft profile
     // height above surface [km]
-    const Real zkm = zmagl * 1.0e-3;
+    const Real zkm = zmagl * 1.0e-3f;
     if (1.0 <= zkm) {
       wup_kk = w_peak * mam4::pow((zkm / w_peak), 0.21);
     } else {
@@ -2140,15 +2167,15 @@ ma_activate_convproc(const AeroSpeciesView &aero_species, SubView conu,
 
   if (kk == kactfirst) {
     // at cloud base - do primary activation
-    ndrop::activate_modal(wbar, wmaxf, tair, rhoair, naerosol, vaerosol, hygro,
-                          exp45logsig, alogsig, aten, fn, fm, fluxn, fluxm,
-                          flux_fullact);
+    ndrop_od::activate_modal(wbar, wmaxf, tair, rhoair, naerosol, vaerosol,
+                             hygro, exp45logsig, alogsig, aten, fn, fm, fluxn,
+                             fluxm, flux_fullact);
   } else {
     // above cloud base - do secondary activation with prescribed supersat
     // that is constant with height
-    ndrop::activate_modal(wbar, wmaxf, tair, rhoair, naerosol, vaerosol, hygro,
-                          exp45logsig, alogsig, aten, fn, fm, fluxn, fluxm,
-                          flux_fullact, activate_smaxmax);
+    ndrop_od::activate_modal(wbar, wmaxf, tair, rhoair, naerosol, vaerosol,
+                             hygro, exp45logsig, alogsig, aten, fn, fm, fluxn,
+                             fluxm, flux_fullact, activate_smaxmax);
   }
 
   //  apply the activation fractions to the updraft aerosol mixing ratios
