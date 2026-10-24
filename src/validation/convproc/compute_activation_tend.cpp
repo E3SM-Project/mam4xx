@@ -11,144 +11,121 @@
 using namespace skywalker;
 
 namespace {
+using View1D = typename mam4::DeviceType::view_1d<Real>;
+using ViewInt1D = typename mam4::DeviceType::view_1d<int>;
+using View1DHost = typename mam4::HostType::view_1d<Real>;
+using ViewInt1DHost = typename mam4::HostType::view_1d<int>;
+
 void get_input(const Input &input, const std::string &name, const int size,
-               std::vector<Real> &host, mam4::ColumnView &dev) {
+               std::vector<Real> &host, View1D &dev) {
   host = input.get_array(name);
-  dev = mam4::validation::create_column_view(size);
+  dev = View1D(name, size);
 
   EKAT_ASSERT(host.size() == size);
-  auto host_view = Kokkos::create_mirror_view(dev);
-  for (int n = 0; n < size; ++n)
-    host_view[n] = host[n];
+  auto host_view = View1DHost((Real *)host.data(), size);
   Kokkos::deep_copy(dev, host_view);
 }
-void get_input(const Input &input, const std::string &name, const int rows,
-               const int cols, std::vector<Real> &host,
-               Kokkos::View<Real **, Kokkos::MemoryUnmanaged> &dev) {
-  host = input.get_array(name);
-  mam4::ColumnView col_view = mam4::validation::create_column_view(rows * cols);
-  dev = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(col_view.data(), rows,
-                                                       cols);
-  EKAT_ASSERT(host.size() == rows * cols);
-  {
-    std::vector<std::vector<Real>> matrix(rows, std::vector<Real>(cols));
-    // Row Major layout
-    for (int i = 0, n = 0; i < rows; ++i)
-      for (int j = 0; j < cols; ++j, ++n)
-        matrix[i][j] = host[n];
-    auto host_view = Kokkos::create_mirror_view(dev);
-    for (int i = 0; i < rows; ++i)
-      for (int j = 0; j < cols; ++j)
-        host_view(i, j) = matrix[i][j];
-    Kokkos::deep_copy(dev, host_view);
-  }
-}
-void set_output(Output &output, const std::string &name, const int rows,
-                const int cols, std::vector<Real> &host,
-                const Kokkos::View<Real **, Kokkos::MemoryUnmanaged> &dev) {
+
+void set_output(Output &output, const std::string &name, const int size,
+                std::vector<Real> &host, const View1D &dev) {
+  host.resize(size);
   auto host_view = Kokkos::create_mirror_view(dev);
   Kokkos::deep_copy(host_view, dev);
-  for (int i = 0, n = 0; i < rows; ++i)
-    for (int j = 0; j < cols; ++j, ++n)
-      host[n] = host_view(i, j);
+  for (int i = 0; i < size; ++i) {
+    host[i] = host_view[i];
+  }
   output.set(name, host);
 }
 } // namespace
-void compute_activation_tend(Ensemble *ensemble) {
-  // We don't need any settings for this particular test.
-  // Settings settings = ensemble->settings();
 
+void compute_activation_tend(Ensemble *ensemble) {
   auto aero_species =
       mam4::aero_species_on_device(mam4::default_aero_species());
 
   // Run the ensemble.
   ensemble->process([=](const Input &input, Output &output) {
-    const int nlev = 72;
     const int pcnst_extd = mam4::ConvProc::pcnst_extd;
-    // Fetch ensemble parameters
-    // Convert to C++ index by subtracting one.
-    const int kk = input.get("kk") - 1;
-    int kactcnt_host = input.get("kactcnt");
-    int kactfirst_host = input.get("kactfirst") - 1;
-    const Real f_ent = input.get("f_ent");
-    Real xx_wcldbase_host = input.get("xx_wcldbase");
-    int xx_kcldbase_host = input.get("xx_kcldbase");
+    
+    // Fetch scalar parameters from array format
+    std::vector<Real> kk_arr = input.get_array("kk");
+    const int kk = (int)kk_arr[0] - 1;
+    
+    std::vector<Real> kactcnt_arr = input.get_array("kactcnt");
+    int kactcnt = (int)kactcnt_arr[0];
+    
+    std::vector<Real> kactfirst_arr = input.get_array("kactfirst");
+    int kactfirst = (int)kactfirst_arr[0] - 1;
+    
+    std::vector<Real> f_ent_arr = input.get_array("f_ent");
+    const Real f_ent = f_ent_arr[0];
+    
+    std::vector<Real> xx_wcldbase_arr = input.get_array("xx_wcldbase_icol");
+    Real xx_wcldbase = xx_wcldbase_arr[0];
+    
+    std::vector<Real> xx_kcldbase_arr = input.get_array("xx_kcldbase_icol");
+    int xx_kcldbase = (int)xx_kcldbase_arr[0];
 
-    std::vector<Real> cldfrac_i_host, rhoair_i_host, mu_i_host, dt_u_host,
-        wup_host, icwmr_host, temperature_host, conu_host, dconudt_activa_host;
-    mam4::ColumnView cldfrac_i_dev, rhoair_i_dev, mu_i_dev, dt_u_dev, wup_dev,
-        icwmr_dev, temperature_dev;
+    // Fetch single-level input scalars
+    std::vector<Real> cldfrac_i_kk = input.get_array("cldfrac_i_kk");
+    std::vector<Real> rhoair_i_kk = input.get_array("rhoair_i_kk");
+    std::vector<Real> mu_i_kk = input.get_array("mu_i_kk");
+    std::vector<Real> mu_i_kp1 = input.get_array("mu_i_kp1");
+    std::vector<Real> dt_u_kk = input.get_array("dt_u_kk");
+    std::vector<Real> wup_kk = input.get_array("wup_kk");
+    std::vector<Real> temperature_kk = input.get_array("temperature_kk");
+    std::vector<Real> icwmr_kk = input.get_array("icwmr_kk");
 
-    Kokkos::View<Real **, Kokkos::MemoryUnmanaged> conu_dev, dconudt_activa_dev;
+    // Fetch array inputs and move to device
+    std::vector<Real> conu_host, dconudt_activa_host;
+    View1D conu_dev, dconudt_activa_dev;
+    get_input(input, "conu_kk", pcnst_extd, conu_host, conu_dev);
+    get_input(input, "dconudt_activa_kk", pcnst_extd, dconudt_activa_host, dconudt_activa_dev);
 
-    get_input(input, "cldfrac_i", nlev, cldfrac_i_host, cldfrac_i_dev);
-    get_input(input, "rhoair_i", nlev, rhoair_i_host, rhoair_i_dev);
-    get_input(input, "mu_i", nlev + 1, mu_i_host, mu_i_dev);
-    get_input(input, "dt_u", nlev, dt_u_host, dt_u_dev);
-    get_input(input, "wup", nlev, wup_host, wup_dev);
-    get_input(input, "icwmr", nlev, icwmr_host, icwmr_dev);
-    get_input(input, "temperature", nlev, temperature_host, temperature_dev);
-    get_input(input, "conu", nlev + 1, pcnst_extd, conu_host, conu_dev);
-    get_input(input, "dconudt_activa", nlev + 1, pcnst_extd,
-              dconudt_activa_host, dconudt_activa_dev);
+    // Create device variables for output scalars
+    ViewInt1D kactcnt_dev("kactcnt", 1);
+    ViewInt1D kactfirst_dev("kactfirst", 1);
+    View1D xx_wcldbase_dev("xx_wcldbase", 1);
+    ViewInt1D xx_kcldbase_dev("xx_kcldbase", 1);
+    
+    auto kactcnt_host_view = Kokkos::create_mirror_view(kactcnt_dev);
+    auto kactfirst_host_view = Kokkos::create_mirror_view(kactfirst_dev);
+    auto xx_wcldbase_host_view = Kokkos::create_mirror_view(xx_wcldbase_dev);
+    auto xx_kcldbase_host_view = Kokkos::create_mirror_view(xx_kcldbase_dev);
+    
+    kactcnt_host_view(0) = kactcnt;
+    kactfirst_host_view(0) = kactfirst;
+    xx_wcldbase_host_view(0) = xx_wcldbase;
+    xx_kcldbase_host_view(0) = xx_kcldbase;
+    
+    Kokkos::deep_copy(kactcnt_dev, kactcnt_host_view);
+    Kokkos::deep_copy(kactfirst_dev, kactfirst_host_view);
+    Kokkos::deep_copy(xx_wcldbase_dev, xx_wcldbase_host_view);
+    Kokkos::deep_copy(xx_kcldbase_dev, xx_kcldbase_host_view);
 
-    mam4::ColumnView scalars_dev = mam4::validation::create_column_view(4);
+    // Call function within parallel_for for GPU compatibility
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "compute_activation_tend", 1, KOKKOS_LAMBDA(int) {
-          Real cldfrac_i[nlev], rhoair_i[nlev], dt_u[nlev], wup[nlev],
-              icwmr[nlev], temperature[nlev], mu_i[nlev + 1],
-              conu[nlev + 1][pcnst_extd], dconudt_activa[nlev + 1][pcnst_extd];
-          for (int i = 0; i < nlev; ++i) {
-            cldfrac_i[i] = cldfrac_i_dev[i];
-            rhoair_i[i] = rhoair_i_dev[i];
-            dt_u[i] = dt_u_dev[i];
-            wup[i] = wup_dev[i];
-            icwmr[i] = icwmr_dev[i];
-            temperature[i] = temperature_dev[i];
-          }
-          for (int i = 0; i < nlev + 1; ++i) {
-            mu_i[i] = mu_i_dev[i];
-            for (int j = 0; j < pcnst_extd; ++j) {
-              conu[i][j] = conu_dev(i, j);
-              dconudt_activa[i][j] = dconudt_activa_dev(i, j);
-            }
-          }
-          int kactcnt = kactcnt_host;
-          int kactfirst = kactfirst_host;
-          Real xx_wcldbase = xx_wcldbase_host;
-          int xx_kcldbase = xx_kcldbase_host;
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           mam4::convproc::compute_activation_tend(
-              aero_species, f_ent, cldfrac_i[kk], rhoair_i[kk], mu_i[kk],
-              mu_i[kk + 1], dt_u[kk], wup[kk], icwmr[kk], temperature[kk], kk,
-              kactcnt, kactfirst, conu[kk], dconudt_activa[kk], xx_wcldbase,
-              xx_kcldbase);
-
-          for (int i = 0; i < nlev + 1; ++i) {
-            for (int j = 0; j < pcnst_extd; ++j) {
-              conu_dev(i, j) = conu[i][j];
-              dconudt_activa_dev(i, j) = dconudt_activa[i][j];
-            }
-          }
-          scalars_dev[0] = kactcnt;
-          scalars_dev[1] = kactfirst;
-          scalars_dev[2] = xx_wcldbase;
-          scalars_dev[3] = xx_kcldbase;
+              aero_species, f_ent, cldfrac_i_kk[0], rhoair_i_kk[0],
+              mu_i_kk[0], mu_i_kp1[0], dt_u_kk[0], wup_kk[0], icwmr_kk[0],
+              temperature_kk[0], kk, kactcnt_dev(0), kactfirst_dev(0),
+              conu_dev, dconudt_activa_dev, xx_wcldbase_dev(0),
+              xx_kcldbase_dev(0));
         });
-    set_output(output, "conu", nlev + 1, pcnst_extd, conu_host, conu_dev);
-    set_output(output, "dconudt_activa", nlev + 1, pcnst_extd,
-               dconudt_activa_host, dconudt_activa_dev);
-    {
-      auto host_view = Kokkos::create_mirror_view(scalars_dev);
-      Kokkos::deep_copy(host_view, scalars_dev);
-      kactcnt_host = host_view[0];
-      kactfirst_host = host_view[1];
-      xx_wcldbase_host = host_view[2];
-      xx_kcldbase_host = host_view[3];
-    }
-    output.set("kactcnt", kactcnt_host);
-    // Make indexes Fortran based again.
-    output.set("kactfirst", 1 + kactfirst_host);
-    output.set("xx_wcldbase", xx_wcldbase_host);
-    output.set("xx_kcldbase", xx_kcldbase_host);
+    Kokkos::fence();
+
+    // Copy results back to host
+    Kokkos::deep_copy(kactcnt_host_view, kactcnt_dev);
+    Kokkos::deep_copy(kactfirst_host_view, kactfirst_dev);
+    Kokkos::deep_copy(xx_wcldbase_host_view, xx_wcldbase_dev);
+    Kokkos::deep_copy(xx_kcldbase_host_view, xx_kcldbase_dev);
+    
+    set_output(output, "conu", pcnst_extd, conu_host, conu_dev);
+    set_output(output, "dconudt_activa", pcnst_extd, dconudt_activa_host, dconudt_activa_dev);
+    output.set("kactcnt", (int)kactcnt_host_view(0));
+    output.set("kactfirst", 1 + (int)kactfirst_host_view(0));
+    output.set("xx_wcldbase", xx_wcldbase_host_view(0));
+    output.set("xx_kcldbase", (int)xx_kcldbase_host_view(0));
   });
 }

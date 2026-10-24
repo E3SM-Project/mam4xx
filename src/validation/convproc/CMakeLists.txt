@@ -71,10 +71,8 @@ foreach (input
          update_qnew_ptend_true
          update_qnew_ptend_false
          compute_wetdep_tend
-         ma_activate_convproc_54
-         ma_activate_convproc_68
-         compute_activation_tend_do_act_true
-         compute_activation_tend_do_act_false
+         ma_activate_convproc_ts_3
+         compute_activation_tend_do_act_true_ts_3
          compute_updraft_mixing_ratio_ts_3
          ma_convproc_tend_ts_3
          ma_convproc_dp_intr_ts_3
@@ -99,8 +97,6 @@ foreach (input
   # Conservative approach: At the time of this commit, threshold error=2e-6.
   # compare_mam4xx_mam4.py <module1.py> <module2.py> <check_norms> <threshold error>
   if (${input} STREQUAL compute_activation_tend_do_act_true)
-    set(TOL 1e-8)
-  elseif (${input} STREQUAL ma_activate_convproc_54)
     set(TOL 1e-8)
   elseif (${input} STREQUAL ma_convproc_tend)
     set(TOL 1e-8)
