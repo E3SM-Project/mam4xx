@@ -2579,7 +2579,9 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
   const int iflux_method = convtype == ConvProc::Deep ? 1 : 2;
 
   const Real hund_ovr_g = 100.0 / Constants::gravity;
-  const Real rair = Constants::r_gas_dry_air;
+  // Use E3SM physical constants (SHR_CONST_RDAIR = SHR_CONST_RGAS/SHR_CONST_MWDAIR)
+  const Real r_universal = 8314.467591;
+  const Real rair = r_universal / (Constants::molec_weight_dry_air * 1000.0);
 
   //  md, mu, are all "dry" mass fluxes
   //  mu(1+nlev)    ! Updraft mass flux (positive) [mb/s]
