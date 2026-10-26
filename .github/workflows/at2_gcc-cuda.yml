@@ -58,7 +58,7 @@ jobs:
               echo 'precision=["single", "double"]' >> "$GITHUB_OUTPUT" ;;
           esac
   gcc-cuda:
-    runs-on:  [self-hosted, ghci-snl, cuda]
+    runs-on:  [self-hosted, e3sm, cuda]
     # will run other tests in the matrix even if one fails
     # NOTE: prioritizes extra info over speed, so consider whether this makes sense
     continue-on-error: false
