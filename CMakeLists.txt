@@ -120,10 +120,8 @@ if (MAM4XX_STANDALONE)
   # files for the actions/checkout@v4 ref: option. 
   FetchContent_Declare(
     EKAT
-#   GIT_REPOSITORY https://github.com/E3SM-Project/EKAT.git
-#   GIT_TAG        ae5e7f8227943a25c66b1a1822973ec665d224e4 # 2026/10/16
-    GIT_REPOSITORY https://github.com/odiazib/EKAT.git 
-    GIT_TAG        bcae70646ed9aca77fb8d5beb11acfcd14dc56f9 # 2026/10/16
+    GIT_REPOSITORY https://github.com/E3SM-Project/EKAT.git
+    GIT_TAG        ae5e7f8227943a25c66b1a1822973ec665d224e4 # 2026/10/16
   )
   list(APPEND mam4xx_tpls EKAT)
 
