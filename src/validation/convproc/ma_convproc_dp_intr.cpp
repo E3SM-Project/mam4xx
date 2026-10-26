@@ -201,7 +201,7 @@ void ma_convproc_dp_intr(Ensemble *ensemble) {
             temperature[i] = temperature_dev[i];
             pmid[i] = pmid_dev[i];
             rprd[i] = rprd_dev[i];
-            dpdry[i] = dpdry_dev[i];
+            dpdry[i] = dpdry_dev[i] / 100.0;
             evapc[i] = evapc_dev[i];
             du[i] = du_dev[i];
             eu[i] = eu_dev[i];
@@ -214,7 +214,7 @@ void ma_convproc_dp_intr(Ensemble *ensemble) {
           auto dqdt_view = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
               &dqdt[0][0], nlev, pcnst);
           const bool convproc_do_aer = true;
-          const bool convproc_do_gas = false;
+          const bool convproc_do_gas = true;
           mam4::convproc::ma_convproc_dp_intr(
               team, aero_species, scratch1Dviews, convproc_do_aer,
               convproc_do_gas, nlev, temperature, pmid, dpdry, dt, cldfrac,
