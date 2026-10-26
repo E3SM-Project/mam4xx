@@ -3,10 +3,8 @@
 // National Technology & Engineering Solutions of Sandia, LLC (NTESS)
 // SPDX-License-Identifier: BSD-3-Clause
 
-#include <mam4_config.hpp>
-#include <mam4xx/aero_modes.hpp>
-#include <mam4xx/mam4_constants.hpp>
-#include <mam4xx/mam4_types.hpp>
+
+#include "microphysics.hpp"
 
 #include <string>
 #include <map>
@@ -57,11 +55,7 @@ struct TimeConfig {
 
 // aerosol process switchboard
 struct ControlConfig {
-  bool gas_chemistry;
-  bool gas_aerosol_exchange;
-  bool rename;
-  bool nucleation;
-  bool coagulation;
+  mam4::microphysics::Config microphysics;
 };
 
 // prevailing atmospheric conditions (column data)
