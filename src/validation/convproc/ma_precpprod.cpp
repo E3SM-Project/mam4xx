@@ -75,10 +75,6 @@ void ma_precpprod(Ensemble *ensemble) {
     Real pr_flux_tmp = input.get_array("pr_flux_tmp")[0];
     Real pr_flux_base = input.get_array("pr_flux_base")[0];
 
-    const mam4::ConvProc::Config convproc_config;
-    const int *species_class = convproc_config.species_class;
-    const int *mmtoo_prevap_resusp = convproc_config.mmtoo_prevap_resusp;
-
     std::vector<Real> rprd_host, dpdry_i_host, dcondt_wetdep_host,
         doconvproc_extd_host, wd_flux_host, dcondt_host, dcondt_prevap_host,
         dcondt_prevap_hist_host;
@@ -101,6 +97,10 @@ void ma_precpprod(Ensemble *ensemble) {
     mam4::ColumnView return_vals = mam4::validation::create_column_view(3);
     Kokkos::parallel_for(
         "ma_precpprod", 1, KOKKOS_LAMBDA(int) {
+          const mam4::ConvProc::Config convproc_config;
+          const int *species_class = convproc_config.species_class;
+          const int *mmtoo_prevap_resusp = convproc_config.mmtoo_prevap_resusp;
+
           Real rprd = rprd_dev(0);
           Real dpdry_i = dpdry_i_dev(0);
           bool doconvproc_extd[mam4::ConvProc::pcnst_extd];
@@ -116,10 +116,9 @@ void ma_precpprod(Ensemble *ensemble) {
               Kokkos::subview(dcondt_prevap_hist_dev, 0, Kokkos::ALL());
           Real flux = pr_flux;
           Real flux_tmp = pr_flux_tmp;
-          Real flux_base = pr_flux_base;
           // local precip flux [(kg/kg/s)*mb]
           const Real flux_local = mam4::max(0.0, rprd * dpdry_i);
-          flux_base = mam4::max(0.0, flux_base + flux_local);
+          const Real flux_base = mam4::max(0.0, pr_flux_base + flux_local);
           flux =
               mam4::utils::min_max_bound(0.0, flux_base, flux_tmp + flux_local);
           mam4::convproc::ma_precpprod(rprd, dpdry_i, doconvproc_extd, x_ratio,
@@ -130,6 +129,7 @@ void ma_precpprod(Ensemble *ensemble) {
           return_vals[1] = flux_tmp;
           return_vals[2] = flux_base;
         });
+    Kokkos::fence();
     auto host_view = Kokkos::create_mirror_view(return_vals);
     Kokkos::deep_copy(host_view, return_vals);
     output.set("pr_flux", host_view(0));
