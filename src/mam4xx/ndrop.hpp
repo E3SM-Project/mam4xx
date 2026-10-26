@@ -1,5 +1,6 @@
 #ifndef MAM4XX_NDROP_HPP
 #define MAM4XX_NDROP_HPP
+// #define MAM4XX_USE_ANALYTICAL_QSAT
 
 #include "aero_config.hpp"
 #include "aero_model.hpp"
@@ -352,6 +353,9 @@ void ccncalc(const Real state_q[aero_model::pcnst], const Real tair,
 
 } /// ccncalc
 
+// FIXME: We need to decide whether to use linear interpolation or an analytical expression to compute SVP.
+// I would rather use the analytical expression.
+#if defined(MAM4XX_USE_ANALYTICAL_QSAT)
 KOKKOS_INLINE_FUNCTION
 void qsat(const Real t, const Real p, Real &svp, Real &qsat) {
   //  ------------------------------------------------------------------
@@ -375,7 +379,53 @@ void qsat(const Real t, const Real p, Real &svp, Real &qsat) {
   // Ensures returned svp is consistent with limiters on qsat.
   svp = mam4::min(svp, p);
 } // qsat
+#else
+// Does linear interpolation from nearest values found in table (estbl),
+// matching elemental function estblf(t) in E3SM wv_saturation.F90.
+template <typename TableType>
+ KOKKOS_INLINE_FUNCTION
+Real estblf(const Real t, const TableType &estbl) {
+  return wv_sat_methods::estblf(t, estbl);
+}
 
+KOKKOS_INLINE_FUNCTION
+Real estblf(const Real t) {
+  // Direct calculation of mixed-phase saturation vapor pressure matching E3SM svp_trans(t)
+  return wv_sat_methods::wv_sat_svp_trans(t);
+}
+
+template <typename TableType>
+KOKKOS_INLINE_FUNCTION
+void qsat(const Real t, const Real p, Real &es, Real &qs, const TableType &estbl) {
+   // Inputs
+   // @param [in] t    ! Temperature
+   // @param [in] p    ! Pressure
+  // @param [in] estbl! Precomputed saturation vapor pressure table
+   // Outputs
+   // @param [out] es  ! Saturation vapor pressure
+   // @param [out] qs  ! Saturation specific humidity
+ 
+  // Note. Fortran code uses a table lookup. In C++ version, we compute directly
+  // from the function.
+  es = wv_sat_methods::wv_sat_svp_trans(t);
+  // In E3SM Fortran wv_saturation.F90, es is calculated via 1-degree lookup table estblf.
+  es = estblf(t, estbl);
+  qs = wv_sat_methods::wv_sat_svp_to_qsat(es, p);
+  // Ensures returned es is consistent with limiters on qs.
+  es = mam4::min(es, p);
+ } // qsat
+
+KOKKOS_INLINE_FUNCTION
+void qsat(const Real t, const Real p, Real &es, Real &qs) {
+  // Saturation vapor pressure table initialized matching E3SM Fortran wv_saturation.F90 wv_sat_init:
+  //   do i = 1, plenest
+  //      estbl(i) = svp_trans(tmin + real(i-1, r8))
+  //   end do
+  Real estbl[wv_sat_methods::estbl_plen];
+  wv_sat_methods::init_estbl(estbl);
+  qsat(t, p, es, qs, estbl);
+}
+#endif
 KOKKOS_INLINE_FUNCTION
 void ndrop_init(Real exp45logsig[AeroConfig::num_modes()],
                 Real alogsig[AeroConfig::num_modes()], Real &aten,
@@ -491,9 +541,13 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
   if (smax_prescribed <= zero) {
     return;
   }
-
-  const Real rair = Constants::r_gas_dry_air;
-  const Real rh2o = Constants::r_gas_h2o_vapor;
+  // FIXME: contanst are producing diff.
+  // Use E3SM physical constants (SHR_CONST_AVOGAD * SHR_CONST_BOLTZ)
+  const Real r_universal = 8314.467591;
+  const Real rair = r_universal / (Constants::molec_weight_dry_air * 1000.0);
+  const Real rh2o = r_universal / (Constants::molec_weight_h2o * 1000.0);
+  // const Real rair = Constants::r_gas_dry_air;
+  // const Real rh2o = Constants::r_gas_h2o_vapor;
   // latent heat of evaporation [J/kg]
   const Real latvap = Constants::latent_heat_evap;
   // specific heat of dry air [J/kg/K]

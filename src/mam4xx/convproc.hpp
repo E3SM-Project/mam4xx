@@ -122,7 +122,10 @@ void ndrop_int(Real exp45logsig[AeroConfig::num_modes()],
 
   // SHR_CONST_RHOFW   = 1.000e3_R8      ! density of fresh water     ~ kg/m^3
   const Real rhoh2o = Constants::density_h2o;
-  const Real r_universal = Constants::r_gas * one_thousand;      //[J/K/kmole]
+  //FIXME:
+  // const Real r_universal = Constants::r_gas * one_thousand;      //[J/K/kmole]
+  // Use E3SM physical constants (SHR_CONST_AVOGAD * SHR_CONST_BOLTZ)
+  const Real r_universal = 8314.467591;                          // [J/K/kmole]
   const Real mwh2o = Constants::molec_weight_h2o * one_thousand; // [kg/kmol]
   // BAD CONSTANT
   aten = two * mwh2o * surften / (r_universal * t0 * rhoh2o);
@@ -1301,7 +1304,8 @@ Real compute_wup(const int iconvtype, const Real mu_i_kk, const Real mu_i_kp1,
     // and Thunderstorm Project data which they also show
     // the vertical profile shape is a crude fit to their median updraft profile
     // height above surface [km]
-    const Real zkm = zmagl * 1.0e-3;
+    //FIXME: fortran is using single precision. we need to update validation test w double precission.
+    const Real zkm = zmagl * 1.0e-3f;
     if (1.0 <= zkm) {
       wup_kk = w_peak * mam4::pow((zkm / w_peak), 0.21);
     } else {
@@ -2347,7 +2351,11 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
   const int iflux_method = convtype == ConvProc::Deep ? 1 : 2;
 
   const Real hund_ovr_g = 100.0 / Constants::gravity;
-  const Real rair = Constants::r_gas_dry_air;
+  //FIXME: As expected, using diferent constants produces diff. 
+  //const Real rair = Constants::r_gas_dry_air;
+  // Use E3SM physical constants (SHR_CONST_RDAIR = SHR_CONST_RGAS/SHR_CONST_MWDAIR)
+  const Real r_universal = 8314.467591;
+  const Real rair = r_universal / (Constants::molec_weight_dry_air * 1000.0);
 
   //  md, mu, are all "dry" mass fluxes
   //  mu(1+nlev)    ! Updraft mass flux (positive) [mb/s]
