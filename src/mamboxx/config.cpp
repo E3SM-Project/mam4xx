@@ -23,18 +23,27 @@ TimeConfig read_time(const ekat::ParameterList &params) {
   return cfg;
 }
 
+mam4::microphysics::Config read_microphysics_config(const ekat::ParameterList &params) {
+  mam4::microphysics::Config config = {};
+  if (params.isParameter("gas_chemistry"))
+    config.gas_chemistry = params.get<bool>("gas_chemistry");
+  if (params.isParameter("gas_aerosol_exchange"))
+    config.gas_aerosol_exchange = params.get<bool>("gas_aerosol_exchange");
+  if (params.isParameter("rename"))
+    config.nucleation = params.get<bool>("rename");
+  if (params.isParameter("nucleation"))
+    config.nucleation = params.get<bool>("nucleation");
+  if (params.isParameter("coagulation"))
+    config.coagulation = params.get<bool>("coagulation");
+  return config;
+}
+
 ControlConfig read_control(const ekat::ParameterList &params) {
   ControlConfig cfg = {};
-  if (params.isParameter("gas_chemistry"))
-    cfg.gas_chemistry = params.get<bool>("gas_chemistry");
-  if (params.isParameter("gas_aerosol_exchange"))
-    cfg.gas_aerosol_exchange = params.get<bool>("gas_aerosol_exchange");
-  if (params.isParameter("rename"))
-    cfg.nucleation = params.get<bool>("rename");
-  if (params.isParameter("nucleation"))
-    cfg.nucleation = params.get<bool>("nucleation");
-  if (params.isParameter("coagulation"))
-    cfg.coagulation = params.get<bool>("coagulation");
+  if (params.isSublist("microphysics")) {
+    auto microphys = params.sublist("microphysics");
+    cfg.microphysics = read_microphysics_config(microphys);
+  }
   return cfg;
 }
 

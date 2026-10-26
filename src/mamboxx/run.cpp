@@ -133,79 +133,13 @@ void initialize(const Config &config, State &state) {
   }
 }
 
-void external_forcing(State &state, Real dt) {
-  // TODO: add when appropriate
-}
-
-void set_invariants(State &state, Real dt) {
-  auto policy = TeamPolicyFactory::get_default_team_policy(1, mam4::nlev);
-  View1D cnst_offline[mam4::mo_setinv::num_tracer_cnst];
-  // FIXME: populate offline constituents 
-  Kokkos::parallel_for("mamboxx::set_invariants", policy, KOKKOS_LAMBDA(const ThreadTeam &team) {
-    mam4::mo_setinv::setinv(team,                                    // in
-                            state.invariants,                        // out
-                            state.atmosphere.temperature,            // in
-                            state.atmosphere.vapor_mixing_ratio,     // in
-                            cnst_offline,                            // in
-                            state.atmosphere.pressure);              // in
-  });
-}
-
-void compute_o3_column_density(State &state, Real dt) {
-}
-
-void photo_table(State &state, Real dt) {
-}
-
-void sethet(State &state, Real dt) {
-}
-
-void drydep_xactive(State &state, Real dt) {
-}
-
-void gas_phase_chemistry(State &state, Real dt) {
-}
-
-void setsox(State &state, Real dt) {
-}
-
-void modal_aero_amicphys_intr(State &state, Real dt) {
-}
-
-void vmr2mmr_cw(State &state, Real dt) {
-}
-
-void linoz(State &state, Real dt) {
-}
-
 void step(State &state, Real dt) {
-  size_t n_lev = state.atmosphere.temperature.size();
- 
-  // For guidance here, see MAMMicrophysics::run_impl in EAMxx.
-
-  // TODO: add chlorine loading for linoz
-  // TODO: add elevated emissions
-  // TODO: add insolation based on orbital parameters/date and location (or just directly)
- 
-  // MAMMicrophysics::run_microphysics_kernels
-  external_forcing(state, dt);
-  set_invariants(state, dt);
-  compute_o3_column_density(state, dt);
-  if constexpr (mam4::nlev > 1) {
-    photo_table(state, dt);
-    sethet(state, dt);
-  }
-  drydep_xactive(state, dt);
-  gas_phase_chemistry(state, dt);
-  setsox(state, dt);
-  modal_aero_amicphys_intr(state, dt);
-  vmr2mmr_cw(state, dt);
-  linoz(state, dt);
-
+  mam4::microphysics::step(state.atmosphere, state.prognostics, state.invariants, dt);
 }
 
 void update_diagnostics(const State &state, Real dt, Diagnostics &diagnostics) {
-  diagnostics = {};
+  mam4::Diagnostics diags = {};
+  mam4::microphysics::compute_diagnostics(state.atmosphere, state.prognostics, diags);
 }
 
 void finalize(const State &state, Result &result) {
