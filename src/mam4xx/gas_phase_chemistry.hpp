@@ -34,10 +34,18 @@ constexpr int usr_HO2_HO2_ndx = 1, usr_DMS_OH_ndx = 5, usr_SO2_OH_ndx = 3,
 // index of total atm density in invariant array
 using mam4::gas_chemistry::indexm;
 
-// performs gas phase chemistry calculations on a single level of a single
-// atmospheric column
+/// Performs gas phase chemistry calculations on a single level of a single
+/// atmospheric column.
+///
+/// A successful result means that `qq` was advanced through the full requested
+/// interval `dt`. If the result is unsuccessful, the interval is incomplete
+/// and `qq` contains only state from accepted internal solver steps. Callers
+/// must check the result and must not treat `qq` as a completed chemistry step
+/// when the returned result's `success()` is false.
+///
+/// @return Status and accounting information for the implicit solve.
 template <typename VectorType>
-KOKKOS_INLINE_FUNCTION void gas_phase_chemistry(
+KOKKOS_INLINE_FUNCTION gas_chemistry::ImpSolResult gas_phase_chemistry(
     // in
     const Real temp, const Real dt,
     const Real photo_rates[mam4::mo_photo::phtcnt], const Real extfrc[extcnt],
@@ -101,16 +109,20 @@ KOKKOS_INLINE_FUNCTION void gas_phase_chemistry(
 
   // solve chemical system implicitly
   Real prod_out[clscnt4], loss_out[clscnt4];
-  mam4::gas_chemistry::imp_sol(qq,                                      // out
-                               reaction_rates, het_rates, extfrc_rates, // in
-                               dt, factor,                              // in
-                               epsilon, prod_out, loss_out);            // out
+  const auto result = mam4::gas_chemistry::imp_sol(
+      qq,                                      // out
+      reaction_rates, het_rates, extfrc_rates, // in
+      dt, factor,                              // in
+      epsilon, prod_out, loss_out);            // out
 
   // save h2so4 change by gas phase chem (for later new particle nucleation)
   if (ndx_h2so4 > 0) {
     del_h2so4_gasprod = qq[ndx_h2so4] - del_h2so4_gasprod;
   }
+
+  return result;
 }
+
 } // namespace microphysics
 } // namespace mam4
 #endif

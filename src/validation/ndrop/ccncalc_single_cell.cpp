@@ -26,25 +26,14 @@ void ccncalc_single_cell(Ensemble *ensemble) {
 
     Real qcldbrn[maxd_aspectype][ntot_amode] = {{zero}};
 
-    const auto lspectype_amode_db = input.get_array("lspectype_amode");
-    int lspectype_amode[maxd_aspectype][ntot_amode] = {};
-
-    const auto lmassptr_amode_db = input.get_array("lmassptr_amode");
-    int lmassptr_amode[maxd_aspectype][ntot_amode] = {};
-
     int count = 0;
     for (int i = 0; i < ntot_amode; ++i) {
       for (int j = 0; j < maxd_aspectype; ++j) {
-        lspectype_amode[j][i] = lspectype_amode_db[count];
-        lmassptr_amode[j][i] = lmassptr_amode_db[count];
         qcldbrn[j][i] = qcldbrn_1d[count];
         count++;
       }
     }
     const Real air_density = input.get_array("cs")[0];
-
-    const auto numptr_amode_db = input.get_array("numptr_amode");
-    const auto nspec_amode_db = input.get_array("nspec_amode");
 
     Real exp45logsig[mam4::AeroConfig::num_modes()],
         alogsig[mam4::AeroConfig::num_modes()],
@@ -57,12 +46,6 @@ void ccncalc_single_cell(Ensemble *ensemble) {
                             num2vol_ratio_min_nmodes,  // voltonumbhi_amode
                             num2vol_ratio_max_nmodes); // voltonumblo_amode
 
-    int numptr_amode[ntot_amode];
-    int nspec_amode[ntot_amode];
-    for (int i = 0; i < ntot_amode; ++i) {
-      numptr_amode[i] = numptr_amode_db[i];
-      nspec_amode[i] = nspec_amode_db[i];
-    }
     std::vector<Real> ccn(psat, zero);
     mam4::ndrop::ccncalc(state_q.data(), tair, qcldbrn, qcldbrn_num.data(),
                          air_density, num2vol_ratio_min_nmodes,
