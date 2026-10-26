@@ -93,6 +93,17 @@ void get_input(const Input &input, const std::string &name, const int rows,
   mam4::validation::convert_1d_vector_to_2d_view_device(host, dev);
 }
 
+void set_output(Output &output, const std::string &name, const int size,
+                std::vector<Real> &host, const View1D &dev) {
+  host.resize(size);
+  auto host_view = Kokkos::create_mirror_view(dev);
+  Kokkos::deep_copy(host_view, dev);
+  for (int i = 0; i < size; ++i) {
+    host[i] = host_view[i];
+  }
+  output.set(name, host);
+}
+
 template <int COLS>
 void set_output(Output &output, const std::string &name, const int rows,
                 const int cols, std::vector<Real> &host,
@@ -106,6 +117,19 @@ void set_output(Output &output, const std::string &name, const int rows,
     }
   output.set(name, host);
 }
+
+void set_output(Output &output, const std::string &name, const int rows,
+                const int cols, std::vector<Real> &host, const View2D &dev) {
+  host.resize(rows * cols);
+  auto host_view = Kokkos::create_mirror_view(dev);
+  Kokkos::deep_copy(host_view, dev);
+  for (int j = 0, n = 0; j < cols; ++j)
+    for (int i = 0; i < rows; ++i, ++n) {
+      host[n] = host_view(i, j);
+    }
+  output.set(name, host);
+}
+
 } // namespace
 
 void ma_convproc_tend(Ensemble *ensemble) {

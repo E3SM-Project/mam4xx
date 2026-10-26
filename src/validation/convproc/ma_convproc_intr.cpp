@@ -88,6 +88,10 @@ void ma_convproc_intr(Ensemble *ensemble) {
     const bool convproc_do_gas =
         std::round(input.get_array("convproc_do_gas")[0]);
 
+    const mam4::ConvProc::Config convproc_config;
+    const int *species_class = convproc_config.species_class;
+    const int *mmtoo_prevap_resusp = convproc_config.mmtoo_prevap_resusp;
+
     // dt is an array with one element for single column
     const auto dt_array = input.get_array("dt");
     const Real dt = dt_array[0];
