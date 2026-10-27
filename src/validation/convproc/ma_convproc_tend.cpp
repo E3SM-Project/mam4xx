@@ -166,12 +166,12 @@ void ma_convproc_tend(Ensemble *ensemble) {
     }
 
     // Fetch 1D input arrays
-    std::vector<Real> temperature_host, pmid_host, mu_host, md_host,
-        du_host, eu_host, ed_host, dp_host, dpdry_host, cldfrac_host,
-        icwmr_host, rprd_host, evapc_host, doconvproc_host, species_class_host,
-        dqdt_host, qsrflx_host;
-    View1D temperature_dev, pmid_dev, mu_dev, md_dev, du_dev, eu_dev,
-        ed_dev, dp_dev, dpdry_dev, cldfrac_dev, icwmr_dev, rprd_dev, evapc_dev;
+    std::vector<Real> temperature_host, pmid_host, mu_host, md_host, du_host,
+        eu_host, ed_host, dp_host, dpdry_host, cldfrac_host, icwmr_host,
+        rprd_host, evapc_host, doconvproc_host, species_class_host, dqdt_host,
+        qsrflx_host;
+    View1D temperature_dev, pmid_dev, mu_dev, md_dev, du_dev, eu_dev, ed_dev,
+        dp_dev, dpdry_dev, cldfrac_dev, icwmr_dev, rprd_dev, evapc_dev;
     ViewBool1D doconvproc_dev("doconvproc", pcnst);
     ViewInt1D species_class_dev("species_class", pcnst);
 
@@ -203,7 +203,8 @@ void ma_convproc_tend(Ensemble *ensemble) {
       Kokkos::deep_copy(doconvproc_dev, doconvproc_host_view);
 
       auto species_class_arr = input.get_array("species_class");
-      auto species_class_host_view = Kokkos::create_mirror_view(species_class_dev);
+      auto species_class_host_view =
+          Kokkos::create_mirror_view(species_class_dev);
       for (int i = 0; i < pcnst; ++i)
         species_class_host_view[i] = (int)species_class_arr[i];
       Kokkos::deep_copy(species_class_dev, species_class_host_view);
@@ -233,7 +234,7 @@ void ma_convproc_tend(Ensemble *ensemble) {
               temperature[nlev], dqdt[nlev][pcnst], qsrflx[pcnst][nsrflx];
           int species_class[pcnst];
           bool doconvproc[pcnst];
-          
+
           // Copy 1D arrays from device to stack
           for (int i = 0; i < nlev; ++i) {
             cldfrac[i] = cldfrac_dev[i];
@@ -248,13 +249,13 @@ void ma_convproc_tend(Ensemble *ensemble) {
             ed[i] = ed_dev[i];
             dp[i] = dp_dev[i];
           }
-          
+
           // Copy boolean/integer arrays from device
           for (int i = 0; i < pcnst; ++i) {
             doconvproc[i] = doconvproc_dev[i];
             species_class[i] = species_class_dev[i];
           }
-          
+
           // Initialize output arrays
           for (int i = 0; i < nlev; ++i)
             for (int j = 0; j < pcnst; ++j)
@@ -262,14 +263,14 @@ void ma_convproc_tend(Ensemble *ensemble) {
           for (int i = 0; i < pcnst; ++i)
             for (int j = 0; j < nsrflx; ++j)
               qsrflx[i][j] = 0.0;
-          
+
           // Create view from stack array for dqdt
           auto dqdt_view = Kokkos::View<Real **, Kokkos::MemoryUnmanaged>(
               &dqdt[0][0], nlev, pcnst);
-          
+
           Real xx_mfup_max, xx_wcldbase;
           int xx_kcldbase;
-          
+
           mam4::convproc::ma_convproc_tend(
               team, aero_species, scratch1Dviews, nlev, convtype, dt,
               temperature, pmid, qnew_dev, du, eu, ed, dp, dpdry, ktop, kbot,
@@ -288,7 +289,7 @@ void ma_convproc_tend(Ensemble *ensemble) {
               qsrflx_dev(i, j) = qsrflx[i][j];
             }
           }
-          
+
           scalars_dev[0] = xx_mfup_max;
           scalars_dev[1] = xx_wcldbase;
           scalars_dev[2] = xx_kcldbase;

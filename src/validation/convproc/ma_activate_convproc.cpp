@@ -43,7 +43,7 @@ void ma_activate_convproc(Ensemble *ensemble) {
   // Run the ensemble.
   ensemble->process([=](const Input &input, Output &output) {
     const int pcnst_extd = mam4::ConvProc::pcnst_extd;
-    
+
     // Fetch scalar parameters from array format
     std::vector<Real> f_ent_arr = input.get_array("f_ent");
     const Real f_ent = f_ent_arr[0];
@@ -70,10 +70,9 @@ void ma_activate_convproc(Ensemble *ensemble) {
     auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
         team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
-          mam4::convproc::ma_activate_convproc(aero_species, conu_dev.data(),
-                                               dconudt_dev.data(), f_ent, dt_u,
-                                               wup, tair, rhoair, kk,
-                                               kactfirst);
+          mam4::convproc::ma_activate_convproc(
+              aero_species, conu_dev.data(), dconudt_dev.data(), f_ent, dt_u,
+              wup, tair, rhoair, kk, kactfirst);
         });
     Kokkos::fence();
 
