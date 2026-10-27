@@ -1,6 +1,6 @@
 #ifndef MAM4XX_NDROP_HPP
 #define MAM4XX_NDROP_HPP
-// #define MAM4XX_USE_ANALYTICAL_QSAT
+#define MAM4XX_USE_ANALYTICAL_QSAT
 
 #include "aero_config.hpp"
 #include "aero_model.hpp"

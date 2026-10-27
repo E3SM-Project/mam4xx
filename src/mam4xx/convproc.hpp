@@ -76,7 +76,6 @@ void ndrop_int(Real exp45logsig[AeroConfig::num_modes()],
                Real alogsig[AeroConfig::num_modes()], Real &aten) {
   const Real surften = 0.076;
   const Real t0 = 273; // reference temperature [K]
-  const Real one = 1;
   const Real two = 2;
   const Real one_thousand = 1e3;
   for (int imode = 0; imode < AeroConfig::num_modes(); ++imode) {
