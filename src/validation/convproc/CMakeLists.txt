@@ -31,7 +31,6 @@ add_executable(convproc_driver convproc_driver.cpp
                ma_convproc_tend.cpp
                ma_convproc_dp_intr.cpp
                ma_convproc_intr.cpp
-               compute_tendencies.cpp
                ma_resuspend_convproc.cpp)
 target_link_libraries(convproc_driver skywalker;validation)
 
@@ -78,7 +77,6 @@ foreach (input
          ma_convproc_dp_intr_ts_3
          ma_convproc_intr_ts_3
          ma_convproc_intr_only_aero_ts_3
-         compute_tendencies
          )
 
   # copy the baseline file into place; is the skywalker file produced by fortran code?
