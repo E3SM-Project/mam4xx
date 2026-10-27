@@ -513,13 +513,8 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
   if (smax_prescribed <= zero) {
     return;
   }
-  // FIXME: contanst are producing diff.
-  // Use E3SM physical constants (SHR_CONST_AVOGAD * SHR_CONST_BOLTZ)
-  const Real r_universal = 8314.467591;
-  const Real rair = r_universal / (Constants::molec_weight_dry_air * 1000.0);
-  const Real rh2o = r_universal / (Constants::molec_weight_h2o * 1000.0);
-  // const Real rair = Constants::r_gas_dry_air;
-  // const Real rh2o = Constants::r_gas_h2o_vapor;
+  const Real rair = Constants::r_gas_dry_air;
+  const Real rh2o = Constants::r_gas_h2o_vapor;
   // latent heat of evaporation [J/kg]
   const Real latvap = Constants::latent_heat_evap;
   // specific heat of dry air [J/kg/K]

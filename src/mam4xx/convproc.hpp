@@ -1859,9 +1859,6 @@ ma_activate_convproc(const AeroSpeciesView &aero_species, SubView conu,
   Real alogsig[ntot_amode];
   Real aten;
   ndrop_od::ndrop_int(exp45logsig, alogsig, aten);
-  // , 
-    // num2vol_ratio_min_nmodes,
-                      // num2vol_ratio_max_nmodes);
   // The uniform or peak supersat value (as 0-1 fraction = percent*0.01)
   // BAD_CONSTANT - need a reference for this.
   const Real activate_smaxmax = 0.003;
