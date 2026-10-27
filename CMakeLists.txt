@@ -10,6 +10,21 @@ option(MAM4XX_ENABLE_SKYWALKER "Enable Skywalker cross validation" ON)
 option(MAM4XX_ENABLE_TESTS     "Enable unit tests" ON)
 option(MAM4XX_EVAL_DIAGNOSTICS "Enable evaluation diagnostics" OFF)
 
+set(MAM4XX_GAS_CHEMISTRY_SOLVER legacy CACHE STRING
+    "Gas-chemistry solver (legacy or direct)")
+set_property(CACHE MAM4XX_GAS_CHEMISTRY_SOLVER PROPERTY STRINGS legacy direct)
+
+if (MAM4XX_GAS_CHEMISTRY_SOLVER STREQUAL "legacy")
+  set(MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY 1)
+elseif (MAM4XX_GAS_CHEMISTRY_SOLVER STREQUAL "direct")
+  set(MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY 0)
+else()
+  message(FATAL_ERROR
+          "Invalid MAM4XX_GAS_CHEMISTRY_SOLVER: ${MAM4XX_GAS_CHEMISTRY_SOLVER} "
+          "(must be legacy or direct)")
+endif()
+message(STATUS "Using ${MAM4XX_GAS_CHEMISTRY_SOLVER} gas-chemistry solver")
+
 # Single or double precision?
 if (CMAKE_VERSION GREATER_EQUAL 4.2)
   set(CACHE{MAM4XX_PRECISION}   TYPE STRING HELP "Precision of Real numbers (single, [double])" VALUE double)

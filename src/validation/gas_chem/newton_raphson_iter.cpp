@@ -3,11 +3,12 @@
 // National Technology & Engineering Solutions of Sandia, LLC (NTESS)
 // SPDX-License-Identifier: BSD-3-Clause
 
-#include <mam4xx/mam4.hpp>
+#include <mam4xx/gas_chem.hpp>
 #include <validation.hpp>
 
 using namespace skywalker;
 using namespace mam4::gas_chemistry;
+using View1DHost = typename mam4::HostType::view_1d<Real>;
 
 void newton_raphson_iter(Ensemble *ensemble) {
 
@@ -26,21 +27,20 @@ void newton_raphson_iter(Ensemble *ensemble) {
     std::vector<Real> max_delta(clscnt4, zero);
 
     Real epsilon[clscnt4] = {};
-    imp_slv_inti(epsilon);
+    legacy::imp_slv_inti(epsilon);
 
-    const bool factor[itermax] = {true};
+    const bool factor[legacy::itermax] = {true};
     bool converged[clscnt4] = {true};
     bool convergence = false;
 
-    newton_raphson_iter(dti, lin_jac.data(), lrxt.data(),
-                        lhet.data(),           // & ! in
-                        iter_invariant.data(), //              & ! in
-                        factor, lsol,
-                        solution.data(),        //              & ! inout
-                        converged, convergence, //         & ! out
-                        prod.data(), loss.data(), max_delta.data(),
-                        // work arrays
-                        epsilon);
+    View1DHost lsol_host("lsol", lsol.size());
+    for (std::size_t i = 0; i < lsol.size(); ++i)
+      lsol_host(i) = lsol[i];
+
+    legacy::newton_raphson_iter(
+        dti, lin_jac.data(), lrxt.data(), lhet.data(), iter_invariant.data(),
+        factor, lsol_host, solution.data(), converged, convergence, prod.data(),
+        loss.data(), max_delta.data(), epsilon);
 
     std::vector<Real> converged_out;
     for (int i = 0; i < clscnt4; ++i) {
@@ -59,6 +59,8 @@ void newton_raphson_iter(Ensemble *ensemble) {
       convergence_out.push_back(0);
     }
 
+    for (std::size_t i = 0; i < lsol.size(); ++i)
+      lsol[i] = lsol_host(i);
     output.set("lsol", lsol);
     output.set("solution", solution);
     output.set("converged", converged_out);
