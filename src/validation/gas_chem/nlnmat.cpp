@@ -3,7 +3,7 @@
 // National Technology & Engineering Solutions of Sandia, LLC (NTESS)
 // SPDX-License-Identifier: BSD-3-Clause
 
-#include <mam4xx/mam4.hpp>
+#include <mam4xx/gas_chem.hpp>
 #include <validation.hpp>
 
 using namespace skywalker;
@@ -16,7 +16,7 @@ void nlnmat(Ensemble *ensemble) {
     std::vector<Real> mat(nzcnt, zero);
     const auto lmat = input.get_array("lmat");
     const auto dti = input.get_array("dti")[0];
-    nlnmat(mat.data(), lmat.data(), dti);
+    legacy::nlnmat(mat.data(), lmat.data(), dti);
 
     output.set("mat", mat);
   });

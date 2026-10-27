@@ -4,28 +4,26 @@
 #include "gas_chem_mechanism.hpp"
 #include "mam4_math.hpp"
 
-#include <ekat_kernel_assert.hpp>
-
 namespace mam4 {
-
 namespace gas_chemistry {
 
-// BAD CONSTANTs
-constexpr int itermax = 11;
-const Real rel_err = 1.0e-3;
-// NOTE: high_rel_err is unused currently
-// const Real high_rel_err = 1.0e-4;
-const int max_time_steps = 1000;
-
 enum class ImpSolOutcome {
-  Converged,
-  ConvergedAfterRetry,
-  InvalidInput,
-  NonfiniteIterate,
-  CutLimitExhausted,
-  MaximumStepsExhausted
+  // Values 0-5 retain the existing EAMxx legacy diagnostic encoding.
+  Converged = 0,
+  ConvergedAfterRetry = 1,
+  InvalidInput = 2,
+  NonfiniteIterate = 3,
+  CutLimitExhausted = 4,
+  MaximumStepsExhausted = 5,
+  // Direct-solver failures extend that encoding without reusing legacy codes.
+  NonfiniteResult = 6,
+  UnsafeDenominator = 7,
+  NegativeResult = 8
 };
 
+// Accounting for one requested chemistry interval. Intervals are in seconds;
+// counts are nonnegative integers. A failed direct solve accepts zero steps
+// and zero time. Legacy failures may retain successful internal substeps.
 struct ImpSolResult {
   ImpSolOutcome outcome = ImpSolOutcome::InvalidInput;
   int failed_attempts = 0;
@@ -45,19 +43,32 @@ struct ImpSolResult {
   }
 };
 
+// temperature is in K; mtot and invariants contain number densities in
+// molecules cm^-3. The three expressions below return effective bimolecular
+// coefficients in cm^3 molecule^-1 s^-1, before adjrxt applies oxidant
+// densities.
 KOKKOS_INLINE_FUNCTION
 void usrrxt(Real rxt[rxntot], // inout
             const Real temperature, const Real invariants[nfs], const Real mtot,
             const int usr_HO2_HO2_ndx, const int usr_DMS_OH_ndx,
             const int usr_SO2_OH_ndx, const int inv_h2o_ndx) {
 
-  /*-----------------------------------------------------------------
-   ... ho2 + ho2 --> h2o2
-   note: this rate involves the water vapor number density
-  -----------------------------------------------------------------*/
   const Real one = 1.0;
+
+  // R1: HO2 + HO2 -> H2O2
+  // k1(T,M,H2O) = (3.5e-13*exp(430/T) + 1.7e-33*M*exp(1000/T))
+  //                * (1 + 1.4e-21*[H2O]*exp(2200/T)).
+  // adjrxt later forms the completed H2O2 source k1*[HO2]^2/M.
+  // ko and kinf are additive contributions to k1 [cm^3 molecule^-1 s^-1];
+  // fc is the dimensionless enhancement due to water vapor.
+  // Rate expression matches Sander et al. (2006), JPL Publication 06-2,
+  // Table 1-1 and note B13 (pp. 1-9, 1-44--1-45); see references in
+  // gas_chem_mechanism.hpp. The evaluation also includes O2 as a product;
+  // only H2O2 production is retained in this reduced mechanism.
+  // B13 attributes the water enhancement to Lii, Sauer, and Gordon (1981),
+  // J. Phys. Chem. 85, 2833-2834, and Kircher and Sander (1984),
+  // J. Phys. Chem. 88, 2082-2091. The code was ported from mo_usrrxt.F90.
   if (usr_HO2_HO2_ndx > 0) {
-    // BAD CONSTANT
     const Real ko = 3.5e-13 * mam4::exp(430.0 / temperature);
     const Real kinf = 1.7e-33 * mtot * mam4::exp(1000. / temperature);
     const Real fc = one + 1.4e-21 * invariants[inv_h2o_ndx] *
@@ -65,30 +76,178 @@ void usrrxt(Real rxt[rxntot], // inout
     rxt[usr_HO2_HO2_ndx] = (ko + kinf) * fc;
   }
 
-  /*-----------------------------------------------------------------
-       ... DMS + OH  --> .5 * SO2
-   -----------------------------------------------------------------*/
+  // R5: DMS + OH -> 0.5 SO2 + 0.5 HO2
+  // k5(T,M) = 1.7e-42*exp(7810/T)*M*0.21
+  //             / (1 + 5.5e-31*exp(7460/T)*M*0.21).
+  // The literal 0.21 is the legacy mechanism's fixed O2 mixing fraction.
+  // M*0.21 is the prescribed O2 number density; ko is dimensionless.
+  // adjrxt later forms lambda5 = k5*[OH]; SO2 receives 0.5*lambda5*q_DMS.
+  // Ported from legacy EAM mo_usrrxt.F90. JPL Publication 19-5, Table 1I,
+  // note I20, evaluates the OH-addition channel but recommends a different
+  // rate expression. A literature source for this legacy fit and its lumped
+  // 0.5 SO2 yield has not been verified; I20 is not a citation for either.
+  // JPL 06-2, note I19, also used [O2] in the denominator, but with different
+  // coefficients. That shared form does not establish this fit's provenance.
   if (usr_DMS_OH_ndx > 0) {
-    // BAD CONSTANT
     const Real ko =
         one + 5.5e-31 * mam4::exp(7460. / temperature) * mtot * 0.21;
     rxt[usr_DMS_OH_ndx] =
         1.7e-42 * mam4::exp(7810. / temperature) * mtot * 0.21 / ko;
   }
 
-  /*-----------------------------------------------------------------
-         ... SO2 + OH  --> SO4  (REFERENCE?? - not Liao)
-  -----------------------------------------------------------------*/
+  // R3: SO2 + OH -> H2SO4
+  // fc = 3.0e-31*(300/T)^3.3, ko = fc*M/(1 + fc*M/1.5e-12),
+  // k3(T,M) = ko * 0.6^(1/(1 + log10(fc*M/1.5e-12)^2)).
+  // fc is the low-pressure coefficient [cm^6 molecule^-2 s^-1]; fc*M,
+  // ko, and the high-pressure limit 1.5e-12 have units cm^3 molecule^-1 s^-1.
+  // The ratio inside log10 and the broadening multiplier are dimensionless.
+  // adjrxt later forms lambda3 = k3*[OH], which transfers SO2 to H2SO4.
+  // Rate coefficients and the 0.6 falloff expression match DeMore et al.
+  // (1997), JPL Publication 97-4, Table 2, note I4 and the table's falloff
+  // formula (p. 126). That evaluation describes OH + SO2 + M -> HOSO2 + M;
+  // H2SO4 here is the lumped downstream product, not the elementary product.
+  // I4 cites Wine et al. (1984), J. Phys. Chem. 88, 2095-2104,
+  // doi:10.1021/j150654a031, among the underlying experimental datasets.
+  // The implemented coefficients are an evaluated synthesis, not a direct
+  // transcription of that single laboratory study.
   if (usr_SO2_OH_ndx > 0) {
-    // BAD CONSTANT
     const Real fc = 3.0e-31 * mam4::pow(300. / temperature, 3.3);
     const Real ko = fc * mtot / (one + fc * mtot / 1.5e-12);
     rxt[usr_SO2_OH_ndx] =
         ko *
         mam4::pow(0.6, one / (one + square(mam4::log10(fc * mtot / 1.5e-12))));
   }
-
 } // usrrxt
+
+namespace legacy {
+
+// BAD CONSTANTs
+constexpr int itermax = 11;
+const Real rel_err = 1.0e-3;
+// NOTE: high_rel_err is unused currently
+// const Real high_rel_err = 1.0e-4;
+const int max_time_steps = 1000;
+
+using ImpSolOutcome = gas_chemistry::ImpSolOutcome;
+using ImpSolResult = gas_chemistry::ImpSolResult;
+
+// NOTE: at this point we are taking RHS units of (maybe) [1/s] to [s]
+// and the units are internally consistent
+KOKKOS_INLINE_FUNCTION
+void lu_fac(Real lu[nzcnt]) {
+  const Real one = 1;
+  lu[0] = one / lu[0];
+  lu[1] = one / lu[1];
+  lu[3] = one / lu[3];
+  lu[5] = one / lu[5];
+  lu[6] = one / lu[6];
+  lu[7] = one / lu[7];
+  lu[8] = one / lu[8];
+  lu[9] = one / lu[9];
+  lu[10] = one / lu[10];
+  lu[11] = one / lu[11];
+  lu[12] = one / lu[12];
+  lu[13] = one / lu[13];
+  lu[14] = one / lu[14];
+  lu[15] = one / lu[15];
+  lu[16] = one / lu[16];
+  lu[17] = one / lu[17];
+  lu[18] = one / lu[18];
+  lu[19] = one / lu[19];
+  lu[20] = one / lu[20];
+  lu[21] = one / lu[21];
+  lu[22] = one / lu[22];
+  lu[23] = one / lu[23];
+  lu[24] = one / lu[24];
+  lu[25] = one / lu[25];
+  lu[26] = one / lu[26];
+  lu[27] = one / lu[27];
+  lu[28] = one / lu[28];
+  lu[29] = one / lu[29];
+  lu[30] = one / lu[30];
+  lu[31] = one / lu[31];
+} // lu_fac
+
+// TODO: again, the units for b[1:2] look like they could be inconsistent
+// lu = sys_jac [s]--mostly, maybe?; when passed in within gas_chem.hpp
+// b = forcing [1/s]--maybe; when passed in from gas_chem.hpp
+KOKKOS_INLINE_FUNCTION
+void lu_slv(Real lu[nzcnt], Real b[clscnt4]) {
+  b[29] *= lu[31];
+  b[28] *= lu[30];
+  b[27] *= lu[29];
+  b[26] *= lu[28];
+  b[25] *= lu[27];
+  b[24] *= lu[26];
+  b[23] *= lu[25];
+  b[22] *= lu[24];
+  b[21] *= lu[23];
+  b[20] *= lu[22];
+  b[19] *= lu[21];
+  b[18] *= lu[20];
+  b[17] *= lu[19];
+  b[16] *= lu[18];
+  b[15] *= lu[17];
+  b[14] *= lu[16];
+  b[13] *= lu[15];
+  b[12] *= lu[14];
+  b[11] *= lu[13];
+  b[10] *= lu[12];
+  b[9] *= lu[11];
+  b[8] *= lu[10];
+  b[7] *= lu[9];
+  b[6] *= lu[8];
+  b[5] *= lu[7];
+  b[4] *= lu[6];
+  b[3] *= lu[5];
+  b[2] -= lu[4] * b[3];
+  b[2] *= lu[3];
+  // the above 2 lines are equivalent to b[2] = (b[2] - (lu[4] * b[3])) * lu[3]
+  b[1] -= lu[2] * b[2];
+  b[1] *= lu[1];
+  // the above 2 lines are equivalent to b[1] = (b[1] - (lu[2] * b[2])) * lu[1]
+  b[0] *= lu[0];
+} // lu_slv
+
+// TODO: the below calculations appear to have inconsistent units for
+// mat[0, 2, 3, 5]
+// NOTE: it's *possible* we could be ok, if the odd-looking sums in linmat()
+// turn out to be ok
+KOKKOS_INLINE_FUNCTION
+void nlnmat(Real mat[nzcnt], const Real lmat[nzcnt], const Real dti) {
+  mat[0] = lmat[0] - dti;
+  mat[1] = lmat[1] - dti;
+  mat[2] = lmat[2];
+  mat[3] = lmat[3] - dti;
+  mat[4] = lmat[4];
+  mat[5] = lmat[5] - dti;
+  mat[6] = lmat[6] - dti;
+  mat[7] = lmat[7] - dti;
+  mat[8] = lmat[8] - dti;
+  mat[9] = lmat[9] - dti;
+  mat[10] = lmat[10] - dti;
+  mat[11] = lmat[11] - dti;
+  mat[12] = lmat[12] - dti;
+  mat[13] = lmat[13] - dti;
+  mat[14] = lmat[14] - dti;
+  mat[15] = lmat[15] - dti;
+  mat[16] = lmat[16] - dti;
+  mat[17] = lmat[17] - dti;
+  mat[18] = lmat[18] - dti;
+  mat[19] = lmat[19] - dti;
+  mat[20] = lmat[20] - dti;
+  mat[21] = lmat[21] - dti;
+  mat[22] = lmat[22] - dti;
+  mat[23] = lmat[23] - dti;
+  mat[24] = lmat[24] - dti;
+  mat[25] = lmat[25] - dti;
+  mat[26] = lmat[26] - dti;
+  mat[27] = lmat[27] - dti;
+  mat[28] = lmat[28] - dti;
+  mat[29] = lmat[29] - dti;
+  mat[30] = lmat[30] - dti;
+  mat[31] = lmat[31] - dti;
+} // nlnmat
 
 // initialize the solver (error tolerance)
 KOKKOS_INLINE_FUNCTION
@@ -492,6 +651,11 @@ imp_sol(VectorType &base_sol, // inout - species mixing ratios [vmr]
   return result;
 } // imp_sol
 
+} // namespace legacy
+
 } // namespace gas_chemistry
 } // namespace mam4
+
+#include "gas_chem_direct.hpp"
+
 #endif
