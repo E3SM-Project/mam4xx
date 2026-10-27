@@ -168,13 +168,13 @@ constexpr Real estbl_tmin = 127.16;
 constexpr Real estbl_tmax = 375.16;
 constexpr int estbl_plen = 250; // ceiling(tmax - tmin) + 2
 
-// Generate the saturation vapor pressure table matching wv_sat_init in E3SM wv_saturation.F90:
+// Generate the saturation vapor pressure table matching wv_sat_init in E3SM
+// wv_saturation.F90:
 //   do i = 1, plenest
 //      estbl(i) = svp_trans(tmin + real(i-1, r8))
 //   end do
 template <typename TableType>
-KOKKOS_INLINE_FUNCTION
-void init_estbl(TableType &estbl) {
+KOKKOS_INLINE_FUNCTION void init_estbl(TableType &estbl) {
   for (int i = 0; i < estbl_plen; ++i) {
     estbl[i] = wv_sat_methods::wv_sat_svp_trans(estbl_tmin + Real(i));
   }
@@ -183,8 +183,7 @@ void init_estbl(TableType &estbl) {
 // Does linear interpolation from nearest values found in table (estbl),
 // matching elemental function estblf(t) in E3SM wv_saturation.F90.
 template <typename TableType>
-KOKKOS_INLINE_FUNCTION
-Real estblf(const Real t, const TableType &estbl) {
+KOKKOS_INLINE_FUNCTION Real estblf(const Real t, const TableType &estbl) {
   // Number of table entries above tmin
   const Real t_tmp = mam4::max(mam4::min(t, estbl_tmax) - estbl_tmin, 0.0);
   // Corresponding index (0-based): int(t_tmp)
