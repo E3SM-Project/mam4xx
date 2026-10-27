@@ -1,5 +1,6 @@
 #ifndef MAM4XX_NDROP_HPP
 #define MAM4XX_NDROP_HPP
+#define MAM4XX_USE_ANALYTICAL_QSAT
 
 #include "aero_config.hpp"
 #include "aero_model.hpp"
@@ -352,6 +353,9 @@ void ccncalc(const Real state_q[aero_model::pcnst], const Real tair,
 
 } /// ccncalc
 
+// FIXME: We need to decide whether to use linear interpolation or an analytical expression to compute SVP.
+// I would rather use the analytical expression.
+#if defined(MAM4XX_USE_ANALYTICAL_QSAT)
 KOKKOS_INLINE_FUNCTION
 void qsat(const Real t, const Real p, Real &svp, Real &qsat) {
   //  ------------------------------------------------------------------
@@ -375,6 +379,24 @@ void qsat(const Real t, const Real p, Real &svp, Real &qsat) {
   // Ensures returned svp is consistent with limiters on qsat.
   svp = mam4::min(svp, p);
 } // qsat
+#else
+// Does linear interpolation from nearest values found in table (estbl),
+// matching elemental function estblf(t) in E3SM wv_saturation.F90.
+
+KOKKOS_INLINE_FUNCTION
+void qsat(const Real t, const Real p, Real &es, Real &qs) {
+  // Saturation vapor pressure table initialized matching E3SM Fortran wv_saturation.F90 wv_sat_init:
+  //   do i = 1, plenest
+  //      estbl(i) = svp_trans(tmin + real(i-1, r8))
+  //   end do
+  Real estbl[wv_sat_methods::estbl_plen];
+  wv_sat_methods::init_estbl(estbl);
+  es = wv_sat_methods::estblf(t, estbl);
+  qs = wv_sat_methods::wv_sat_svp_to_qsat(es, p);
+  // Ensures returned es is consistent with limiters on qs.
+  es = mam4::min(es, p);
+}
+#endif
 
 KOKKOS_INLINE_FUNCTION
 void ndrop_init(Real exp45logsig[AeroConfig::num_modes()],
@@ -491,7 +513,6 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
   if (smax_prescribed <= zero) {
     return;
   }
-
   const Real rair = Constants::r_gas_dry_air;
   const Real rh2o = Constants::r_gas_h2o_vapor;
   // latent heat of evaporation [J/kg]

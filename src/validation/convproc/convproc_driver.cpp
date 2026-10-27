@@ -45,7 +45,6 @@ void compute_updraft_mixing_ratio(Ensemble *ensemble);
 void ma_convproc_tend(Ensemble *ensemble);
 void ma_convproc_dp_intr(Ensemble *ensemble);
 void ma_convproc_intr(Ensemble *ensemble);
-void compute_tendencies(Ensemble *ensemble);
 
 int main(int argc, char **argv) {
   if (argc == 1) {
@@ -111,8 +110,6 @@ int main(int argc, char **argv) {
       ma_convproc_dp_intr(ensemble);
     } else if (func_name == "convective_processing") {
       ma_convproc_intr(ensemble);
-    } else if (func_name == "compute_tendencies") {
-      compute_tendencies(ensemble);
     } else {
       std::cerr << "Error: Test name not recognized:" << func_name << std::endl;
       exit(1);
