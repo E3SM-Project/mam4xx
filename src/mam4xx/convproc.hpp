@@ -72,52 +72,15 @@ Real faer_resusp_vs_fprec_evap_mpln(const Real fprec_evap, const int) {
 namespace ndrop_od {
 
 KOKKOS_INLINE_FUNCTION
-void qsat(const Real t, const Real p, Real &es, Real &qs) {
-  //  ------------------------------------------------------------------!
-  // ! Purpose:                                                         !
-  // !   Look up and return saturation vapor pressure from precomputed  !
-  // !   table, then calculate and return saturation specific humidity. !
-  // !   Optionally return various temperature derivatives or enthalpy  !
-  // !   at saturation.                                                 !
-  // !------------------------------------------------------------------!
-  // Inputs
-  // @param [in] t    ! Temperature
-  // @param [in] p    ! Pressure
-  // Outputs
-  // @param [out] es  ! Saturation vapor pressure
-  // @param [out] qs  ! Saturation specific humidity
-
-  // Note. Fortran code uses a table lookup. In C++ version, we compute directly
-  // from the function.
-  es = wv_sat_methods::wv_sat_svp_trans(t);
-  qs = wv_sat_methods::wv_sat_svp_to_qsat(es, p);
-  // Ensures returned es is consistent with limiters on qs.
-  es = mam4::min(es, p);
-} // qsat
-
-KOKKOS_INLINE_FUNCTION
 void ndrop_int(Real exp45logsig[AeroConfig::num_modes()],
-               Real alogsig[AeroConfig::num_modes()], Real &aten,
-               Real num2vol_ratio_min_nmodes[AeroConfig::num_modes()],
-               Real num2vol_ratio_max_nmodes[AeroConfig::num_modes()]) {
+               Real alogsig[AeroConfig::num_modes()], Real &aten) {
   const Real surften = 0.076;
   const Real t0 = 273; // reference temperature [K]
-  const Real one = 1;
   const Real two = 2;
   const Real one_thousand = 1e3;
   for (int imode = 0; imode < AeroConfig::num_modes(); ++imode) {
     alogsig[imode] = mam4::log(modes(imode).mean_std_dev);
     exp45logsig[imode] = mam4::exp(4.5 * alogsig[imode] * alogsig[imode]);
-
-    // voltonumbhi_amode
-    num2vol_ratio_min_nmodes[imode] =
-        one / conversions::mean_particle_volume_from_diameter(
-                  modes(imode).max_diameter, modes(imode).mean_std_dev);
-    // voltonumblo_amode
-    num2vol_ratio_max_nmodes[imode] =
-        one / conversions::mean_particle_volume_from_diameter(
-                  modes(imode).min_diameter, modes(imode).mean_std_dev);
-
   } // imode
 
   // SHR_CONST_RHOFW   = 1.000e3_R8      ! density of fresh water     ~ kg/m^3
@@ -348,57 +311,6 @@ private:
 public:
   // name -- unique name of the process implemented by this class
   const char *name() const { return "MAM4 convproc"; }
-
-  // init -- initializes the implementation with MAM4's configuration and with
-  // a process-specific configuration.
-  void init(const AeroConfig &aero_config,
-            const Config &convproc_config = Config()) {
-    // Set nucleation-specific config parameters.
-    config_ = convproc_config;
-    Kokkos::resize(scratch1Dviews[q], config_.nlev * aero_model::pcnst);
-    Kokkos::resize(scratch1Dviews[mu], config_.nlev + 1);
-    Kokkos::resize(scratch1Dviews[md], config_.nlev + 1);
-    Kokkos::resize(scratch1Dviews[eudp], config_.nlev);
-    Kokkos::resize(scratch1Dviews[dudp], config_.nlev);
-    Kokkos::resize(scratch1Dviews[eddp], config_.nlev);
-    Kokkos::resize(scratch1Dviews[dddp], config_.nlev);
-    Kokkos::resize(scratch1Dviews[rhoair], config_.nlev);
-    Kokkos::resize(scratch1Dviews[zmagl], config_.nlev);
-    Kokkos::resize(scratch1Dviews[zmagl], config_.nlev);
-    Kokkos::resize(scratch1Dviews[gath], (1 + config_.nlev) * pcnst_extd);
-    Kokkos::resize(scratch1Dviews[chat], (1 + config_.nlev) * pcnst_extd);
-    Kokkos::resize(scratch1Dviews[conu], (1 + config_.nlev) * pcnst_extd);
-    Kokkos::resize(scratch1Dviews[cond], (1 + config_.nlev) * pcnst_extd);
-    Kokkos::resize(scratch1Dviews[dconudt_wetdep],
-                   (1 + config_.nlev) * pcnst_extd);
-    Kokkos::resize(scratch1Dviews[dconudt_activa],
-                   (1 + config_.nlev) * pcnst_extd);
-    Kokkos::resize(scratch1Dviews[fa_u], config_.nlev);
-    Kokkos::resize(scratch1Dviews[dcondt], config_.nlev * pcnst_extd);
-    Kokkos::resize(scratch1Dviews[dcondt_wetdep], config_.nlev * pcnst_extd);
-    Kokkos::resize(scratch1Dviews[dcondt_prevap], config_.nlev * pcnst_extd);
-    Kokkos::resize(scratch1Dviews[dcondt_prevap_hist],
-                   config_.nlev * pcnst_extd);
-    Kokkos::resize(scratch1Dviews[dcondt_resusp], config_.nlev * pcnst_extd);
-    Kokkos::resize(scratch1Dviews[wd_flux], pcnst_extd);
-    Kokkos::resize(scratch1Dviews[sumactiva], pcnst_extd);
-    Kokkos::resize(scratch1Dviews[sumaqchem], pcnst_extd);
-    Kokkos::resize(scratch1Dviews[sumprevap], pcnst_extd);
-    Kokkos::resize(scratch1Dviews[sumprevap_hist], pcnst_extd);
-    Kokkos::resize(scratch1Dviews[sumresusp], pcnst_extd);
-    Kokkos::resize(scratch1Dviews[sumwetdep], pcnst_extd);
-    Kokkos::resize(scratch1Dviews[dqdt], config_.nlev * aero_model::pcnst);
-    Kokkos::resize(scratch1Dviews[qnew], config_.nlev * aero_model::pcnst);
-    Kokkos::resize(scratch1Dviews[dlfdp], config_.nlev);
-    Kokkos::resize(scratch1Dviews[x_ratio], config_.nlev);
-  } // end(init)
-
-  KOKKOS_INLINE_FUNCTION
-  void compute_tendencies(const AeroConfig &config, const ThreadTeam &team,
-                          Real t, Real dt, const Atmosphere &atmosphere,
-                          const Prognostics &prognostics,
-                          const Diagnostics &diagnostics,
-                          const Tendencies &tendencies) const;
 };
 
 namespace convproc {
@@ -1894,10 +1806,7 @@ ma_activate_convproc(const AeroSpeciesView &aero_species, SubView conu,
   Real exp45logsig[ntot_amode];
   Real alogsig[ntot_amode];
   Real aten;
-  Real num2vol_ratio_min_nmodes[ntot_amode];
-  Real num2vol_ratio_max_nmodes[ntot_amode];
-  ndrop_od::ndrop_int(exp45logsig, alogsig, aten, num2vol_ratio_min_nmodes,
-                      num2vol_ratio_max_nmodes);
+  ndrop_od::ndrop_int(exp45logsig, alogsig, aten);
   // The uniform or peak supersat value (as 0-1 fraction = percent*0.01)
   // BAD_CONSTANT - need a reference for this.
   const Real activate_smaxmax = 0.003;
@@ -2893,74 +2802,6 @@ void ma_convproc_intr(
   team.team_barrier();
 }
 } // namespace convproc
-
-// TODO: The ThreadTeam passed to compute_tendencies is not currently used
-// as there are some low-level function that can not be parallel over the
-// column due to the integration like algorithms.  But there are some
-// functions that could be parallel over the column and these need to
-// be teased out and run with the team.
-KOKKOS_INLINE_FUNCTION
-void ConvProc::compute_tendencies(const AeroConfig &config,
-                                  const ThreadTeam &team, Real t, Real dt,
-                                  const Atmosphere &atmosphere,
-                                  const Prognostics &prognostics,
-                                  const Diagnostics &diagnostics,
-                                  const Tendencies &tendencies) const {
-
-  const bool convproc_do_aer = config_.convproc_do_aer;
-  const bool convproc_do_gas = config_.convproc_do_gas;
-  const int ktop = config_.ktop;
-  const int kbot = config_.kbot;
-  int species_class[aero_model::pcnst];
-  for (int i = 0; i < aero_model::pcnst; ++i)
-    species_class[i] = config_.species_class[i];
-  int mmtoo_prevap_resusp[aero_model::pcnst];
-  ;
-  for (int i = 0; i < aero_model::pcnst; ++i)
-    mmtoo_prevap_resusp[i] = config_.mmtoo_prevap_resusp[i];
-
-  const int nlev = atmosphere.num_levels();
-  const Real *temperature = atmosphere.temperature.data();
-  const Real *pmid = atmosphere.pressure.data();
-  // dpdry =  Delta dry-pressure [mb]
-  const Real *dpdry = diagnostics.hydrostatic_dry_dp.data();
-  // dp_frac = Deep conv cloud frac [fraction]
-  const Real *dp_frac = diagnostics.deep_convective_cloud_fraction.data();
-  // Deep cloud convective condensate [kg/kg]
-  const Real *icwmrdp = diagnostics.deep_convective_cloud_condensate.data();
-  // Deep convective precipitation production (grid avg) [kg/kg/s]
-  const Real *rprddp =
-      diagnostics.deep_convective_precipitation_production.data();
-  // Deep convective precipitation evaporation (grid avg) [kg/kg/s]
-  const Real *evapcdp =
-      diagnostics.deep_convective_precipitation_evaporation.data();
-  // Shallow+Deep convective detrainment [kg/kg/s]
-  const Real *dlftot = diagnostics.total_convective_detrainment.data();
-
-  // Next three are "d(massflux)/dp" and are all positive [1/s]
-  const Real *eu = diagnostics.mass_entrain_rate_into_updraft.data();
-  const Real *ed = diagnostics.mass_entrain_rate_into_downdraft.data();
-  const Real *du = diagnostics.mass_detrain_rate_from_updraft.data();
-
-  // Delta pressure between interfaces [mb]
-  const Real *dp = diagnostics.delta_pressure.data();
-
-  // Tracer mixing ratio (TMR) including water vapor [kg/kg]
-  const auto state_q = diagnostics.tracer_mixing_ratio;
-  // Time tendency of tracer mixing ratio (TMR) [kg/kg/s]
-  auto ptend_q = diagnostics.d_tracer_mixing_ratio_dt;
-
-  // Diagnostic values that might be of use but not sure.
-  // ptend_lq is just a flag that signifies if the gas was updated.
-  bool ptend_lq[aero_model::pcnst] = {};
-  // Aerosol wet deposition (interstitial) [kg/m2/s]
-  Real aerdepwetis[aero_model::pcnst] = {};
-  convproc::ma_convproc_intr(
-      team, config.aero_species, scratch1Dviews, convproc_do_aer,
-      convproc_do_gas, nlev, temperature, pmid, dpdry, dt, dp_frac, icwmrdp,
-      rprddp, evapcdp, dlftot, du, eu, ed, dp, ktop, kbot, species_class,
-      mmtoo_prevap_resusp, state_q, ptend_q, ptend_lq, aerdepwetis);
-}
 
 // Utility functions for convproc scratch array management
 namespace convproc {

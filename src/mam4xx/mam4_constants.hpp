@@ -30,9 +30,9 @@ static constexpr double pi = 3.14159265358979323846264;
 /// 1/6th of the pi (required for lognormally distributed particle size/volume calculations)
 static constexpr double pi_sixth = pi/6;
 /// Avogadro's constant [#/mol]
-static constexpr double avogadro = 6.022214076e23;
+static constexpr double avogadro = 6.022140e23;
 /// Boltzmann's constant [J/K]
-static constexpr double boltzmann = 1.380649e-23;
+static constexpr double boltzmann = 1.38065e-23;
 /// @}
 
 /** @defgroup Physical_constants_single_precision_allowed Physical constants (working_precision)

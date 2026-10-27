@@ -133,6 +133,12 @@ void ma_convproc_intr(Ensemble *ensemble) {
     get_input(input, "state_t", nlev, temperature_host, temperature_dev);
     get_input(input, "state_pmid", nlev, pmid_host, pmid_dev);
     get_input(input, "state_pdeldry", nlev, dpdry_host, dpdry_dev);
+    for (int i = 0; i < nlev; ++i) {
+      dpdry_host[i] /= 100.0;
+    }
+    auto dpdry_host_view = View1DHost((Real *)dpdry_host.data(), nlev);
+    Kokkos::deep_copy(dpdry_dev, dpdry_host_view);
+
     get_input(input, "dp_frac", nlev, dp_frac_host, dp_frac_dev);
     get_input(input, "icwmrdp", nlev, icwmrdp_host, icwmrdp_dev);
     get_input(input, "rprddp", nlev, rprddp_host, rprddp_dev);
@@ -148,13 +154,7 @@ void ma_convproc_intr(Ensemble *ensemble) {
     View2D state_q_dev, ptend_q_dev;
 
     get_input(input, "state_q", nlev, pcnst, state_q_host, state_q_dev);
-
-    // Allocate output array for ptend_q
-    View1D ptend_q_col_view("ptend_q", nlev * pcnst);
-    ptend_q_dev = View2D(ptend_q_col_view.data(), nlev, pcnst);
-
-    // Initialize ptend_q to zero
-    Kokkos::deep_copy(ptend_q_dev, 0.0);
+    get_input(input, "ptend_q_init", nlev, pcnst, ptend_q_host, ptend_q_dev);
 
     // Allocate and initialize output arrays
     std::vector<Real> aerdepwetis_host;
@@ -162,8 +162,12 @@ void ma_convproc_intr(Ensemble *ensemble) {
     get_input(input, "aerdepwetis_init", pcnst, aerdepwetis_host,
               aerdepwetis_dev);
 
+    std::vector<Real> ptend_lq_init_host;
+    View1D ptend_lq_init_dev;
+    get_input(input, "ptend_lq_init", pcnst, ptend_lq_init_host,
+              ptend_lq_init_dev);
+
     Kokkos::View<bool *> ptend_lq_dev("ptend_lq", pcnst);
-    Kokkos::deep_copy(ptend_lq_dev, false);
 
     // Allocate work array for scratch1Dviews
     const int work_size = mam4::convproc::get_scratch1d_work_len(nlev);
@@ -190,16 +194,9 @@ void ma_convproc_intr(Ensemble *ensemble) {
           const mam4::ConvProc::Config convproc_config;
           const int *species_class = convproc_config.species_class;
           const int *mmtoo_prevap_resusp = convproc_config.mmtoo_prevap_resusp;
-          // Initialize output arrays based on species_class and flags
-          // ptend_lq[i] is true if species i should have a tendency:
-          //   - aerosol species when convproc_do_aer is true
-          //   - gas species when convproc_do_gas is true
+          // Initialize output arrays based on ptend_lq_init and aerdepwetis_init
           for (int i = 0; i < pcnst; ++i) {
-            ptend_lq[i] =
-                (species_class[i] == mam4::ConvProc::species_class::aerosol &&
-                 convproc_do_aer) ||
-                (species_class[i] == mam4::ConvProc::species_class::gas &&
-                 convproc_do_gas);
+            ptend_lq[i] = Kokkos::round(ptend_lq_init_dev[i]) > 0;
             aerdepwetis[i] = aerdepwetis_dev[i];
           }
           // Call the function
