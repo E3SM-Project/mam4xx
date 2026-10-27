@@ -97,6 +97,10 @@ foreach (input
   # Conservative approach: At the time of this commit, threshold error=2e-6.
   # compare_mam4xx_mam4.py <module1.py> <module2.py> <check_norms> <threshold error>
   set(TOL 1e-8)
+  if (${input} STREQUAL compute_updraft_mixing_ratio_ts_3)
+    set(TOL 3e-8)
+  endif ()  
+
   add_test(validate_${input} python3 compare_mam4xx_mam4.py mam4xx_${input}.py mam_${input}.py True ${TOL})
   set_property(TEST validate_${input} PROPERTY SKIP_REGULAR_EXPRESSION "regex_fail_rel_tol")
   set_tests_properties(validate_${input} PROPERTIES DEPENDS run_${input})

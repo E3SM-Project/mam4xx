@@ -382,38 +382,6 @@ void qsat(const Real t, const Real p, Real &svp, Real &qsat) {
 #else
 // Does linear interpolation from nearest values found in table (estbl),
 // matching elemental function estblf(t) in E3SM wv_saturation.F90.
-template <typename TableType>
- KOKKOS_INLINE_FUNCTION
-Real estblf(const Real t, const TableType &estbl) {
-  return wv_sat_methods::estblf(t, estbl);
-}
-
-KOKKOS_INLINE_FUNCTION
-Real estblf(const Real t) {
-  // Direct calculation of mixed-phase saturation vapor pressure matching E3SM svp_trans(t)
-  return wv_sat_methods::wv_sat_svp_trans(t);
-}
-
-template <typename TableType>
-KOKKOS_INLINE_FUNCTION
-void qsat(const Real t, const Real p, Real &es, Real &qs, const TableType &estbl) {
-   // Inputs
-   // @param [in] t    ! Temperature
-   // @param [in] p    ! Pressure
-  // @param [in] estbl! Precomputed saturation vapor pressure table
-   // Outputs
-   // @param [out] es  ! Saturation vapor pressure
-   // @param [out] qs  ! Saturation specific humidity
- 
-  // Note. Fortran code uses a table lookup. In C++ version, we compute directly
-  // from the function.
-  es = wv_sat_methods::wv_sat_svp_trans(t);
-  // In E3SM Fortran wv_saturation.F90, es is calculated via 1-degree lookup table estblf.
-  es = estblf(t, estbl);
-  qs = wv_sat_methods::wv_sat_svp_to_qsat(es, p);
-  // Ensures returned es is consistent with limiters on qs.
-  es = mam4::min(es, p);
- } // qsat
 
 KOKKOS_INLINE_FUNCTION
 void qsat(const Real t, const Real p, Real &es, Real &qs) {
@@ -423,9 +391,13 @@ void qsat(const Real t, const Real p, Real &es, Real &qs) {
   //   end do
   Real estbl[wv_sat_methods::estbl_plen];
   wv_sat_methods::init_estbl(estbl);
-  qsat(t, p, es, qs, estbl);
+  es = wv_sat_methods::estblf(t, estbl);
+  qs = wv_sat_methods::wv_sat_svp_to_qsat(es, p);
+  // Ensures returned es is consistent with limiters on qs.
+  es = mam4::min(es, p);
 }
 #endif
+
 KOKKOS_INLINE_FUNCTION
 void ndrop_init(Real exp45logsig[AeroConfig::num_modes()],
                 Real alogsig[AeroConfig::num_modes()], Real &aten,

@@ -72,34 +72,8 @@ Real faer_resusp_vs_fprec_evap_mpln(const Real fprec_evap, const int) {
 namespace ndrop_od {
 
 KOKKOS_INLINE_FUNCTION
-void qsat(const Real t, const Real p, Real &es, Real &qs) {
-  //  ------------------------------------------------------------------!
-  // ! Purpose:                                                         !
-  // !   Look up and return saturation vapor pressure from precomputed  !
-  // !   table, then calculate and return saturation specific humidity. !
-  // !   Optionally return various temperature derivatives or enthalpy  !
-  // !   at saturation.                                                 !
-  // !------------------------------------------------------------------!
-  // Inputs
-  // @param [in] t    ! Temperature
-  // @param [in] p    ! Pressure
-  // Outputs
-  // @param [out] es  ! Saturation vapor pressure
-  // @param [out] qs  ! Saturation specific humidity
-
-  // Note. Fortran code uses a table lookup. In C++ version, we compute directly
-  // from the function.
-  es = wv_sat_methods::wv_sat_svp_trans(t);
-  qs = wv_sat_methods::wv_sat_svp_to_qsat(es, p);
-  // Ensures returned es is consistent with limiters on qs.
-  es = mam4::min(es, p);
-} // qsat
-
-KOKKOS_INLINE_FUNCTION
 void ndrop_int(Real exp45logsig[AeroConfig::num_modes()],
-               Real alogsig[AeroConfig::num_modes()], Real &aten,
-               Real num2vol_ratio_min_nmodes[AeroConfig::num_modes()],
-               Real num2vol_ratio_max_nmodes[AeroConfig::num_modes()]) {
+               Real alogsig[AeroConfig::num_modes()], Real &aten) {
   const Real surften = 0.076;
   const Real t0 = 273; // reference temperature [K]
   const Real one = 1;
@@ -108,24 +82,11 @@ void ndrop_int(Real exp45logsig[AeroConfig::num_modes()],
   for (int imode = 0; imode < AeroConfig::num_modes(); ++imode) {
     alogsig[imode] = mam4::log(modes(imode).mean_std_dev);
     exp45logsig[imode] = mam4::exp(4.5 * alogsig[imode] * alogsig[imode]);
-
-    // voltonumbhi_amode
-    num2vol_ratio_min_nmodes[imode] =
-        one / conversions::mean_particle_volume_from_diameter(
-                  modes(imode).max_diameter, modes(imode).mean_std_dev);
-    // voltonumblo_amode
-    num2vol_ratio_max_nmodes[imode] =
-        one / conversions::mean_particle_volume_from_diameter(
-                  modes(imode).min_diameter, modes(imode).mean_std_dev);
-
   } // imode
 
   // SHR_CONST_RHOFW   = 1.000e3_R8      ! density of fresh water     ~ kg/m^3
   const Real rhoh2o = Constants::density_h2o;
-  //FIXME:
-  // const Real r_universal = Constants::r_gas * one_thousand;      //[J/K/kmole]
-  // Use E3SM physical constants (SHR_CONST_AVOGAD * SHR_CONST_BOLTZ)
-  const Real r_universal = 8314.467591;                          // [J/K/kmole]
+  const Real r_universal = Constants::r_gas * one_thousand;      //[J/K/kmole]
   const Real mwh2o = Constants::molec_weight_h2o * one_thousand; // [kg/kmol]
   // BAD CONSTANT
   aten = two * mwh2o * surften / (r_universal * t0 * rhoh2o);
@@ -1304,8 +1265,7 @@ Real compute_wup(const int iconvtype, const Real mu_i_kk, const Real mu_i_kp1,
     // and Thunderstorm Project data which they also show
     // the vertical profile shape is a crude fit to their median updraft profile
     // height above surface [km]
-    //FIXME: fortran is using single precision. we need to update validation test w double precission.
-    const Real zkm = zmagl * 1.0e-3f;
+    const Real zkm = zmagl * 1.0e-3;
     if (1.0 <= zkm) {
       wup_kk = w_peak * mam4::pow((zkm / w_peak), 0.21);
     } else {
@@ -1898,10 +1858,10 @@ ma_activate_convproc(const AeroSpeciesView &aero_species, SubView conu,
   Real exp45logsig[ntot_amode];
   Real alogsig[ntot_amode];
   Real aten;
-  Real num2vol_ratio_min_nmodes[ntot_amode];
-  Real num2vol_ratio_max_nmodes[ntot_amode];
-  ndrop_od::ndrop_int(exp45logsig, alogsig, aten, num2vol_ratio_min_nmodes,
-                      num2vol_ratio_max_nmodes);
+  ndrop_od::ndrop_int(exp45logsig, alogsig, aten);
+  // , 
+    // num2vol_ratio_min_nmodes,
+                      // num2vol_ratio_max_nmodes);
   // The uniform or peak supersat value (as 0-1 fraction = percent*0.01)
   // BAD_CONSTANT - need a reference for this.
   const Real activate_smaxmax = 0.003;
@@ -2351,11 +2311,7 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
   const int iflux_method = convtype == ConvProc::Deep ? 1 : 2;
 
   const Real hund_ovr_g = 100.0 / Constants::gravity;
-  //FIXME: As expected, using diferent constants produces diff. 
-  //const Real rair = Constants::r_gas_dry_air;
-  // Use E3SM physical constants (SHR_CONST_RDAIR = SHR_CONST_RGAS/SHR_CONST_MWDAIR)
-  const Real r_universal = 8314.467591;
-  const Real rair = r_universal / (Constants::molec_weight_dry_air * 1000.0);
+  const Real rair = Constants::r_gas_dry_air;
 
   //  md, mu, are all "dry" mass fluxes
   //  mu(1+nlev)    ! Updraft mass flux (positive) [mb/s]
