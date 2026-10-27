@@ -113,7 +113,7 @@ jobs:
           submodules: recursive
           # NOTE: The ref: used here must match the one in CMakeLists.txt that will be used by
           # cmake when running outside of github actions.
-          ref: 007bdcff6cb26948517d2d26f3d7ca005363d119 
+          ref: ae5e7f8227943a25c66b1a1822973ec665d224e4 # 2026/10/16
           path: ${{ github.workspace }}/ekat_src
 
       - name: Configuring MAM4xx (${{ matrix.build-type }}, ${{ matrix.fp-precision }} precision)
