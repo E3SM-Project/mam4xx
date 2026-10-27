@@ -194,7 +194,8 @@ void ma_convproc_intr(Ensemble *ensemble) {
           const mam4::ConvProc::Config convproc_config;
           const int *species_class = convproc_config.species_class;
           const int *mmtoo_prevap_resusp = convproc_config.mmtoo_prevap_resusp;
-          // Initialize output arrays based on ptend_lq_init and aerdepwetis_init
+          // Initialize output arrays based on ptend_lq_init and
+          // aerdepwetis_init
           for (int i = 0; i < pcnst; ++i) {
             ptend_lq[i] = Kokkos::round(ptend_lq_init_dev[i]) > 0;
             aerdepwetis[i] = aerdepwetis_dev[i];

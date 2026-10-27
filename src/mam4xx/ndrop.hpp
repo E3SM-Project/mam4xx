@@ -353,8 +353,8 @@ void ccncalc(const Real state_q[aero_model::pcnst], const Real tair,
 
 } /// ccncalc
 
-// FIXME: We need to decide whether to use linear interpolation or an analytical expression to compute SVP.
-// I would rather use the analytical expression.
+// FIXME: We need to decide whether to use linear interpolation or an analytical
+// expression to compute SVP. I would rather use the analytical expression.
 #if defined(MAM4XX_USE_ANALYTICAL_QSAT)
 KOKKOS_INLINE_FUNCTION
 void qsat(const Real t, const Real p, Real &svp, Real &qsat) {
@@ -385,7 +385,8 @@ void qsat(const Real t, const Real p, Real &svp, Real &qsat) {
 
 KOKKOS_INLINE_FUNCTION
 void qsat(const Real t, const Real p, Real &es, Real &qs) {
-  // Saturation vapor pressure table initialized matching E3SM Fortran wv_saturation.F90 wv_sat_init:
+  // Saturation vapor pressure table initialized matching E3SM Fortran
+  // wv_saturation.F90 wv_sat_init:
   //   do i = 1, plenest
   //      estbl(i) = svp_trans(tmin + real(i-1, r8))
   //   end do
