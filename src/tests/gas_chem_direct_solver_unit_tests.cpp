@@ -14,6 +14,8 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -28,11 +30,14 @@ struct SolverCase {
   Real dt = 1;
 };
 
+enum class Solver { Direct, Legacy };
+
 struct SolverOutput {
   std::array<Real, gas_pcnst> state = {};
   std::array<Real, clscnt4> production = {};
   std::array<Real, clscnt4> loss = {};
   ImpSolOutcome outcome = ImpSolOutcome::InvalidInput;
+  ImpSolResult legacy_result;
 };
 
 // These fixtures deliberately overflow so that we can test the solver's
@@ -52,9 +57,12 @@ struct ScopedOverflowTrapDisable {
   }
 };
 
-SolverOutput run_on_device(const SolverCase &input) {
+SolverOutput run_on_device(const SolverCase &input,
+                           const Solver solver = Solver::Direct,
+                           const Real reference_tolerance = Real(1e-12)) {
   using RealView = mam4::DeviceType::view_1d<Real>;
   using OutcomeView = mam4::DeviceType::view_1d<ImpSolOutcome>;
+  using ResultView = mam4::DeviceType::view_1d<ImpSolResult>;
 
   RealView state("gas_state", gas_pcnst);
   RealView rates("gas_rates", rxntot);
@@ -63,6 +71,7 @@ SolverOutput run_on_device(const SolverCase &input) {
   RealView production("gas_production", clscnt4);
   RealView loss("gas_loss", clscnt4);
   OutcomeView outcome("gas_outcome", 1);
+  ResultView legacy_result("legacy_result", 1);
 
   auto h_state = Kokkos::create_mirror_view(state);
   auto h_rates = Kokkos::create_mirror_view(rates);
@@ -90,9 +99,26 @@ SolverOutput run_on_device(const SolverCase &input) {
       "direct_gas_chemistry_test", Kokkos::RangePolicy<>(0, 1),
       KOKKOS_LAMBDA(const int) {
         auto local_state = state;
-        outcome(0) =
-            imp_sol(local_state, rates.data(), het.data(), forcing.data(), dt,
-                    production.data(), loss.data());
+        // Both methods are compiled and receive identical input arrays.
+        // The production selection macro is intentionally not used here.
+        if (solver == Solver::Legacy) {
+          Real epsilon[clscnt4];
+          for (int k = 0; k < clscnt4; ++k) {
+            epsilon[k] = reference_tolerance;
+          }
+          bool factor[legacy::itermax];
+          for (int k = 0; k < legacy::itermax; ++k) {
+            factor[k] = true;
+          }
+          legacy_result(0) = legacy::imp_sol(
+              local_state, rates.data(), het.data(), forcing.data(), dt, factor,
+              epsilon, production.data(), loss.data());
+          outcome(0) = legacy_result(0).outcome;
+        } else {
+          outcome(0) =
+              imp_sol(local_state, rates.data(), het.data(), forcing.data(), dt,
+                      production.data(), loss.data());
+        }
       });
   Kokkos::fence();
 
@@ -113,6 +139,11 @@ SolverOutput run_on_device(const SolverCase &input) {
     output.loss[k] = h_loss(k);
   }
   output.outcome = h_outcome(0);
+  if (solver == Solver::Legacy) {
+    const auto h_result =
+        Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), legacy_result);
+    output.legacy_result = h_result(0);
+  }
   return output;
 }
 
@@ -252,6 +283,225 @@ void require_atomic_failure(const SolverCase &input,
     REQUIRE(output.production[k] == 0);
     REQUIRE(output.loss[k] == 0);
   }
+}
+
+// Artificial numerical fixtures in the low-level solver's work-entry units.
+// Gas entries 0-5 are mol/mol dry air; aerosol mass and modal number entries
+// retain their legacy work-array basis (no physical-unit conversion here).
+// rates[0,2:6] and het are s^-1; rates[1] is the completed H2O2 source in
+// mol/mol/s. forcing is already normalized: destination-entry units per second,
+// NOT the unnormalized molecules/cm^3/s accepted by gas_phase_chemistry.
+constexpr int source_destination[extcnt] = {3, 6, 14, 27, 28, 13, 18, 30, 5};
+
+bool is_number_entry(const int j) {
+  return j == 13 || j == 18 || j == 26 || j == 30;
+}
+
+Real comparison_initial_value(const int j) {
+  return is_number_entry(j) ? Real(1e8) * Real(j + 1)
+                            : Real(1e-9) * Real(j + 1);
+}
+
+enum class ComparisonKind { Identity, Reaction, Source, Removal, Coupled };
+
+// EAMxx default coupling intervals: day/ATM_NCPL for ne30 (48), ne256
+// (144), ne1024 (864), from driver-mct/cime_config/config_component_e3sm.xml.
+// MAM uses that process dt, outside the subcycled cloud-physics subgroup.
+// These are fixed fixture constants; case overrides may change model dt.
+constexpr std::array<Real, 3> comparison_timesteps = {Real(1800), Real(600),
+                                                      Real(100)};
+
+struct ComparisonCase {
+  std::string name;
+  ComparisonKind kind;
+  int channel = -1;
+  SolverCase input;
+
+  ComparisonCase(const std::string &name_in, const ComparisonKind kind_in,
+                 const int channel_in = -1)
+      : name(name_in), kind(kind_in), channel(channel_in) {
+    input.state[0] = Real(2e-8);
+  }
+};
+
+std::vector<ComparisonCase> comparison_cases() {
+  std::vector<ComparisonCase> cases;
+  ComparisonCase identity("identity", ComparisonKind::Identity);
+  for (int j = 1; j < gas_pcnst; ++j) {
+    identity.input.state[j] = comparison_initial_value(j);
+  }
+  cases.push_back(identity);
+
+  const char *reaction_names[rxntot] = {
+      "R0_H2O2_photolysis", "R1_H2O2_source", "R2_H2O2_OH_loss",
+      "R3_SO2_to_H2SO4",    "R4_DMS_to_SO2",  "R5_DMS_half_SO2_yield",
+      "R6_DMS_to_SO2"};
+  for (int k = 0; k < rxntot; ++k) {
+    ComparisonCase c(reaction_names[k], ComparisonKind::Reaction, k);
+    // Isolated first-order channels have tau=1000 s; R1 is a source.
+    c.input.rates[k] = k == 1 ? Real(1e-12) : Real(1e-3);
+    if (k == 0 || k == 2) {
+      c.input.state[1] = Real(1e-9);
+    } else if (k == 3) {
+      c.input.state[3] = Real(1e-9);
+    } else if (k >= 4) {
+      c.input.state[4] = Real(1e-9);
+    }
+    cases.push_back(c);
+  }
+
+  for (int k = 0; k < extcnt; ++k) {
+    const int j = source_destination[k];
+    ComparisonCase c("external_source_" + std::to_string(k) + "_entry_" +
+                         std::to_string(j),
+                     ComparisonKind::Source, k);
+    c.input.forcing[k] = is_number_entry(j) ? Real(1000) : Real(1e-12);
+    cases.push_back(c);
+  }
+  // Every solved entry, including all gases, aerosol masses, and four modal
+  // numbers, gets its own tau=1000 s heterogeneous-removal case.
+  for (int j = 1; j < gas_pcnst; ++j) {
+    ComparisonCase c("heterogeneous_removal_entry_" + std::to_string(j),
+                     ComparisonKind::Removal, j);
+    c.input.state[j] = comparison_initial_value(j);
+    c.input.het[j] = Real(1e-3);
+    cases.push_back(c);
+  }
+
+  struct Regime {
+    const char *name;
+    double dms, so2, sink; // s^-1
+  };
+  // Chemical loss timescales tau_DMS/tau_SO2 (seconds):
+  // weak: 1e6/5e5; moderate: 1e3/1e5; fast DMS: 1/1e5;
+  // fast SO2: 1e5/1. The H2SO4 sink has tau=1e6 s throughout.
+  // These span k*dt << 1, order unity, and up to 1800, including both
+  // orderings of the chain's fast and slow species. They are numerical
+  // stress cases, not regional or seasonal atmospheric states.
+  const Regime regimes[] = {{"weak", 1e-6, 2e-6, 1e-6},
+                            {"moderate", 1e-3, 1e-5, 1e-6},
+                            {"strong_fast_dms", 1, 1e-5, 1e-6},
+                            {"strong_fast_so2", 1e-5, 1, 1e-6}};
+  for (const bool combined : {false, true}) {
+    for (const auto &regime : regimes) {
+      for (const std::string pattern :
+           {"mixed", "zero_chain_products", "contrasting_species"}) {
+        ComparisonCase c(std::string(combined ? "combined/" : "coupled/") +
+                             regime.name + "/" + pattern,
+                         ComparisonKind::Coupled);
+        auto &input = c.input;
+        for (int j = 1; j < gas_pcnst; ++j) {
+          input.state[j] = comparison_initial_value(j);
+        }
+        input.rates[3] = Real(regime.so2);
+        input.rates[4] = Real(regime.dms);
+        input.het[2] = Real(regime.sink);
+        if (pattern == "zero_chain_products") {
+          input.state[2] = input.state[3] = 0;
+        } else if (pattern == "contrasting_species") {
+          input.state[4] = Real(1e-12);
+          input.state[3] = Real(1e-6);
+          input.state[2] = Real(1e-15);
+        }
+        if (combined) {
+          // Other sinks have tau=3.33e5 to 1e6 s, SO2=2e6 s, DMS=4e6 s.
+          for (int j = 1; j < gas_pcnst; ++j) {
+            input.het[j] = Real(1e-6) * Real(1 + j % 3);
+          }
+          input.het[2] = Real(regime.sink);
+          input.het[3] = Real(5e-7);
+          input.het[4] = Real(2.5e-7);
+          // H2O2 chemical loss shares tau_DMS; its source is independent.
+          input.rates[0] = Real(0.4) * Real(regime.dms);
+          input.rates[2] = Real(0.6) * Real(regime.dms);
+          input.rates[1] = Real(5e-12);
+          // DMS loss splits 1/4, 1/2, 1/4; R5 retains half its sulfur as SO2.
+          input.rates[4] = Real(0.25) * Real(regime.dms);
+          input.rates[5] = Real(0.5) * Real(regime.dms);
+          input.rates[6] = Real(0.25) * Real(regime.dms);
+          for (int k = 0; k < extcnt; ++k) {
+            // A fixed source scale per 1e6 s, independent of timestep/pattern.
+            input.forcing[k] =
+                comparison_initial_value(source_destination[k]) * Real(1e-6);
+          }
+        }
+        cases.push_back(c);
+      }
+    }
+  }
+  return cases;
+}
+
+// Independent isolated-channel backward-Euler formulas. No mechanism helper
+// or production matrix is used. Unrelated entries retain their initial value.
+std::array<Real, clscnt4>
+isolated_backward_euler_reference(const ComparisonCase &c) {
+  const auto &input = c.input;
+  std::array<Real, gas_pcnst> expected = input.state;
+  const long double dt = input.dt;
+  const int k = c.channel;
+  if (c.kind == ComparisonKind::Reaction) {
+    const long double rate = input.rates[k];
+    if (k == 1) {
+      expected[1] = Real(input.state[1] + dt * rate);
+    } else {
+      const int reactant = (k == 0 || k == 2) ? 1 : (k == 3 ? 3 : 4);
+      const long double remaining = input.state[reactant] / (1 + dt * rate);
+      expected[reactant] = Real(remaining);
+      if (k >= 3) {
+        const int product = k == 3 ? 2 : 3;
+        const long double yield = k == 5 ? 0.5L : 1.0L;
+        expected[product] =
+            Real(input.state[product] + yield * dt * rate * remaining);
+      }
+    }
+  } else if (c.kind == ComparisonKind::Source) {
+    const int j = source_destination[k];
+    expected[j] = Real(input.state[j] + dt * input.forcing[k]);
+  } else if (c.kind == ComparisonKind::Removal) {
+    expected[k] = Real(input.state[k] / (1 + dt * input.het[k]));
+  }
+  std::array<Real, clscnt4> answer;
+  std::copy(expected.begin() + 1, expected.end(), answer.begin());
+  return answer;
+}
+
+// Isolated equations have closed-form solutions; coupled cases use an
+// independently assembled backward-Euler system. Neither uses solver output
+// or the production mechanism helpers to construct the expected endpoint.
+std::array<Real, clscnt4>
+known_backward_euler_solution(const ComparisonCase &c) {
+  return c.kind == ComparisonKind::Coupled
+             ? dense_backward_euler_reference(c.input)
+             : isolated_backward_euler_reference(c);
+}
+
+// An inactive equation has neither loss nor source/coupling. A steady state
+// with balanced nonzero production/loss is active and can round differently.
+bool comparison_entry_is_inactive(const SolverCase &input, const int j) {
+  if (input.het[j] != 0 || source_for_entry(input, j - 1) != 0) {
+    return false;
+  }
+  const auto &r = input.rates;
+  switch (j) {
+  case 1:
+    return r[0] == 0 && r[2] == 0;
+  case 2:
+    return r[3] == 0;
+  case 3:
+    return r[3] == 0 && r[4] == 0 && r[5] == 0 && r[6] == 0;
+  case 4:
+    return r[4] == 0 && r[5] == 0 && r[6] == 0;
+  default:
+    return true;
+  }
+}
+
+// Float Newton corrections have a roundoff floor, including for identity.
+// Keep 1e-12 in double and use eight epsilons as a float portability margin.
+// This is test-only; production legacy::rel_err remains 1e-3.
+Real comparison_tolerance() {
+  return std::max(Real(1e-12), Real(8) * std::numeric_limits<Real>::epsilon());
 }
 
 } // namespace
@@ -413,4 +663,136 @@ TEST_CASE("direct backward Euler row rejects an unsafe denominator",
       solve_backward_euler_row(Real(1), Real(0), Real(2), Real(1), updated);
   REQUIRE(outcome == ImpSolOutcome::UnsafeDenominator);
   REQUIRE(updated == Real(-1));
+}
+
+TEST_CASE("direct gas chemistry matches known backward Euler solutions",
+          "[gas_chem][known_solution]") {
+  auto c = GENERATE(Catch::Generators::from_range(comparison_cases()));
+  const Real dt = GENERATE(Catch::Generators::from_range(comparison_timesteps));
+  c.input.dt = dt;
+  const auto &input = c.input;
+  const auto expected = known_backward_euler_solution(c);
+  const auto direct = run_on_device(input, Solver::Direct);
+  const Real tolerance = comparison_tolerance();
+  CAPTURE(c.name, dt);
+  INFO("known-solution tolerance = " << std::scientific << tolerance);
+  REQUIRE(direct.outcome == ImpSolOutcome::Converged);
+  REQUIRE(direct.state[0] == input.state[0]);
+
+  // This test runs independently of the legacy solver and its convergence.
+  // Scale only by input and known solution, keeping gas, aerosol-mass, and
+  // modal-number errors dimensionless without depending on either solver.
+  double squared_error = 0;
+  for (int j = 1; j < gas_pcnst; ++j) {
+    const Real expected_value = expected[j - 1];
+    CAPTURE(j);
+    INFO(std::scientific << "initial = " << input.state[j] << ", expected = "
+                         << expected_value << ", direct = " << direct.state[j]);
+    REQUIRE(std::isfinite(expected_value));
+    REQUIRE(std::isfinite(direct.state[j]));
+    REQUIRE(expected_value >= 0);
+    REQUIRE(direct.state[j] >= 0);
+    const double scale = std::max(std::abs(double(input.state[j])),
+                                  std::abs(double(expected_value)));
+    if (scale == 0) {
+      REQUIRE(direct.state[j] == 0);
+    } else {
+      const double error = (double(direct.state[j]) - expected_value) / scale;
+      CAPTURE(scale, error);
+      REQUIRE(std::abs(error) <= tolerance);
+      squared_error += error * error;
+    }
+    if (comparison_entry_is_inactive(input, j)) {
+      REQUIRE(direct.state[j] == input.state[j]);
+    }
+  }
+  const double l2_error = std::sqrt(squared_error);
+  const double l2_limit = std::sqrt(double(clscnt4)) * tolerance;
+  CAPTURE(l2_error, l2_limit);
+  REQUIRE(l2_error <= l2_limit);
+}
+
+TEST_CASE("legacy and direct gas chemistry agree for deterministic full steps",
+          "[gas_chem][comparison]") {
+  auto c = GENERATE(Catch::Generators::from_range(comparison_cases()));
+  const Real dt = GENERATE(Catch::Generators::from_range(comparison_timesteps));
+  c.input.dt = dt; // Rates and initial conditions stay fixed across timesteps.
+  const auto &input = c.input;
+  const Real tolerance = comparison_tolerance();
+  CAPTURE(c.name, dt);
+  INFO("comparison tolerance = " << std::scientific << tolerance);
+
+  // Separate allocations/copies in each invocation prevent state aliasing.
+  const auto reference = run_on_device(input, Solver::Legacy, tolerance);
+  const auto direct = run_on_device(input, Solver::Direct);
+  const auto &result = reference.legacy_result;
+  CAPTURE(result.outcome, result.failed_attempts, result.cut_count,
+          result.accepted_steps, result.requested_interval,
+          result.accepted_interval);
+  // A retry/substep solves a different discrete problem, so stop before
+  // interpreting endpoint differences as direct-solver accuracy failures.
+  REQUIRE(result.success());
+  REQUIRE(reference.outcome == ImpSolOutcome::Converged);
+  REQUIRE(result.failed_attempts == 0);
+  REQUIRE(result.cut_count == 0);
+  REQUIRE(result.accepted_steps == 1);
+  REQUIRE(result.requested_interval == dt);
+  REQUIRE(result.accepted_interval == dt);
+  REQUIRE(direct.outcome == ImpSolOutcome::Converged);
+  REQUIRE(reference.state[0] == input.state[0]);
+  REQUIRE(direct.state[0] == input.state[0]);
+
+  const auto expected = known_backward_euler_solution(c);
+  // Dimensionless L2 = sqrt(sum_j ((direct_j - legacy_j)/scale_j)^2),
+  // scale_j = max(|initial_j|, |legacy_j|, |independent BE_j|). Scaling
+  // each entry prevents the large modal numbers from hiding gas/mass errors.
+  const double l2_limit = std::sqrt(double(clscnt4)) * tolerance;
+  double squared_error = 0;
+  for (int j = 1; j < gas_pcnst; ++j) {
+    const Real expected_value = expected[j - 1];
+    CAPTURE(j);
+    INFO(std::scientific << "initial = " << input.state[j]
+                         << ", expected = " << expected_value
+                         << ", legacy = " << reference.state[j]
+                         << ", direct = " << direct.state[j]);
+    REQUIRE(std::isfinite(expected_value));
+    REQUIRE(std::isfinite(reference.state[j]));
+    REQUIRE(std::isfinite(direct.state[j]));
+    REQUIRE(expected_value >= 0);
+    REQUIRE(reference.state[j] >= 0);
+    REQUIRE(direct.state[j] >= 0);
+    const double scale = std::max({std::abs(double(input.state[j])),
+                                   std::abs(double(reference.state[j])),
+                                   std::abs(double(expected_value))});
+    if (scale == 0) {
+      // No arbitrary absolute floor: an unsourced zero must remain zero.
+      REQUIRE(reference.state[j] == 0);
+      REQUIRE(direct.state[j] == 0);
+    } else {
+      const double paired_error =
+          (double(direct.state[j]) - reference.state[j]) / scale;
+      const double direct_error =
+          (double(direct.state[j]) - expected_value) / scale;
+      const double legacy_error =
+          (double(reference.state[j]) - expected_value) / scale;
+      CAPTURE(scale, paired_error, direct_error, legacy_error);
+      REQUIRE(std::abs(paired_error) <= tolerance);
+      REQUIRE(std::abs(direct_error) <= tolerance);
+      REQUIRE(std::abs(legacy_error) <= tolerance);
+      squared_error += paired_error * paired_error;
+    }
+    // Direct preserves inactive entries exactly; Newton's identity update
+    // may introduce roundoff in the legacy path.
+    if (comparison_entry_is_inactive(input, j)) {
+      REQUIRE(direct.state[j] == input.state[j]);
+      const double roundoff_limit =
+          8 * double(std::numeric_limits<Real>::epsilon()) *
+          std::abs(double(input.state[j]));
+      REQUIRE(std::abs(double(reference.state[j]) - input.state[j]) <=
+              roundoff_limit);
+    }
+  }
+  const double l2_error = std::sqrt(squared_error);
+  CAPTURE(l2_error, l2_limit);
+  REQUIRE(l2_error <= l2_limit);
 }
