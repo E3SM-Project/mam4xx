@@ -27,6 +27,7 @@ void modal_aero_bcscavcoef_init(Ensemble *ensemble);
 void calc_1_impact_rate(Ensemble *ensemble);
 void modal_aero_bcscavcoef_get(Ensemble *ensemble);
 void aero_model_wetdep(Ensemble *ensemble);
+void aero_model_wetdep_convproc(Ensemble *ensemble);
 void aero_model_calcsize_water_uptake_dr(Ensemble *ensemble);
 
 int main(int argc, char **argv) {
@@ -59,6 +60,8 @@ int main(int argc, char **argv) {
       modal_aero_bcscavcoef_get(ensemble);
     } else if (func_name == "aero_model_wetdep") {
       aero_model_wetdep(ensemble);
+    } else if (func_name == "aero_model_wetdep_convproc") {
+      aero_model_wetdep_convproc(ensemble);
     } else if (func_name == "aero_model_calcsize_water_uptake_dr") {
       aero_model_calcsize_water_uptake_dr(ensemble);
     } else {
