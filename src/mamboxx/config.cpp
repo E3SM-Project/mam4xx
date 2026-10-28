@@ -90,6 +90,8 @@ AtmosphereConfig read_atmosphere(const ekat::ParameterList &params) {
         "invalid atmosphere.relative_humidity[" << i << "]: " << cfg.relative_humidity[i]);
   }
 
+  // compute the water vapor mixing ratio from 
+
   return cfg;
 }
 

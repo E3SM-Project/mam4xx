@@ -4,6 +4,7 @@
 
 #include <ekat_assert.hpp>
 #include <ekat_team_policy_utils.hpp>
+#include <string>
 
 // Unresolved questions/issues:
 // 1. How do we accommodate different numbers of vertical levels? mam4::nlev
@@ -29,6 +30,16 @@ struct State {
 
   View2D invariants;
 };
+
+template <typename T>
+std::vector<std::string>
+gather_names_from_mapped_ids(const std::map<std::string, T> &indices_for_names) {
+  std::vector<std::string> names(indices_for_names.size());
+  for (auto iter = mode_indices_for_names.begin(); iter != mode_indices_for_names.end(); ++iter) {
+    names[int(iter->second)] = iter->first;
+  }
+  return std::move(names);
+}
 
 void copy_vector_to_view(mam4::ColumnView device_view, const std::vector<Real> &vec, HostColumnView host_view) {
   for (int k = 0; k < vec.size(); ++k) {
@@ -90,18 +101,9 @@ void initialize(const Config &config, State &state) {
     }
   }
 
-  std::vector<std::string> mode_names(mode_indices_for_names.size());
-  for (auto iter = mode_indices_for_names.begin(); iter != mode_indices_for_names.end(); ++iter) {
-    mode_names[int(iter->second)] = iter->first;
-  }
-  std::vector<std::string> aero_species_names(aero_ids_for_names.size());
-  for (auto iter = aero_ids_for_names.begin(); iter != aero_ids_for_names.end(); ++iter) {
-    aero_species_names[int(iter->second)] = iter->first;
-  }
-  std::vector<std::string> gas_species_names(gas_ids_for_names.size());
-  for (auto iter = gas_ids_for_names.begin(); iter != gas_ids_for_names.end(); ++iter) {
-    gas_species_names[int(iter->second)] = iter->first;
-  }
+  auto mode_names         = gather_names_from_mapped_ids(mode_indices_for_names);
+  auto aero_species_names = gather_names_from_mapped_ids(aero_ids_for_names);
+  auto gas_species_names  = gather_names_from_mapped_ids(gas_ids_for_names);
 
   // copy data to the device
   auto host_view = create_host_column_view(nlev);
