@@ -1,6 +1,7 @@
 #ifndef MAM4XX_MICROPHYSICS_HPP
 #define MAM4XX_MICROPHYSICS_HPP
 
+#include "mam4xx/gas_chem_mechanism.hpp"
 #include <mam4_config.hpp>
 #include <mam4xx/aero_config.hpp>
 #include <mam4xx/aero_modes.hpp>
@@ -20,7 +21,6 @@ using ThreadTeam        = mam4::ThreadTeam;
 using TeamPolicyFactory = ekat::TeamPolicyFactory<ekat::KokkosTypes<ekat::DefaultDevice>::ExeSpace>;
 
 // This is a type alias for device-resident column work array data.
-
 using ColumnWorkArray = View2D;
 
 // This is a type alias for device-resident constituent external forcing data.
@@ -31,7 +31,8 @@ using ExternalForcing = View3D;
 // Layout: [level][invariant-index]
 using Invariants = View2D;
 
-// This type represents a complete aerosol microphysics configuration.
+// Config represents a complete aerosol microphysics configuration, and is bound to a specific
+// Microphysics instance.
 struct Config {
   bool gas_chemistry;
   bool gas_aerosol_exchange;
@@ -40,11 +41,32 @@ struct Config {
   bool coagulation;
 };
 
+// ColumnLocation stores location-specific information because aerosol physics is strongly coupled
+// to solar radiation. Passed to microphysics to advance the state of a particular column.
+struct ColumnLocation {
+  Real latitude; // latitude of column center in radians
+};
+
+// WorkArrays collects all the work arrays used by the Microphysics class. These work arrays are
+// used as needed by Microphysics but ownership is not transferred. This allows Microphysics to
+// share memory with other processes.
+struct WorkArrays {
+  // single-column variable work arrays [nlev]
+  std::array<ColumnView, 8> columns;
+  // constituent work arrays [nlev, gas_pcnst]
+  std::array<View2D, 3> constituents;
+  // fixed-species work arrays [nlev, nfs]
+  std::array<View2D, 1> fixed_species;
+};
+
+// Microphysics advances the prognostic aerosol state in place by subjecting it to various
+// aerosol microphysics processes (determined by the configuration).
 class Microphysics final {
-  Microphysics(const Config &config);
+
+  Microphysics(const Config &config, const WorkArrays &work_arrays);
   ~Microphysics() = default;
 
-  // Dear C++ compiler: no casual creating, copying, or moving.
+  // No casual creating, copying, or moving.
   Microphysics() = delete;
   Microphysics(const Microphysics&) = delete;
   Microphysics(const Microphysics&&) = delete;
@@ -53,8 +75,8 @@ class Microphysics final {
   // of (single column) prognostics under the given prevailing atmosphere conditions.
   void step(const mam4::Atmosphere &atmosphere,
             mam4::Prognostics &prognostics,
+            const ColumnLocation &location,
             const ExternalForcing &external_forcing,
-            Invariants &invariants,
             Real dt);
 
   // Given the atmospheric conditions and the prognostic state, compute microphysics diagnostics.
@@ -63,9 +85,24 @@ class Microphysics final {
                            mam4::Diagnostics &diagnostics);
 
 private:
-
   Config config_;
-  View2D qq_, qqcw_; // work arrays
+
+  // work arrays
+  View2D qq_, qqcw_, het_rates_;
+  View2D invariants_;
+
+  void set_external_forcing(const ColumnView &external_forcing);
+  void set_invariants(const mam4::Atmosphere &atmosphere, Invariants &invariants);
+  //void compute_o3_column_density(const Atmosphere &atmosphere, Prognostics &prognostics);
+  //void photo_table(State &state, Real dt);
+  void sethet(const Atmosphere &state, const ColumnLocation &location,
+              Real surface_geopotential, Real dt);
+  void drydep_xactive(State &state, Real dt);
+  void gas_phase_chemistry(State &state, Real dt);
+  void setsox(State &state, Real dt);
+  void modal_aero_amicphys_intr(State &state, Real dt);
+  void vmr2mmr_cw(State &state, Real dt);
+  //void linoz(State &state, Real dt);
 };
 
 
