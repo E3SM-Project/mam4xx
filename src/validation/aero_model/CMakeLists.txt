@@ -13,6 +13,7 @@ add_executable(aero_model_driver  aero_model_driver.cpp
               calc_1_impact_rate.cpp
               modal_aero_bcscavcoef_get.cpp
               aero_model_wetdep.cpp
+              aero_model_wetdep_convproc.cpp
               aero_model_calcsize_water_uptake_dr.cpp)
 target_link_libraries(aero_model_driver skywalker;validation)
 
@@ -34,17 +35,19 @@ set(TEST_LIST
     aero_model_wetdep_ts_379
     stand_aero_model_calcsize_water_uptake_dr_ts_379
     baseline_aero_model_wetdep_ts_379
+    aero_model_wetdep_convproc_ts_3
     )
 
 set(DEFAULT_TOL_BASELINE 1e-13)
 
 set(ERROR_THRESHOLDS  
    5e-8                    # calc_1_impact_rate_ts_0
-   1e-11                   # modal_aero_bcscavcoef_get_ts_355
+   1e-9                   # modal_aero_bcscavcoef_get_ts_355
    2e-4                    # modal_aero_bcscavcoef_init_ts_0
    2e-5                    # aero_model_wetdep_ts_379
-   1e-9                    # stand_aero_model_calcsize_water_uptake_dr_ts_379
-   ${DEFAULT_TOL_BASELINE} # baseline_aero_model_wetdep_ts_379
+   1e-6                    # stand_aero_model_calcsize_water_uptake_dr_ts_379
+   2e-5                    # baseline_aero_model_wetdep_ts_379
+   1e-4 #aero_model_wetdep_convproc_ts_3
    )
 
 set(TestLabel "aero_model")

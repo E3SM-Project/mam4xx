@@ -60,8 +60,8 @@ set(ERROR_THRESHOLDS
     ${DEFAULT_TOL} # wetdep_resusp_nonlinear_230
     ${DEFAULT_TOL} # wetdep_resusp_noprecip_130
     ${DEFAULT_TOL} # wetdep_resusp_noprecip_230
-    1e-10          # wetdep_scavenging_true
-    1e-10          # wetdep_scavenging_false
+    ${DEFAULT_TOL} # wetdep_scavenging_true
+    ${DEFAULT_TOL} # wetdep_scavenging_false
     ${DEFAULT_TOL} # compute_evap_frac
     ${DEFAULT_TOL} # rain_mix_ratio
     ${DEFAULT_TOL} # calculate_cloudy_volume
