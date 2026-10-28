@@ -63,7 +63,6 @@ struct AtmosphereConfig {
   std::vector<Real> temperature;        // [K]
   std::vector<Real> pressure;           // [Pa]
   std::vector<Real> relative_humidity;  // for clear air [-]
-  // FIXME: add input for vapor_mixing_ratio
   std::vector<Real> vapor_mixing_ratio; // water vapor MMR [kg vapor/kg air]
   Real pblh; // planetary boundary layer height;
 };

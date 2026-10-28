@@ -13,9 +13,9 @@ control:
   coagulation:          true
 
 atmosphere:
-  temperature:       273.  # [K]
-  pressure:          1.e5, # [Pa]
-  relative_humidity: 0.9,  # for clear air [-]
+  temperature:        273.  # [K]
+  pressure:           1.e5, # [Pa]
+  relative_humidity:  0.9,  # for clear air [-]
 
 aerosols:
   modes:

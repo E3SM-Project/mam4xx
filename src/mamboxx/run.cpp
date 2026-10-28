@@ -4,6 +4,7 @@
 
 #include <ekat_assert.hpp>
 #include <ekat_team_policy_utils.hpp>
+#include <string>
 
 // Unresolved questions/issues:
 // 1. How do we accommodate different numbers of vertical levels? mam4::nlev
@@ -29,6 +30,16 @@ struct State {
 
   View2D invariants;
 };
+
+template <typename T>
+std::vector<std::string>
+gather_names_from_mapped_ids(const std::map<std::string, T> &indices_for_names) {
+  std::vector<std::string> names(indices_for_names.size());
+  for (auto iter = mode_indices_for_names.begin(); iter != mode_indices_for_names.end(); ++iter) {
+    names[int(iter->second)] = iter->first;
+  }
+  return std::move(names);
+}
 
 void copy_vector_to_view(mam4::ColumnView device_view, const std::vector<Real> &vec, HostColumnView host_view) {
   for (int k = 0; k < vec.size(); ++k) {
@@ -90,18 +101,9 @@ void initialize(const Config &config, State &state) {
     }
   }
 
-  std::vector<std::string> mode_names(mode_indices_for_names.size());
-  for (auto iter = mode_indices_for_names.begin(); iter != mode_indices_for_names.end(); ++iter) {
-    mode_names[int(iter->second)] = iter->first;
-  }
-  std::vector<std::string> aero_species_names(aero_ids_for_names.size());
-  for (auto iter = aero_ids_for_names.begin(); iter != aero_ids_for_names.end(); ++iter) {
-    aero_species_names[int(iter->second)] = iter->first;
-  }
-  std::vector<std::string> gas_species_names(gas_ids_for_names.size());
-  for (auto iter = gas_ids_for_names.begin(); iter != gas_ids_for_names.end(); ++iter) {
-    gas_species_names[int(iter->second)] = iter->first;
-  }
+  auto mode_names         = gather_names_from_mapped_ids(mode_indices_for_names);
+  auto aero_species_names = gather_names_from_mapped_ids(aero_ids_for_names);
+  auto gas_species_names  = gather_names_from_mapped_ids(gas_ids_for_names);
 
   // copy data to the device
   auto host_view = create_host_column_view(nlev);
@@ -131,6 +133,52 @@ void initialize(const Config &config, State &state) {
       }
     }
   }
+}
+
+void external_forcing(State &state, Real dt) {
+  // TODO: look at MAMMicrophysics::extfrc_ and MAMMicrophysics::forcings_.
+  // TODO: how do we configure these in input?
+}
+
+void set_invariants(State &state, Real dt) {
+  auto policy = TeamPolicyFactory::get_default_team_policy(1, mam4::nlev);
+  View1D cnst_offline[mam4::mo_setinv::num_tracer_cnst];
+  // FIXME: populate offline constituents 
+  Kokkos::parallel_for("mamboxx::set_invariants", policy, KOKKOS_LAMBDA(const ThreadTeam &team) {
+    mam4::mo_setinv::setinv(team,                                    // in
+                            state.invariants,                        // out
+                            state.atmosphere.temperature,            // in
+                            state.atmosphere.vapor_mixing_ratio,     // in
+                            cnst_offline,                            // in
+                            state.atmosphere.pressure);              // in
+  });
+}
+
+void compute_o3_column_density(State &state, Real dt) {
+}
+
+void photo_table(State &state, Real dt) {
+}
+
+void sethet(State &state, Real dt) {
+}
+
+void drydep_xactive(State &state, Real dt) {
+}
+
+void gas_phase_chemistry(State &state, Real dt) {
+}
+
+void setsox(State &state, Real dt) {
+}
+
+void modal_aero_amicphys_intr(State &state, Real dt) {
+}
+
+void vmr2mmr_cw(State &state, Real dt) {
+}
+
+void linoz(State &state, Real dt) {
 }
 
 void step(State &state, Real dt) {
