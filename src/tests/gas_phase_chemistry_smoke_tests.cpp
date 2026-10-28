@@ -16,10 +16,13 @@
 #include <limits>
 #include <string>
 
-#if defined(__unix__) || defined(__APPLE__)
+// The expected-abort test uses POSIX fork() and waitpid() to isolate the
+// solver abort and let the parent verify how the child terminated. These
+// functions are not part of the C++ standard; no build-system availability
+// check is implemented because they are assumed available on the systems where
+// mam4xx tests typically run.
 #include <sys/wait.h>
 #include <unistd.h>
-#endif
 
 namespace {
 
@@ -84,7 +87,6 @@ run_wrapper(const std::array<Real, gas_pcnst> &initial, const Real dt,
 [[maybe_unused]] void
 require_wrapper_abort(const std::array<Real, gas_pcnst> &initial, const Real dt,
                       const Real soag_forcing) {
-#if defined(__unix__) || defined(__APPLE__)
   const pid_t child = fork();
   REQUIRE(child >= 0);
   if (child == 0) {
@@ -104,12 +106,6 @@ require_wrapper_abort(const std::array<Real, gas_pcnst> &initial, const Real dt,
   REQUIRE(waitpid(child, &status, 0) == child);
   REQUIRE(WIFSIGNALED(status));
   REQUIRE(WTERMSIG(status) == SIGABRT);
-#else
-  (void)initial;
-  (void)dt;
-  (void)soag_forcing;
-  WARN("Expected-abort checks require POSIX fork/waitpid; not exercised here");
-#endif
 }
 
 } // namespace
@@ -149,6 +145,8 @@ TEST_CASE("configured gas chemistry returns failure accounting", "[gas_chem]") {
 #else
   const auto output = run_wrapper(initial, dt, forcing);
   const auto result = output.result;
+  const bool direct_selected =
+      std::string(MAM4_TEST_GAS_CHEMISTRY_SOLVER) == "direct";
   REQUIRE_FALSE(result.success());
   REQUIRE(result.requested_interval == dt);
 
@@ -157,16 +155,11 @@ TEST_CASE("configured gas chemistry returns failure accounting", "[gas_chem]") {
     REQUIRE(result.accepted_steps == 0);
     REQUIRE(result.accepted_interval == 0);
     REQUIRE(result.cut_count == 0);
-#if !defined(MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY)
-    REQUIRE(result.failed_attempts == 1);
-#else
-    REQUIRE(result.failed_attempts == 0);
-#endif
+    REQUIRE(result.failed_attempts == (direct_selected ? 1 : 0));
     for (int j = 0; j < gas_pcnst; ++j) {
       REQUIRE(std::memcmp(&output.state[j], &initial[j], sizeof(Real)) == 0);
     }
-  } else {
-#if !defined(MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY)
+  } else if (direct_selected) {
     REQUIRE(result.outcome == ImpSolOutcome::NegativeResult);
     REQUIRE(result.failed_attempts == 1);
     REQUIRE(result.cut_count == 0);
@@ -175,7 +168,7 @@ TEST_CASE("configured gas chemistry returns failure accounting", "[gas_chem]") {
     for (int j = 0; j < gas_pcnst; ++j) {
       REQUIRE(std::memcmp(&output.state[j], &initial[j], sizeof(Real)) == 0);
     }
-#else
+  } else {
     // Accepted legacy substeps remain committed when a later retry fails.
     REQUIRE(result.outcome == ImpSolOutcome::CutLimitExhausted);
     REQUIRE(result.failed_attempts > 0);
@@ -190,7 +183,6 @@ TEST_CASE("configured gas chemistry returns failure accounting", "[gas_chem]") {
     REQUIRE(std::abs(output.state[5] - expected) <=
             tolerance * std::abs(initial[5]));
     REQUIRE(output.state[0] == initial[0]);
-#endif
   }
 #endif
 }
