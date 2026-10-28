@@ -12,15 +12,8 @@
 #include <array>
 #include <cfenv>
 #include <cmath>
-#include <csignal>
-#include <cstdlib>
 #include <cstring>
 #include <limits>
-
-#if defined(__unix__) || defined(__APPLE__)
-#include <sys/wait.h>
-#include <unistd.h>
-#endif
 
 namespace {
 
@@ -421,35 +414,3 @@ TEST_CASE("direct backward Euler row rejects an unsafe denominator",
   REQUIRE(outcome == ImpSolOutcome::UnsafeDenominator);
   REQUIRE(updated == Real(-1));
 }
-
-#if !defined(MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY) && !defined(NDEBUG)
-TEST_CASE("model gas chemistry aborts on a negative solved endpoint",
-          "[gas_chem]") {
-#if defined(__unix__) || defined(__APPLE__)
-  const pid_t child = fork();
-  REQUIRE(child >= 0);
-  if (child == 0) {
-    std::signal(SIGABRT, SIG_DFL);
-    std::array<Real, gas_pcnst> state = {};
-    Real photo_rates[mam4::mo_photo::phtcnt] = {};
-    Real extfrc[extcnt] = {};
-    Real invariants[nfs] = {};
-    Real het_rates[gas_pcnst] = {};
-    invariants[indexm] = 1;
-    state[5] = 1e-6;
-    extfrc[8] = -2e-6;
-
-    mam4::microphysics::gas_phase_chemistry(
-        Real(300), Real(1), photo_rates, extfrc, invariants, het_rates, state);
-    std::_Exit(EXIT_SUCCESS);
-  }
-
-  int status = 0;
-  REQUIRE(waitpid(child, &status, 0) == child);
-  REQUIRE(WIFSIGNALED(status));
-  REQUIRE(WTERMSIG(status) == SIGABRT);
-#else
-  SUCCEED("Death-test coverage requires a POSIX process API");
-#endif
-}
-#endif

@@ -10,11 +10,17 @@
 
 #include <array>
 #include <cmath>
+#include <csignal>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <string>
 
-#if defined(MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY) || defined(NDEBUG)
+#if defined(__unix__) || defined(__APPLE__)
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
 namespace {
 
 using mam4::Real;
@@ -25,8 +31,26 @@ struct ChemistryOutput {
   ImpSolResult result;
 };
 
-ChemistryOutput run_wrapper(const std::array<Real, gas_pcnst> &initial,
-                            const Real dt, const Real soag_forcing) {
+template <typename VectorType>
+KOKKOS_INLINE_FUNCTION ImpSolResult call_wrapper(VectorType &state,
+                                                 const Real dt,
+                                                 const Real soag_forcing) {
+  Real photo_rates[mam4::mo_photo::phtcnt] = {};
+  Real forcing[extcnt] = {};
+  Real invariants[nfs] = {};
+  Real heterogeneous_rates[gas_pcnst] = {};
+  // Synthetic M=1 leaves forcing numerically unchanged by normalization;
+  // zero oxidants and photolysis isolate the external SOAG source.
+  invariants[indexm] = 1;
+  forcing[8] = soag_forcing;
+  return mam4::microphysics::gas_phase_chemistry(Real(300), dt, photo_rates,
+                                                 forcing, invariants,
+                                                 heterogeneous_rates, state);
+}
+
+[[maybe_unused]] ChemistryOutput
+run_wrapper(const std::array<Real, gas_pcnst> &initial, const Real dt,
+            const Real soag_forcing) {
   using StateView = mam4::DeviceType::view_1d<Real>;
   using ResultView = mam4::DeviceType::view_1d<ImpSolResult>;
   StateView state("wrapper_state", gas_pcnst);
@@ -38,17 +62,8 @@ ChemistryOutput run_wrapper(const std::array<Real, gas_pcnst> &initial,
   Kokkos::deep_copy(state, host_state);
   Kokkos::parallel_for(
       "wrapper_status", Kokkos::RangePolicy<>(0, 1), KOKKOS_LAMBDA(const int) {
-        Real photo_rates[mam4::mo_photo::phtcnt] = {};
-        Real forcing[extcnt] = {};
-        Real invariants[nfs] = {};
-        Real heterogeneous_rates[gas_pcnst] = {};
-        // Synthetic M=1 leaves forcing numerically unchanged by normalization;
-        // zero oxidants and photolysis isolate the external SOAG source.
-        invariants[indexm] = 1;
-        forcing[8] = soag_forcing;
-        result(0) = mam4::microphysics::gas_phase_chemistry(
-            Real(300), dt, photo_rates, forcing, invariants,
-            heterogeneous_rates, state);
+        auto local_state = state;
+        result(0) = call_wrapper(local_state, dt, soag_forcing);
       });
   Kokkos::fence();
   const auto accepted =
@@ -63,8 +78,41 @@ ChemistryOutput run_wrapper(const std::array<Real, gas_pcnst> &initial,
   return output;
 }
 
-} // namespace
+// Isolate Kokkos::abort in a child so Catch can continue running other tests.
+// Call the wrapper on the host: GPU runtimes are not assumed safe to use
+// after fork, so the child must not launch device kernels.
+[[maybe_unused]] void
+require_wrapper_abort(const std::array<Real, gas_pcnst> &initial, const Real dt,
+                      const Real soag_forcing) {
+#if defined(__unix__) || defined(__APPLE__)
+  const pid_t child = fork();
+  REQUIRE(child >= 0);
+  if (child == 0) {
+    // Use SIGABRT's default action in the child so Catch's inherited SIGABRT
+    // handler does not intercept the abort. The parent calls waitpid to check
+    // that the child terminated because of SIGABRT.
+    std::signal(SIGABRT, SIG_DFL);
+    Real state[gas_pcnst];
+    for (int j = 0; j < gas_pcnst; ++j) {
+      state[j] = initial[j];
+    }
+    call_wrapper(state, dt, soag_forcing);
+    // Skip inherited cleanup handlers and destructors in the forked child.
+    std::_Exit(EXIT_SUCCESS);
+  }
+  int status = 0;
+  REQUIRE(waitpid(child, &status, 0) == child);
+  REQUIRE(WIFSIGNALED(status));
+  REQUIRE(WTERMSIG(status) == SIGABRT);
+#else
+  (void)initial;
+  (void)dt;
+  (void)soag_forcing;
+  WARN("Expected-abort checks require POSIX fork/waitpid; not exercised here");
 #endif
+}
+
+} // namespace
 
 TEST_CASE("gas chemistry preserves diagnostic outcome codes", "[gas_chem]") {
   using mam4::gas_chemistry::ImpSolOutcome;
@@ -79,7 +127,6 @@ TEST_CASE("gas chemistry preserves diagnostic outcome codes", "[gas_chem]") {
   REQUIRE(static_cast<int>(ImpSolOutcome::NegativeResult) == 8);
 }
 
-#if defined(MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY) || defined(NDEBUG)
 TEST_CASE("configured gas chemistry returns failure accounting", "[gas_chem]") {
   using namespace mam4::gas_chemistry;
   using mam4::Real;
@@ -95,6 +142,11 @@ TEST_CASE("configured gas chemistry returns failure accounting", "[gas_chem]") {
     forcing = Real(-2e-6);
   }
 
+  // Direct Debug failures terminate through Kokkos::abort. The other
+  // configurations return diagnostics that the assertions below inspect.
+#if !defined(MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY) && !defined(NDEBUG)
+  require_wrapper_abort(initial, dt, forcing);
+#else
   const auto output = run_wrapper(initial, dt, forcing);
   const auto result = output.result;
   REQUIRE_FALSE(result.success());
@@ -124,8 +176,7 @@ TEST_CASE("configured gas chemistry returns failure accounting", "[gas_chem]") {
       REQUIRE(std::memcmp(&output.state[j], &initial[j], sizeof(Real)) == 0);
     }
 #else
-    // Legacy may accept earlier substeps before a later retry fails. Retain
-    // exactly that accepted work and report the incomplete requested interval.
+    // Accepted legacy substeps remain committed when a later retry fails.
     REQUIRE(result.outcome == ImpSolOutcome::CutLimitExhausted);
     REQUIRE(result.failed_attempts > 0);
     REQUIRE(result.cut_count == 5);
@@ -141,8 +192,8 @@ TEST_CASE("configured gas chemistry returns failure accounting", "[gas_chem]") {
     REQUIRE(output.state[0] == initial[0]);
 #endif
   }
-}
 #endif
+}
 
 TEST_CASE("configured gas chemistry solver runs three timesteps",
           "[gas_chem][smoke]") {
