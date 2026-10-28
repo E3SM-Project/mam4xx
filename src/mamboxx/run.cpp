@@ -24,11 +24,21 @@ using View2D            = mam4::DeviceType::view_2d<Real>;
 using ThreadTeam        = mam4::ThreadTeam;
 using TeamPolicyFactory = ekat::TeamPolicyFactory<ekat::KokkosTypes<ekat::DefaultDevice>::ExeSpace>;
 
+using Microphysics = mam4::microphysics::Microphysics;
+
+struct Processes {
+  std::unique_ptr<Microphysics> microphysics;
+};
+
 struct State {
   mam4::Atmosphere  atmosphere;
   mam4::Prognostics prognostics;
 
-  View2D invariants;
+  struct {
+    mam4::microphysics::ColumnLocation  location;
+    mam4::microphysics::ExternalForcing external_forcing;
+    mam4::microphysics::Invariants      invariants;
+  } microphysics;
 };
 
 template <typename T>
@@ -63,14 +73,17 @@ void copy_view_to_vector(mam4::ColumnView device_view, std::vector<Real> &vec, H
   }
 }
 
-void initialize(const Config &config, State &state) {
+std::tuple<Processes, State> initialize(const Config &config) {
   int nlev = config.atmosphere.temperature.size();
   EKAT_REQUIRE(nlev == mam4::nlev,
       "requested number of vertical levels (" << nlev <<
       ") differs from compile-time value (" << mam4::nlev <<
       ") -- reconfigure with MAM4XX_NUM_VERTICALS");
 
-  // allocate resources
+  Processes processes = {};
+  processes.microphysics = std::make_unique<Microphysics>(config.control.microphysics);
+
+  State state = {};
   state.atmosphere = mam4::Atmosphere(nlev, 
     create_column_view(nlev), // temperature
     create_column_view(nlev), // pressure
@@ -133,61 +146,22 @@ void initialize(const Config &config, State &state) {
       }
     }
   }
+  return std::make_tuple(std::move(processes), state);
 }
 
-void external_forcing(State &state, Real dt) {
-  // TODO: look at MAMMicrophysics::extfrc_ and MAMMicrophysics::forcings_.
-  // TODO: how do we configure these in input?
+void step(const Processes &processes, State &state, Real dt) {
+  if (processes.microphysics.get() != nullptr) {
+    processes.microphysics->step(state.atmosphere, state.prognostics,
+                                 state.microphysics.location, state.microphysics.external_forcing,
+                                 state.microphysics.invariants, dt);
+  }
 }
 
-void set_invariants(State &state, Real dt) {
-  auto policy = TeamPolicyFactory::get_default_team_policy(1, mam4::nlev);
-  View1D cnst_offline[mam4::mo_setinv::num_tracer_cnst];
-  // FIXME: populate offline constituents 
-  Kokkos::parallel_for("mamboxx::set_invariants", policy, KOKKOS_LAMBDA(const ThreadTeam &team) {
-    mam4::mo_setinv::setinv(team,                                    // in
-                            state.invariants,                        // out
-                            state.atmosphere.temperature,            // in
-                            state.atmosphere.vapor_mixing_ratio,     // in
-                            cnst_offline,                            // in
-                            state.atmosphere.pressure);              // in
-  });
-}
-
-void compute_o3_column_density(State &state, Real dt) {
-}
-
-void photo_table(State &state, Real dt) {
-}
-
-void sethet(State &state, Real dt) {
-}
-
-void drydep_xactive(State &state, Real dt) {
-}
-
-void gas_phase_chemistry(State &state, Real dt) {
-}
-
-void setsox(State &state, Real dt) {
-}
-
-void modal_aero_amicphys_intr(State &state, Real dt) {
-}
-
-void vmr2mmr_cw(State &state, Real dt) {
-}
-
-void linoz(State &state, Real dt) {
-}
-
-void step(State &state, Real dt) {
-  mam4::microphysics::step(state.atmosphere, state.prognostics, state.invariants, dt);
-}
-
-void update_diagnostics(const State &state, Real dt, Diagnostics &diagnostics) {
+void update_diagnostics(const Processes &processes, const State &state, Real dt, Diagnostics &diagnostics) {
   mam4::Diagnostics diags = {};
-  mam4::microphysics::compute_diagnostics(state.atmosphere, state.prognostics, diags);
+  if (processes.microphysics.get() != nullptr) {
+    processes.microphysics->compute_diagnostics(state.atmosphere, state.prognostics, diags);
+  }
 }
 
 void finalize(const State &state, Result &result) {
@@ -222,14 +196,13 @@ void finalize(const State &state, Result &result) {
 } // anonymous namespace
 
 Result run(const Config &config) {
-  State state = {};
   Diagnostics diagnostics = {};
 
-  initialize(config, state);
+  auto [processes, state] = initialize(config);
 
   for (int i = 0; i < config.time.nstep; ++i) {
-    step(state, config.time.dt);
-    update_diagnostics(state, config.time.dt, diagnostics);
+    step(processes, state, config.time.dt);
+    update_diagnostics(processes, state, config.time.dt, diagnostics);
   }
 
   Result result = {};
