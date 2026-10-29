@@ -31,6 +31,11 @@ Microphysics::~Microphysics() {
   }
 }
 
+void Microphysics::enable_extra_diagnostics(mam4::MicrophysDiagnosticArrays arrays) {
+  extra_diagnostics_.enabled = true;
+  extra_diagnostics_.arrays = arrays;
+}
+
 // Runs configured aerosol microphysics processes over a single timestep, updating the given set of
 // (single column) prognostics under the given prevailing atmosphere conditions.
 void Microphysics::step(const mam4::Atmosphere &atmosphere,
@@ -53,10 +58,10 @@ void Microphysics::step(const mam4::Atmosphere &atmosphere,
     //photo_table(state, dt);
     sethet(atmosphere, location, external_conditions, dt);
   }
-  drydep_xactive(atmosphere, location, external_conditions, dt);
+  drydep_xactive(atmosphere, location, external_conditions);
   gas_phase_chemistry(atmosphere, external_conditions, dt);
-  setsox(state, dt);
-  modal_aero_amicphys_intr(state, dt);
+  setsox(atmosphere, external_conditions, dt);
+  modal_aero_amicphys_intr(atmosphere, dt);
   vmr2mmr_cw(state, dt);
   linoz(state, dt);
 }
@@ -191,7 +196,7 @@ void Microphysics::drydep_xactive(const Atmosphere &atmosphere, const ColumnLoca
         external_conditions.constituent_fluxes(ispc) -= deposition_flux(ispc - offset_aerosol);
       });
 
-      if (config_.enable_extra_diagnostics) {
+      if (extra_diagnostics_.enabled) {
           Kokkos::parallel_for(
             Kokkos::TeamVectorRange(team, num_gas_aerosol_constituents),
             [&](const int ispc) {
@@ -212,7 +217,7 @@ void Microphysics::gas_phase_chemistry(const Atmosphere &atmosphere,
 
   if (config_.gas_chemistry) {
     ConstituentsView gas_phase_chemistry_dvmrdt;
-    if (config_.enable_extra_diagnostics) {
+    if (extra_diagnostics_.enabled) {
       gas_phase_chemistry_dvmrdt = external_conditions.gas_chemistry_dvmrdt;
     }
 
@@ -245,7 +250,7 @@ void Microphysics::gas_phase_chemistry(const Atmosphere &atmosphere,
 
         });
 
-    if (config_.enable_extra_diagnostics) {
+    if (extra_diagnostics_.enabled) {
       Kokkos::parallel_for("mam4::Microphysics::gas_phase_chemistry_dvmrdt",
                            Kokkos::RangePolicy<>(0, nlev), KOKKOS_LAMBDA(const int kk) {
         const Real pdel = atmosphere.hydrostatic_dp(kk);
@@ -318,7 +323,7 @@ void Microphysics::setsox(const Atmosphere &atmosphere,
     });
 
     ConstituentsView aqueous_chemistry_dvmrdt;
-    if (config_.enable_extra_diagnostics) {
+    if (extra_diagnostics_.enabled) {
       aqueous_chemistry_dvmrdt = external_conditions.aqueous_chemistry_dvmrdt;
     }
 
@@ -362,39 +367,9 @@ void Microphysics::modal_aero_amicphys_intr(const Atmosphere &atmosphere, Real d
       }
       });
 
-  /*
-  view_3d gas_aero_exchange_condensation, gas_aero_exchange_renaming,
-          gas_aero_exchange_nucleation, gas_aero_exchange_coagulation,
-          gas_aero_exchange_renaming_cloud_borne;
-
-  if (config_.enable_extra_diagnostics) {
-    gas_aero_exchange_condensation = get_field_out("mam4_microphysics_tendency_condensation").get_view<Real***>();
-    gas_aero_exchange_renaming = get_field_out("mam4_microphysics_tendency_renaming").get_view<Real***>();
-    gas_aero_exchange_nucleation = get_field_out("mam4_microphysics_tendency_nucleation").get_view<Real***>();
-    gas_aero_exchange_coagulation = get_field_out("mam4_microphysics_tendency_coagulation").get_view<Real***>();
-    gas_aero_exchange_renaming_cloud_borne = get_field_out("mam4_microphysics_tendency_renaming_cloud_borne").get_view<Real***>();
-  }
-  */
-
-  const bool extra_diagnostics  = config_.enable_extra_diagnostics;
-
   const auto& config_amicphys = config_.amicphys;
   Kokkos::parallel_for("MAMMicrophysics::run_impl::modal_aero_amicphys_intr", policy,
       KOKKOS_LAMBDA(const ThreadTeam &team) {
-
-      mam4::MicrophysDiagnosticArrays diag_arrays;
-      if (extra_mam4_aero_microphys_diags) {
-      diag_arrays.gas_aero_exchange_condensation = ekat::subview(gas_aero_exchange_condensation, icol);
-      diag_arrays.gas_aero_exchange_renaming = ekat::subview(gas_aero_exchange_renaming, icol);
-      diag_arrays.gas_aero_exchange_nucleation = ekat::subview(gas_aero_exchange_nucleation, icol);
-      diag_arrays.gas_aero_exchange_coagulation = ekat::subview(gas_aero_exchange_coagulation, icol);
-      diag_arrays.gas_aero_exchange_renaming_cloud_borne = ekat::subview(gas_aero_exchange_renaming_cloud_borne, icol);
-      }
-      auto vmrcw_icol = ekat::subview(vmrcw,icol);
-      auto vmr_icol = ekat::subview(vmr,icol);
-      const auto & vmr0_icol = ekat::subview(vmr0,icol);
-      const auto & vmr_pregas_icol = ekat::subview(vmr_pregas,icol);
-      const auto & vmr_precld_icol = ekat::subview(vmr_precld,icol);
 
       const auto& dgncur_awet_icol = ekat::subview(dgncur_awet_loc,icol);
       const auto& dgncur_a_icol = ekat::subview(dgncur_a_loc,icol);
@@ -407,35 +382,36 @@ void Microphysics::modal_aero_amicphys_intr(const Atmosphere &atmosphere, Real d
           // * dry and wet diameters [m]
           // * wet densities [kg/m3]
           // * aerosol water mass mixing ratio [kg/kg]
-          const Real temp = atm.temperature(kk);
-          const Real pmid = atm.pressure(kk);
-          const Real pdel = atm.hydrostatic_dp(kk);
-          const Real zm = atm.height(kk);
-          const Real pblh = atm.planetary_boundary_layer_height;
-          const Real qv = atm.vapor_mixing_ratio(kk);
-          const Real cldfrac = atm.cloud_fraction(kk);
+          const Real temp = atmosphere.temperature(kk);
+          const Real pmid = atmosphere.pressure(kk);
+          const Real pdel = atmosphere.hydrostatic_dp(kk);
+          const Real zm = atmosphere.height(kk);
+          const Real pblh = atmosphere.planetary_boundary_layer_height;
+          const Real qv = atmosphere.vapor_mixing_ratio(kk);
+          const Real cldfrac = atmosphere.cloud_fraction(kk);
           const auto& dgncur_awet_kk = ekat::subview(dgncur_awet_icol,kk);
           const auto& dgncur_a_kk = ekat::subview(dgncur_a_icol,kk);
           const auto& wetdens_kk = ekat::subview(wetdens_icol,kk);
 
-          auto vmr_kk = ekat::subview(vmr_icol,kk);
-          auto vmrcw_kk = ekat::subview(vmrcw_icol,kk);
-          const auto & vmr0_kk = ekat::subview(vmr0_icol,kk);
-          const auto & vmr_pregas_kk = ekat::subview(vmr_pregas_icol,kk);
-          const auto & vmr_precld_kk = ekat::subview(vmr_precld_icol,kk);
-          // Perform aerosol microphysics (gas-aerosol exchange, nucleation,
-          // coagulation)
+          auto vmr_kk = ekat::subview(work_.vmr,kk);
+          auto vmrcw_kk = ekat::subview(work_.vmrcw,kk);
+          const auto & vmr0_kk = ekat::subview(work_.vmr0,kk);
+          const auto & vmr_pregas_kk = ekat::subview(work_.vmr_pregas,kk);
+          const auto & vmr_precld_kk = ekat::subview(work_.vmr_precld,kk);
+
+          // Perform aerosol microphysics (gas-aerosol exchange, nucleation, coagulation).
           mam4::microphysics::modal_aero_amicphys_intr(
               // in
-              config_amicphys, dt, n_so4_monolayers_pcage, temp, pmid, pdel, zm, pblh, qv, cldfrac,
+              config_amicphys, dt, config_.n_so4_monolayers_pcage, temp, pmid, pdel, zm, pblh, qv,
+              cldfrac,
               // out
               vmr_kk, vmrcw_kk,
               // diagnostics (out)
-              kk, diag_arrays.gas_aero_exchange_condensation,
-              diag_arrays.gas_aero_exchange_renaming,
-              diag_arrays.gas_aero_exchange_nucleation,
-              diag_arrays.gas_aero_exchange_coagulation,
-              diag_arrays.gas_aero_exchange_renaming_cloud_borne,
+              kk, extra_diagnostics_.arrays.gas_aero_exchange_condensation,
+              extra_diagnostics_.arrays.gas_aero_exchange_renaming,
+              extra_diagnostics_.arrays.gas_aero_exchange_nucleation,
+              extra_diagnostics_.arrays.gas_aero_exchange_coagulation,
+              extra_diagnostics_.arrays.gas_aero_exchange_renaming_cloud_borne,
               // in
               vmr0_kk, vmr_pregas_kk, vmr_precld_kk, dgncur_a_kk, dgncur_awet_kk, wetdens_kk);
           });

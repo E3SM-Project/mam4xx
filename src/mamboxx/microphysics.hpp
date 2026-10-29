@@ -1,11 +1,12 @@
 #ifndef MAM4XX_MICROPHYSICS_HPP
 #define MAM4XX_MICROPHYSICS_HPP
 
-#include "mam4xx/mam4_amicphys.hpp"
 #include <mam4_config.hpp>
 #include <mam4xx/aero_config.hpp>
 #include <mam4xx/aero_modes.hpp>
 #include <mam4xx/atmosphere.hpp>
+#include <mam4xx/diagnostic_arrays.hpp>
+#include <mam4xx/mam4_amicphys.hpp>
 #include <mam4xx/mam4_constants.hpp>
 #include <mam4xx/mam4_types.hpp>
 #include <mam4xx/mo_drydep.hpp>
@@ -22,7 +23,10 @@ using View3D            = mam4::DeviceType::view_3d<Real>;
 using ThreadTeam        = mam4::ThreadTeam;
 using TeamPolicyFactory = ekat::TeamPolicyFactory<ekat::KokkosTypes<ekat::DefaultDevice>::ExeSpace>;
 
-using ConstituentsView            = View2D; // [nlev][gas_pcnst]
+
+// Aerosol microphysics makes use of several views with specific dimensions. These type aliases
+// give a hint about what a particular view contains (and how it's indexed).
+using ConstituentsView            = View2D; // [nlev][gas_pcnst] NOTE: sometimes reversed
 using FixedSpeciesView            = View2D; // [nlev][nfs]
 using SingleLevelConstituentsView = View1D; // [gas_pcnst]
 using PhotolysisRatesView         = View2D; // [nlev][mam4::mo_photo::phtcnt]
@@ -37,11 +41,9 @@ struct Config {
   bool nucleation;
   bool coagulation;
 
-  bool enable_extra_diagnostics;
-
   // parameterization-specific configurations
-  mam4::mo_setsox::Config            setsox;
-  mam4::microphysics::AmicPhysConfig amicphys;
+  mam4::mo_setsox::Config setsox;
+  AmicPhysConfig          amicphys;
 
   // FIXME: These could be better organized
   int n_so4_monolayers_pcage;
@@ -114,6 +116,8 @@ public:
   Microphysics(const Microphysics&) = delete;
   Microphysics(const Microphysics&&) = delete;
 
+  void enable_extra_diagnostics(mam4::MicrophysDiagnosticArrays arrays);
+
   // Runs configured aerosol microphysics processes over a single timestep, updating the given set
   // of (single column) prognostics under the given prevailing atmosphere conditions.
   void step(const mam4::Atmosphere &atmosphere,
@@ -150,6 +154,11 @@ private:
 
     bool owned; // true iff the single-argument Microphysics constructor was used
   } work_;
+
+  struct {
+    bool enabled;
+    mam4::MicrophysDiagnosticArrays arrays;
+  } extra_diagnostics_;
 
   void set_work_arrays(const WorkArrays &work_arrays, bool assume_ownership);
   void set_external_forcing(const ColumnView &external_forcing);
