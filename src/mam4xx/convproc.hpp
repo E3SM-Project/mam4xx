@@ -2857,7 +2857,7 @@ int get_scratch1d_work_len(const int nlev) {
 }
 
 // Initialize scratch1Dviews array from work array for convective processing
-inline void init_scratch_1d_views(
+KOKKOS_INLINE_FUNCTION void init_scratch_1d_views(
     Kokkos::View<Real *> scratch1Dviews[ConvProc::Col1DViewInd::NumScratch],
     Real *work_ptr, const int nlev) {
   constexpr int pcnst = aero_model::pcnst;
