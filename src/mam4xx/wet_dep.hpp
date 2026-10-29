@@ -2295,7 +2295,7 @@ void aero_model_wetdep(
   // Only process when convection is active and for interstitial
   // aerosols
   const auto pcnst_local = aero_model::pcnst;
-  if ((convproc_do_aer || convproc_do_gas) && ktop < kbot) {
+  if ((convproc_do_aer || convproc_do_gas) && ktop >= 0 && ktop < kbot) {
     // Get aerosol species view from config
     const auto aero_species = aero_config.aero_species;
     bool ptend_lq[aero_model::pcnst];
