@@ -36,6 +36,7 @@ set(TEST_LIST
     stand_aero_model_calcsize_water_uptake_dr_ts_379
     baseline_aero_model_wetdep_ts_379
     aero_model_wetdep_convproc_ts_3
+    aero_model_wetdep_convproc_no_gas_no_aerosol_ts_3
     )
 
 set(DEFAULT_TOL_BASELINE 1e-13)
@@ -48,6 +49,7 @@ set(ERROR_THRESHOLDS
    1e-6                    # stand_aero_model_calcsize_water_uptake_dr_ts_379
    2e-5                    # baseline_aero_model_wetdep_ts_379
    1e-4 #aero_model_wetdep_convproc_ts_3
+   1e-5 #aero_model_wetdep_convproc_no_gas_no_aerosol_ts_3
    )
 
 set(TestLabel "aero_model")
