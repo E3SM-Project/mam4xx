@@ -51,7 +51,9 @@ KOKKOS_INLINE_FUNCTION ImpSolResult call_wrapper(VectorType &state,
                                                  heterogeneous_rates, state);
 }
 
-[[maybe_unused]] ChemistryOutput
+// Direct Debug failures are checked by the separate CTest abort executable.
+#if defined(MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY) || defined(NDEBUG)
+ChemistryOutput
 run_wrapper(const std::array<Real, gas_pcnst> &initial, const Real dt,
             const Real soag_forcing) {
   using StateView = mam4::DeviceType::view_1d<Real>;
@@ -80,6 +82,7 @@ run_wrapper(const std::array<Real, gas_pcnst> &initial, const Real dt,
   }
   return output;
 }
+#endif
 
 // Isolate Kokkos::abort in a child so Catch can continue running other tests.
 // Call the wrapper on the host: GPU runtimes are not assumed safe to use
