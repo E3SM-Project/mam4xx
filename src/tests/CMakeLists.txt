@@ -51,6 +51,32 @@ EkatCreateUnitTest(mam4_aero_emissions_unit_tests mam4_aero_emissions_unit_tests
 EkatCreateUnitTest(mam4_photo_setcol mam4_photo_setcol.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
 
+EkatCreateUnitTest(gas_chem_direct_solver_unit_tests
+  gas_chem_direct_solver_unit_tests.cpp
+  LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
+
+EkatCreateUnitTest(gas_phase_chemistry_smoke_tests
+  gas_phase_chemistry_smoke_tests.cpp
+  LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
+
+# Isolate intentional wrapper aborts in fresh processes, outside Catch's handlers.
+add_executable(gas_phase_chemistry_abort gas_phase_chemistry_abort.cpp)
+target_link_libraries(gas_phase_chemistry_abort PRIVATE mam4xx)
+foreach(case IN ITEMS invalid_interval negative_endpoint)
+  if (case STREQUAL "invalid_interval")
+    set(expected_message "gas_phase_chemistry: invalid input")
+  else()
+    set(expected_message "gas_phase_chemistry: the backward-Euler update produced a negative")
+  endif()
+  add_test(NAME gas_phase_chemistry_abort_${case}
+    COMMAND ${CMAKE_COMMAND}
+      "-DEXECUTABLE=$<TARGET_FILE:gas_phase_chemistry_abort>"
+      "-DCASE=${case}" "-DEXPECTED_MESSAGE=${expected_message}"
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/check_gas_chemistry_abort.cmake)
+  set_tests_properties(gas_phase_chemistry_abort_${case} PROPERTIES
+    SKIP_REGULAR_EXPRESSION "SKIP: the configured wrapper" TIMEOUT 40)
+endforeach()
+
 if (NOT ${CMAKE_CXX_COMPILER_ID} STREQUAL "Intel") #The Intel compiler always emit a warning for inline functions.
   target_compile_options(utils_unit_tests PRIVATE)
   target_compile_options(mam4_gasaerexch_unit_tests PRIVATE)

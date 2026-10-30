@@ -20,6 +20,9 @@ using Real = @MAM4XX_REAL_TYPE@;
 #cmakedefine MAM4XX_ENABLE_GPU
 #cmakedefine MAM4XX_EVAL_DIAGNOSTICS
 
+// The validated CMake option defaults to legacy; absence selects direct.
+#cmakedefine MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY
+
 // Number of vertical levels per column (must match the number in the
 // host model)
 constexpr int nlev = @MAM4XX_NUM_VERTICAL_LEVELS@;
