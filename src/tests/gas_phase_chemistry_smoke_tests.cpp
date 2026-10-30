@@ -84,10 +84,11 @@ run_wrapper(const std::array<Real, gas_pcnst> &initial, const Real dt,
 }
 #endif
 
+#if !defined(MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY) && !defined(NDEBUG)
 // Isolate Kokkos::abort in a child so Catch can continue running other tests.
 // Call the wrapper on the host: GPU runtimes are not assumed safe to use
 // after fork, so the child must not launch device kernels.
-[[maybe_unused]] void
+void
 require_wrapper_abort(const std::array<Real, gas_pcnst> &initial, const Real dt,
                       const Real soag_forcing) {
   const pid_t child = fork();
@@ -110,6 +111,7 @@ require_wrapper_abort(const std::array<Real, gas_pcnst> &initial, const Real dt,
   REQUIRE(WIFSIGNALED(status));
   REQUIRE(WTERMSIG(status) == SIGABRT);
 }
+#endif
 
 } // namespace
 
