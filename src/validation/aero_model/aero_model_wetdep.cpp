@@ -178,6 +178,7 @@ void aero_model_wetdep(Ensemble *ensemble) {
     ConstView1D dp_icol, p_del_dry_icol;
     ConstView1D sh_e_ed_ratio;
     const bool convproc_do_aer = false, convproc_do_gas = false;
+    const int zm_activity = 0;  // Deep convection is inactive in this validation test
     const int ktop = 0;
     const int kbot = 0;
     const int *species_class = nullptr;
@@ -223,7 +224,7 @@ void aero_model_wetdep(Ensemble *ensemble) {
               // Convection mass flux parameters
               scratch1Dviews, mu_icol, md_icol, du_icol, eu_icol, ed_icol,
               dp_icol, p_del_dry_icol, ktop, kbot, convproc_do_aer,
-              convproc_do_gas, species_class, mmtoo_prevap_resusp, aero_config);
+              convproc_do_gas, zm_activity, species_class, mmtoo_prevap_resusp, aero_config);
 
           team.team_barrier();
           Kokkos::parallel_for(
