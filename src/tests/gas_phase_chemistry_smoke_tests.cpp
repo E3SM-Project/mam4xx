@@ -10,19 +10,9 @@
 
 #include <array>
 #include <cmath>
-#include <csignal>
-#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <string>
-
-// The expected-abort test uses POSIX fork() and waitpid() to isolate the
-// solver abort and let the parent verify how the child terminated. These
-// functions are not part of the C++ standard; no build-system availability
-// check is implemented because they are assumed available on the systems where
-// mam4xx tests typically run.
-#include <sys/wait.h>
-#include <unistd.h>
 
 namespace {
 
@@ -84,35 +74,6 @@ run_wrapper(const std::array<Real, gas_pcnst> &initial, const Real dt,
 }
 #endif
 
-#if !defined(MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY) && !defined(NDEBUG)
-// Isolate Kokkos::abort in a child so Catch can continue running other tests.
-// Call the wrapper on the host: GPU runtimes are not assumed safe to use
-// after fork, so the child must not launch device kernels.
-void
-require_wrapper_abort(const std::array<Real, gas_pcnst> &initial, const Real dt,
-                      const Real soag_forcing) {
-  const pid_t child = fork();
-  REQUIRE(child >= 0);
-  if (child == 0) {
-    // Use SIGABRT's default action in the child so Catch's inherited SIGABRT
-    // handler does not intercept the abort. The parent calls waitpid to check
-    // that the child terminated because of SIGABRT.
-    std::signal(SIGABRT, SIG_DFL);
-    Real state[gas_pcnst];
-    for (int j = 0; j < gas_pcnst; ++j) {
-      state[j] = initial[j];
-    }
-    call_wrapper(state, dt, soag_forcing);
-    // Skip inherited cleanup handlers and destructors in the forked child.
-    std::_Exit(EXIT_SUCCESS);
-  }
-  int status = 0;
-  REQUIRE(waitpid(child, &status, 0) == child);
-  REQUIRE(WIFSIGNALED(status));
-  REQUIRE(WTERMSIG(status) == SIGABRT);
-}
-#endif
-
 } // namespace
 
 TEST_CASE("gas chemistry preserves diagnostic outcome codes", "[gas_chem]") {
@@ -146,7 +107,7 @@ TEST_CASE("configured gas chemistry returns failure accounting", "[gas_chem]") {
   // Direct Debug failures terminate through Kokkos::abort. The other
   // configurations return diagnostics that the assertions below inspect.
 #if !defined(MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY) && !defined(NDEBUG)
-  require_wrapper_abort(initial, dt, forcing);
+  SUCCEED("Direct Debug failure behavior is checked by the CTest abort tests");
 #else
   const auto output = run_wrapper(initial, dt, forcing);
   const auto result = output.result;
