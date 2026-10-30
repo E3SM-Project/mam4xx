@@ -1842,6 +1842,7 @@ void aero_model_wetdep(
     const int kbot,               // Cloud base level index
     const bool convproc_do_aer,   // Flag to process aerosols
     const bool convproc_do_gas,   // Flag to process gases
+    const int zm_activity,        // Deep convection activity flag (1/0)
     const int species_class[aero_model::pcnst],       // Species classification
     const int mmtoo_prevap_resusp[aero_model::pcnst], // Resuspension mapping
     const AeroConfig &aero_config) {                  // Aerosol configuration
@@ -2295,7 +2296,7 @@ void aero_model_wetdep(
   // Only process when convection is active and for interstitial
   // aerosols
   const auto pcnst_local = aero_model::pcnst;
-  if ((convproc_do_aer || convproc_do_gas) && ktop >= 0 && ktop < kbot) {
+  if ((convproc_do_aer || convproc_do_gas) && zm_activity) {
     // Get aerosol species view from config
     const auto aero_species = aero_config.aero_species;
     bool ptend_lq[aero_model::pcnst];
