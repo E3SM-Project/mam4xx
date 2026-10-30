@@ -110,8 +110,9 @@ void compute_column_tendency(Ensemble *ensemble) {
     std::vector<Real> sumresusp_host(pcnst_extd);
     std::vector<Real> sumprevap_host(pcnst_extd);
     std::vector<Real> sumprevap_hist_host(pcnst_extd);
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "compute_column_tendency", 1, KOKKOS_LAMBDA(int) {
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           bool doconvproc_extd[pcnst_extd] = {};
           for (int n = 0; n < pcnst_extd; ++n)
             doconvproc_extd[n] = doconvproc_extd_dev[n];
@@ -124,10 +125,10 @@ void compute_column_tendency(Ensemble *ensemble) {
           Real *sumprevap = sumprevap_dev.data();
           Real *sumprevap_hist = sumprevap_hist_dev.data();
           mam4::convproc::compute_column_tendency(
-              doconvproc_extd, ktop, kbot_prevap, dpdry_i, dcondt_resusp_dev,
-              dcondt_prevap_dev, dcondt_prevap_hist_dev, dconudt_activa_dev,
-              dconudt_wetdep_dev, fa_u, sumactiva, sumaqchem, sumwetdep,
-              sumresusp, sumprevap, sumprevap_hist);
+              team, doconvproc_extd, ktop, kbot_prevap, dpdry_i,
+              dcondt_resusp_dev, dcondt_prevap_dev, dcondt_prevap_hist_dev,
+              dconudt_activa_dev, dconudt_wetdep_dev, fa_u, sumactiva,
+              sumaqchem, sumwetdep, sumresusp, sumprevap, sumprevap_hist);
         });
     set_output(output, "sumactiva", pcnst_extd, sumactiva_host, sumactiva_dev);
     set_output(output, "sumaqchem", pcnst_extd, sumaqchem_host, sumaqchem_dev);

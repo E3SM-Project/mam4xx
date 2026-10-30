@@ -163,6 +163,36 @@ Real wv_sat_svp_trans(const Real t) {
   return es;
 }
 
+// Table parameters matching E3SM wv_saturation.F90
+constexpr Real estbl_tmin = 127.16;
+constexpr Real estbl_tmax = 375.16;
+constexpr int estbl_plen = 250; // ceiling(tmax - tmin) + 2
+
+// Generate the saturation vapor pressure table matching wv_sat_init in E3SM
+// wv_saturation.F90:
+//   do i = 1, plenest
+//      estbl(i) = svp_trans(tmin + real(i-1, r8))
+//   end do
+template <typename TableType>
+KOKKOS_INLINE_FUNCTION void init_estbl(TableType &estbl) {
+  for (int i = 0; i < estbl_plen; ++i) {
+    estbl[i] = wv_sat_methods::wv_sat_svp_trans(estbl_tmin + Real(i));
+  }
+}
+
+// Does linear interpolation from nearest values found in table (estbl),
+// matching elemental function estblf(t) in E3SM wv_saturation.F90.
+template <typename TableType>
+KOKKOS_INLINE_FUNCTION Real estblf(const Real t, const TableType &estbl) {
+  // Number of table entries above tmin
+  const Real t_tmp = mam4::max(mam4::min(t, estbl_tmax) - estbl_tmin, 0.0);
+  // Corresponding index (0-based): int(t_tmp)
+  const int i = static_cast<int>(t_tmp);
+  // Fractional part of t_tmp (for interpolation): t_tmp - aint(t_tmp)
+  const Real weight = t_tmp - Real(i);
+  return (1.0 - weight) * estbl[i] + weight * estbl[i + 1];
+}
+
 } // namespace wv_sat_methods
 } // namespace mam4
 
