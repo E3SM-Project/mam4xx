@@ -21,14 +21,16 @@ Note that `gas_pcnst` is not the number of unique gas species. That is 13.
 
 ## Questions
 
-* **How are `qq` and `qqcw` constituent arrays populated?** See
-  `mam4::utils::extract_xxx_from_prognostics`.
+* The dry and wet geometric mean diameters and the wet density are computed by the wet scavenging
+  eamxx/mam process, but not stored within mam4xx data structures. Should we find a place to store
+  these things in mam4xx's prognostic variables, or should we treat them as diagnosed quantities and
+  compute them whenever we need them?
 
 ## TODO
 
 [X] Initialize qq, qqcw, stateq, vmr (etc) work arrays in an EAMxx-sensible fashion
 [ ] Implement standalone work array initialization
 [X] Organize microphysics into a self-contained interface
-[ ] Figure out how MAM gets wet/dry diameters and wet density fields
-[ ] Determine one or more "test problems" for aerosol microphysics (benchmark against F90 box model?)
+[X] Determine "test problems" for box model
 [ ] Determine box model output shape
+[ ] Start carving out an ACI interface
