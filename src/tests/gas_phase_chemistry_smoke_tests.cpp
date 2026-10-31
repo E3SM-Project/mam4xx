@@ -41,8 +41,6 @@ KOKKOS_INLINE_FUNCTION ImpSolResult call_wrapper(VectorType &state,
                                                  heterogeneous_rates, state);
 }
 
-// Direct Debug failures are checked by the separate CTest abort executable.
-#if defined(MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY) || defined(NDEBUG)
 ChemistryOutput
 run_wrapper(const std::array<Real, gas_pcnst> &initial, const Real dt,
             const Real soag_forcing) {
@@ -72,7 +70,6 @@ run_wrapper(const std::array<Real, gas_pcnst> &initial, const Real dt,
   }
   return output;
 }
-#endif
 
 } // namespace
 
@@ -104,11 +101,6 @@ TEST_CASE("configured gas chemistry returns failure accounting", "[gas_chem]") {
     forcing = Real(-2e-6);
   }
 
-  // Direct Debug failures terminate through Kokkos::abort. The other
-  // configurations return diagnostics that the assertions below inspect.
-#if !defined(MAM4XX_GAS_CHEMISTRY_SOLVER_LEGACY) && !defined(NDEBUG)
-  SUCCEED("Direct Debug failure behavior is checked by the CTest abort tests");
-#else
   const auto output = run_wrapper(initial, dt, forcing);
   const auto result = output.result;
   const bool direct_selected =
@@ -150,7 +142,6 @@ TEST_CASE("configured gas chemistry returns failure accounting", "[gas_chem]") {
             tolerance * std::abs(initial[5]));
     REQUIRE(output.state[0] == initial[0]);
   }
-#endif
 }
 
 TEST_CASE("configured gas chemistry solver runs three timesteps",
