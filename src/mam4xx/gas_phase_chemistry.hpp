@@ -45,8 +45,9 @@ using mam4::gas_chemistry::indexm;
 // The direct solver publishes state only after the full step succeeds. The
 // legacy solver publishes each accepted internal substep but never a failed
 // trial. Legacy and direct failures both return their status in every build,
-// and direct failures leave the complete input state unchanged. Callers must
-// inspect the returned status and record unsuccessful intervals.
+// and direct failures leave the complete input state unchanged and print a
+// warning. Callers must inspect the returned status and record unsuccessful
+// intervals.
 // The returned counts and intervals describe actual accepted work: a failed
 // direct call has one failed attempt, no cuts, no accepted steps, and zero
 // accepted time. Successful direct calls accept one step covering dt seconds.
@@ -139,6 +140,29 @@ KOKKOS_INLINE_FUNCTION gas_chemistry::ImpSolResult gas_phase_chemistry(
     return result;
   }
   result.failed_attempts = 1;
+  // Warn in every build, then return the failure status.
+  switch (outcome) {
+  case gas_chemistry::ImpSolOutcome::InvalidInput:
+    printf("WARNING gas_phase_chemistry: invalid input; chemistry state was "
+           "left unchanged\n");
+    break;
+  case gas_chemistry::ImpSolOutcome::NonfiniteResult:
+    printf("WARNING gas_phase_chemistry: a gas-chemistry calculation produced "
+           "NaN or infinity; chemistry state was left unchanged\n");
+    break;
+  case gas_chemistry::ImpSolOutcome::UnsafeDenominator:
+    printf("WARNING gas_phase_chemistry: the backward-Euler denominator was "
+           "zero or negative; chemistry state was left unchanged\n");
+    break;
+  case gas_chemistry::ImpSolOutcome::NegativeResult:
+    printf("WARNING gas_phase_chemistry: the backward-Euler update produced a "
+           "negative state entry; chemistry state was left unchanged\n");
+    break;
+  default:
+    printf("WARNING gas_phase_chemistry: unknown direct solver outcome; "
+           "chemistry state was left unchanged\n");
+    break;
+  }
   return result;
 #endif
 }
