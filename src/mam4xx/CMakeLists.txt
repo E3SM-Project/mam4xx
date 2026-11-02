@@ -20,6 +20,7 @@ install(FILES
         gasaerexch.hpp
         gasaerexch_soaexch.hpp
         gas_chem.hpp
+        gas_chem_direct.hpp
         gas_chem_mechanism.hpp
         kerminen2002.hpp
         kohler.hpp

@@ -1206,11 +1206,30 @@ void setsox_single_level(const int loffset, const Real dt, const Real press,
   //------------------------------------------------------------------------
   //       ... S(IV) (HSO3) + H2O2
   //------------------------------------------------------------------------
+  // A1: aqueous S(IV) + H2O2 -> S(VI). Reaction-family references:
+  // Hoffmann and Edwards (1975), J. Phys. Chem. 79, 2096-2098,
+  // doi:10.1021/j100587a005; Martin and Damschen (1981), Atmos. Environ.
+  // 15, 1615-1621, doi:10.1016/0004-6981(81)90146-3; McArdle and Hoffmann
+  // (1983), J. Phys. Chem. 87, 5425-5429, doi:10.1021/j150644a024.
+  // These establish the kinetic family; the exact 8.e4, 3650, and 0.1 fit
+  // below has not been independently matched to those papers.
+  // xph is [H+] [mol L^-1]; t_factor = 1/T - 1/(298 K) [K^-1].
+  // rah2o2 [L mol^-1 s^-1] multiplies dissolved molecular SO2 and H2O2
+  // concentrations, using intrinsic Henry constants in calc_sox_aqueous.
   Real rah2o2 = 8.e4 * exp(-3650.0 * t_factor) / (0.1 + xph);
 
   //------------------------------------------------------------------------
   //        ... S(IV)+ O3
   //------------------------------------------------------------------------
+  // A2: aqueous S(IV) + O3 -> S(VI). Reaction-family references:
+  // Maahs (1983), Atmos. Environ. 17, 341-345,
+  // doi:10.1016/0004-6981(83)90050-1; Hoffmann (1986), Atmos. Environ.
+  // 20, 1145-1154, doi:10.1016/0004-6981(86)90147-2.
+  // These establish the kinetic family; the exact two-term fit below has
+  // not been independently matched to those papers.
+  // tz is temperature [K]; xph is [H+] [mol L^-1]. rao3 [L mol^-1 s^-1]
+  // multiplies dissolved O3 and S(IV) concentrations in calc_sox_aqueous,
+  // using the effective SO2 Henry constant heso2 (including dissociation).
   Real rao3 = 4.39e11 * exp(-4131.0 / tz) + 2.56e3 * exp(-996.0 / tz) / xph;
 
   /*

@@ -167,3 +167,12 @@ jobs:
           name: mam4xx
           token: ${{ secrets.cc_token }}
           verbose: true
+
+      # Rebuild with the direct gas-chemistry solver and run its process-level
+      # tests. All other tests run only with the default solver.
+      - name: Running direct-solver gas-chemistry tests (${{ matrix.build-type }}, ${{ matrix.fp-precision }} precision)
+        run: |
+          cmake -S . -B build -DMAM4XX_GAS_CHEMISTRY_SOLVER=direct
+          cd build
+          make gas_chem_direct_solver_unit_tests gas_phase_chemistry_smoke_tests
+          ctest -V --output-on-failure -R '^(gas_chem_direct_solver_unit_tests|gas_phase_chemistry_smoke_tests)'
