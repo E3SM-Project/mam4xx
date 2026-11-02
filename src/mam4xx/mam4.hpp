@@ -27,7 +27,6 @@
 #include "lin_strat_chem.hpp"
 #include "mam4_amicphys.hpp"
 #include "mam4_types.hpp"
-#include "mo_chm_diags.hpp"
 #include "mo_drydep.hpp"
 #include "mo_gas_phase_chemdr.hpp"
 #include "mo_photo.hpp"
