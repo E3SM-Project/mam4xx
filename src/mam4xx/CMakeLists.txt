@@ -44,7 +44,6 @@ install(FILES
         spitfire_transport.hpp
         mo_photo.hpp
         lin_strat_chem.hpp
-        mo_chm_diags.hpp
         mo_setext.hpp
         mo_setsox.hpp
         mo_sethet.hpp
