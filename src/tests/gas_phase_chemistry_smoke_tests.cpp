@@ -41,9 +41,8 @@ KOKKOS_INLINE_FUNCTION ImpSolResult call_wrapper(VectorType &state,
                                                  heterogeneous_rates, state);
 }
 
-ChemistryOutput
-run_wrapper(const std::array<Real, gas_pcnst> &initial, const Real dt,
-            const Real soag_forcing) {
+ChemistryOutput run_wrapper(const std::array<Real, gas_pcnst> &initial,
+                            const Real dt, const Real soag_forcing) {
   using StateView = mam4::DeviceType::view_1d<Real>;
   using ResultView = mam4::DeviceType::view_1d<ImpSolResult>;
   StateView state("wrapper_state", gas_pcnst);
