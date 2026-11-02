@@ -2811,28 +2811,14 @@ int get_scratch1d_work_len(const int nlev) {
 
   int work_len = 0;
 
-  const auto &temperature = atmosphere.temperature;
-  const auto &pmid = atmosphere.pressure;
-  // dpdry =  Delta dry-pressure [mb]
-  const auto &dpdry = diagnostics.hydrostatic_dry_dp;
-  // dp_frac = Deep conv cloud frac [fraction]
-  const auto &dp_frac = diagnostics.deep_convective_cloud_fraction;
-  // Deep cloud convective condensate [kg/kg]
-  const auto &icwmrdp = diagnostics.deep_convective_cloud_condensate;
-  // Deep convective precipitation production (grid avg) [kg/kg/s]
-  const auto &rprddp = diagnostics.deep_convective_precipitation_production;
-  // Deep convective precipitation evaporation (grid avg) [kg/kg/s]
-  const auto &evapcdp = diagnostics.deep_convective_precipitation_evaporation;
-  // Shallow+Deep convective detrainment [kg/kg/s]
-  const auto dlftot = diagnostics.total_convective_detrainment;
+  // Index 0: q - tracer mixing ratios
+  work_len += nlev * pcnst;
 
-  // Next three are "d(massflux)/dp" and are all positive [1/s]
-  const auto &eu = diagnostics.mass_entrain_rate_into_updraft;
-  const auto &ed = diagnostics.mass_entrain_rate_into_downdraft;
-  const auto &du = diagnostics.mass_detrain_rate_from_updraft;
+  // Indices 1-2: mu, md - updraft/downdraft mass fluxes
+  work_len += 2 * (nlev + 1);
 
-  // Delta pressure between interfaces [mb]
-  const auto &dp = diagnostics.delta_pressure;
+  // Indices 3-6: eudp, dudp, eddp, dddp - entrainment/detrainment × dp
+  work_len += 4 * nlev;
 
   // Index 7: rhoair - air density
   work_len += nlev;
