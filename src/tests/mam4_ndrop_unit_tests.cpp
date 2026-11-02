@@ -152,9 +152,7 @@ TEST_CASE("test_qsat", "mam4_ndrop_unit_tests") {
     logger.debug("temperature, pressure = {}, {}", t[i], p[i]);
 
     // Real es_base = mam4::wv_sat_methods::wv_sat_svp_trans(t[i]);
-    Real estbl[mam4::wv_sat_methods::estbl_plen];
-    mam4::wv_sat_methods::init_estbl(estbl);
-    Real es_base = mam4::wv_sat_methods::estblf(t[i], estbl);
+    Real es_base = mam4::wv_sat_methods::wv_sat_svp_trans(t[i]);
     Real qs_base = mam4::wv_sat_methods::wv_sat_svp_to_qsat(es_base, p[i]);
 
     Real es_calc = es_base;
@@ -167,6 +165,7 @@ TEST_CASE("test_qsat", "mam4_ndrop_unit_tests") {
     logger.debug("qs [base]: [ {} ]", qs_base);
     logger.debug("qs [calc]: [ {} ]", qs_calc);
 
+    std::cout<<__FILE__<<":"<<__LINE__<<"  "<<i<<" "<<es_base<<" "<< p[i]<<std::endl;
     REQUIRE(
         mam4::FloatingPoint<Real>::equiv(es_calc, mam4::min(es_base, p[i])));
     REQUIRE(mam4::FloatingPoint<Real>::equiv(qs_calc, qs_base));

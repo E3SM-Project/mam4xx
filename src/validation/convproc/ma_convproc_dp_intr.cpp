@@ -201,7 +201,8 @@ void ma_convproc_dp_intr(Ensemble *ensemble) {
           const bool convproc_do_aer = true;
           const bool convproc_do_gas = true;
           mam4::convproc::ma_convproc_dp_intr(
-              team, aero_species, scratch1Dviews, nlev, temperature_dev,
+              team, aero_species, scratch1Dviews, 
+	      convproc_do_aer, convproc_do_gas, nlev, temperature_dev,
               pmid_dev, dpdry_dev, dt, cldfrac_dev, icwmr_dev, rprd_dev,
               evapc_dev, du_dev, eu_dev, ed_dev, dp_dev, ktop, kbot, qnew_dev,
               species_class, mmtoo_prevap_resusp, dqdt_view, qsrflx, dotend);
