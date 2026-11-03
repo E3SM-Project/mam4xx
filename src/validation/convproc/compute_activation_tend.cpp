@@ -103,8 +103,25 @@ void compute_activation_tend(Ensemble *ensemble) {
     Kokkos::deep_copy(xx_wcldbase_dev, xx_wcldbase_host_view);
     Kokkos::deep_copy(xx_kcldbase_dev, xx_kcldbase_host_view);
 
+    View1D cldfrac_i_dev("cldfrac_i", 1);
+    View1D rhoair_i_dev("rhoair_i_kk", 1);
+    View1D mu_i_dev("mu_i_kk", 1);
+    View1D mu_ip1_dev("mu_i_kp1", 1);
+    View1D dt_u_dev("dt_u_kk", 1);
+    View1D wup_dev("wup_kk", 1);
+    View1D temperature_dev("temperature_kk", 1);
+    View1D icwmr_dev("icwmr_kk", 1);
+    Kokkos::deep_copy(cldfrac_i_dev, cldfrac_i_kk[0]);
+    Kokkos::deep_copy(rhoair_i_dev, rhoair_i_kk[0]);
+    Kokkos::deep_copy(mu_i_dev, mu_i_kk[0]);
+    Kokkos::deep_copy(mu_ip1_dev, mu_i_kp1[0]);
+    Kokkos::deep_copy(dt_u_dev, dt_u_kk[0]);
+    Kokkos::deep_copy(wup_dev, wup_kk[0]);
+    Kokkos::deep_copy(temperature_dev, temperature_kk[0]);
+    Kokkos::deep_copy(icwmr_dev, icwmr_kk[0]);
+
     // Call function within parallel_for for GPU compatibility
-    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
+    auto team_policy = mam4::ThreadTeamPolicy(1u, mam4::testing::team_size);
     Kokkos::parallel_for(
         team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           // Extract scalars from device views to local variables
@@ -112,11 +129,10 @@ void compute_activation_tend(Ensemble *ensemble) {
           int kactfirst_local = kactfirst_dev(0);
           Real xx_wcldbase_local = xx_wcldbase_dev(0);
           int xx_kcldbase_local = xx_kcldbase_dev(0);
-
           mam4::convproc::compute_activation_tend(
-              aero_species, f_ent, cldfrac_i_kk[0], rhoair_i_kk[0], mu_i_kk[0],
-              mu_i_kp1[0], dt_u_kk[0], wup_kk[0], icwmr_kk[0],
-              temperature_kk[0], kk, kactcnt_local, kactfirst_local, conu_dev,
+              aero_species, f_ent, cldfrac_i_dev[0], rhoair_i_dev[0],
+              mu_i_dev[0], mu_ip1_dev[0], dt_u_dev[0], wup_dev[0], icwmr_dev[0],
+              temperature_dev[0], kk, kactcnt_local, kactfirst_local, conu_dev,
               dconudt_activa_dev, xx_wcldbase_local, xx_kcldbase_local);
 
           // Copy modified scalars back to device views
