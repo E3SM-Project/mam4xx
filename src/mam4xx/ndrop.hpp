@@ -1049,6 +1049,17 @@ Real explmix(const Real qold_km1, // number / mass mixing ratio from previous
   return qnew;
 } // end explmix
 
+} // namespace ndrop
+} // namespace mam4
+
+// Optional implicit vertical-mixing integrators (IMEX-Euler, Backward Euler).
+// Included here, at global scope, because it reuses explmix() and the ndrop
+// types defined above.
+#include "ndrop_implicit_mixing.hpp"
+
+namespace mam4 {
+namespace ndrop {
+
 KOKKOS_INLINE_FUNCTION
 void update_from_explmix(
     const ThreadTeam &team,
@@ -1078,8 +1089,13 @@ void update_from_explmix(
     const ColumnView &eddy_diff_kp, // zn*zs*density*diffusivity [/s]
     const ColumnView &eddy_diff_km, // zn*zs*density*diffusivity   [/s]
     const ColumnView
-        &qncld // work space: stores qcld so qcld can be updated in parallal
-) {
+        &qncld, // work space: stores qcld so qcld can be updated in parallal
+    // Optional implicit vertical-mixing integrator (E3SM design document
+    // docs/design/eamxx_mam4xx_ndrop.md, "Production Implicit Vertical-Mixing
+    // Option"). The defaults reproduce the explicit path bit for bit.
+    const MixingOptions &mixing_options = MixingOptions(),
+    const ImplicitWorkspace &mixing_workspace = ImplicitWorkspace(),
+    MixingStatus *mixing_status = nullptr) {
 
   // threshold cloud fraction to compute overlap [fraction]
   // BAD CONSTANT
@@ -1163,6 +1179,21 @@ void update_from_explmix(
 
   dtmix = dtmicro / nsubmix;
 
+  // Optional implicit integrators run here; the explicit loop below then has
+  // zero trips. With the default options the explicit loop runs unchanged.
+  const bool use_explicit =
+      mixing_options.integrator == MixingIntegrator::ForwardEuler;
+  if (!use_explicit) {
+    implicit_mixing::advance(team, dtmicro, dtmix, nsubmix, top_lev, zn, nact,
+                             mact, qcld, qncld, raercol, raercol_cw, nsav, nnew,
+                             eddy_diff_kp, eddy_diff_km, overlapp, overlapm,
+                             mixing_options, mixing_workspace, mixing_status);
+  } else if (mixing_status != nullptr) {
+    *mixing_status = MixingStatus();
+    mixing_status->nsubmix_executed = nsubmix;
+  }
+  const int nsubmix_explicit = use_explicit ? nsubmix : 0;
+
   // old_cloud_nsubmix_loop
   //  Note: each pass in submix loop stores updated aerosol values at index
   //  nnew, current values at index nsav. At the start of each pass, nnew
@@ -1171,7 +1202,7 @@ void update_from_explmix(
   //  nnew stores index of most recent updated values (either 1 or 2).
 
   team.team_barrier();
-  for (int isub = 0; isub < nsubmix; isub++) {
+  for (int isub = 0; isub < nsubmix_explicit; isub++) {
     if (0 < isub) {
       // after first pass, switch nsav, nnew so that nsav is the
       // recently updated aerosol
@@ -1311,7 +1342,12 @@ void dropmixnuc(
     const ColumnView &eddy_diff_km, const ColumnView &qncld,
     const ColumnView &srcn, const ColumnView &source, const ColumnView &dz,
     const ColumnView &csbot_cscen, const ColumnView &raertend,
-    const ColumnView &qqcwtend) {
+    const ColumnView &qqcwtend,
+    // optional implicit vertical-mixing integrator; defaults keep the
+    // explicit path bit for bit
+    const MixingOptions &mixing_options = MixingOptions(),
+    const ImplicitWorkspace &mixing_workspace = ImplicitWorkspace(),
+    MixingStatus *mixing_status = nullptr) {
   // vertical diffusion and nucleation of cloud droplets
   // assume cloud presence controlled by cloud fraction
   // doesn't distinguish between warm, cold clouds
@@ -1515,7 +1551,8 @@ void dropmixnuc(
 #endif
                       top_lev,
                       // work vars
-                      overlapp, overlapm, eddy_diff_kp, eddy_diff_km, qncld);
+                      overlapp, overlapm, eddy_diff_kp, eddy_diff_km, qncld,
+                      mixing_options, mixing_workspace, mixing_status);
 
   team.team_barrier();
 

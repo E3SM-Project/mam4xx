@@ -67,6 +67,9 @@ endif ()
 
 EkatCreateUnitTest(mam4_ndrop_unit_tests mam4_ndrop_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
+EkatCreateUnitTest(mam4_ndrop_implicit_mixing_unit_tests
+  mam4_ndrop_implicit_mixing_unit_tests.cpp
+  LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
 
 EkatCreateUnitTest(aero_modes_unit_tests aero_modes_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
