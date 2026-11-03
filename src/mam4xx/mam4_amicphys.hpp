@@ -2356,7 +2356,7 @@ KOKKOS_INLINE_FUNCTION void modal_aero_amicphys_intr(
   auto assign_if_allocated = [&](const auto &view, const auto &tend,
                                  const int klev, const int idx,
                                  const int extent) {
-    if (view.data() != nullptr) {
+    if (view.size()) {
       for (int i = 0; i < extent; ++i) {
         view(i, klev) = tend[i][idx];
       }
