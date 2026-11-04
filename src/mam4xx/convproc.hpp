@@ -2534,23 +2534,21 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
 
 // =========================================================================================
 template <typename SubView, typename ConstSubView>
-KOKKOS_INLINE_FUNCTION void
-ma_convproc_dp_intr(const ThreadTeam &team, const AeroSpeciesView &aero_species,
-                    const Kokkos::View<Real *>
-                        scratch1Dviews[ConvProc::Col1DViewInd::NumScratch],
-                    const bool convproc_do_aer, const bool convproc_do_gas, 
-                    const int nlev, const ConstColumnView &temperature,
-                    const ConstColumnView &pmid, const ConstColumnView &dpdry,
-                    const Real dt, const ConstColumnView &cldfrac,
-                    const ConstColumnView &icwmr, const ConstColumnView &rprddp,
-                    const ConstColumnView &evapcdp, const ConstColumnView &du,
-                    const ConstColumnView &eu, const ConstColumnView &ed,
-                    const ConstColumnView &dp, const int ktop, const int kbot,
-                    ConstSubView qnew,
-                    const int species_class[/* aero_model::pcnst */],
-                    const int mmtoo_prevap_resusp[/* aero_model::pcnst */],
-                    SubView dqdt, Real qsrflx[/* aero_model::pcnst */][nsrflx],
-                    bool dotend[aero_model::pcnst]) {
+KOKKOS_INLINE_FUNCTION void ma_convproc_dp_intr(
+    const ThreadTeam &team, const AeroSpeciesView &aero_species,
+    const Kokkos::View<Real *>
+        scratch1Dviews[ConvProc::Col1DViewInd::NumScratch],
+    const bool convproc_do_aer, const bool convproc_do_gas, const int nlev,
+    const ConstColumnView &temperature, const ConstColumnView &pmid,
+    const ConstColumnView &dpdry, const Real dt, const ConstColumnView &cldfrac,
+    const ConstColumnView &icwmr, const ConstColumnView &rprddp,
+    const ConstColumnView &evapcdp, const ConstColumnView &du,
+    const ConstColumnView &eu, const ConstColumnView &ed,
+    const ConstColumnView &dp, const int ktop, const int kbot,
+    ConstSubView qnew, const int species_class[/* aero_model::pcnst */],
+    const int mmtoo_prevap_resusp[/* aero_model::pcnst */], SubView dqdt,
+    Real qsrflx[/* aero_model::pcnst */][nsrflx],
+    bool dotend[aero_model::pcnst]) {
 
   // clang-format off
   // -----------------------------------------------------------------------

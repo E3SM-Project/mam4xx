@@ -203,12 +203,11 @@ void ma_convproc_intr(Ensemble *ensemble) {
           // Call the function
           mam4::convproc::ma_convproc_intr(
               team, aero_species, scratch1Dviews, convproc_do_aer,
-              convproc_do_gas, nlev, temperature_dev, pmid_dev,
-              dpdry_dev, dt, dp_frac_dev, icwmrdp_dev,
-              rprddp_dev, evapcdp_dev, dlf_dev,
-              du_dev, eu_dev, ed_dev, dp_dev, ktop,
-              kbot, species_class, mmtoo_prevap_resusp, state_q_dev,
-              ptend_q_dev, ptend_lq, aerdepwetis);
+              convproc_do_gas, nlev, temperature_dev, pmid_dev, dpdry_dev, dt,
+              dp_frac_dev, icwmrdp_dev, rprddp_dev, evapcdp_dev, dlf_dev,
+              du_dev, eu_dev, ed_dev, dp_dev, ktop, kbot, species_class,
+              mmtoo_prevap_resusp, state_q_dev, ptend_q_dev, ptend_lq,
+              aerdepwetis);
 
           // Copy results back
           for (int i = 0; i < pcnst; ++i) {
