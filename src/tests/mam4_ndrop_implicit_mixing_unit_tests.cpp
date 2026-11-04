@@ -1432,3 +1432,104 @@ TEST_CASE("be_two_stage_kernel_matches_serial", "mam4_ndrop_implicit_mixing") {
   const HostState b = candidate_to_host(ws_ser);
   REQUIRE(bitwise_equal(a, b, 0));
 }
+
+// ===========================================================================
+// 8. Every EKAT tridiagonal backend that solve_tridiagonal can dispatch to
+// (bfb, cyclic reduction, serial Thomas) is driven directly on the production
+// bands, so the branches this build does not select still compile and solve
+// the same system to oracle tolerance. Deliberately not a bitwise check: the
+// backends order the arithmetic differently, which is why implicit results
+// are documented as not BFB across CPU, GPU, and Debug builds.
+// ===========================================================================
+TEST_CASE("tridiagonal_backends_agree_with_oracle",
+          "mam4_ndrop_implicit_mixing") {
+  using namespace mam4::ndrop::implicit_mixing;
+  using mam4::ndrop::View1D;
+  using mam4::ndrop::View2D;
+  ekat::Comm comm;
+  ekat::logger::Logger<> logger("ndrop implicit mixing",
+                                ekat::logger::LogLevel::info, comm);
+  const double h = 1800.0;
+  const double tol = 100.0 * pver * std::numeric_limits<Real>::epsilon();
+  const char *names[3] = {"bfb", "cr", "thomas"};
+  double worst_res = 0.0, worst_spread = 0.0;
+  for (const double htinv : {10.0, 450.0}) {
+    for (const bool cloud_family : {true, false}) {
+      HostOperator op;
+      HostState s0;
+      GridArrays g = make_grid_arrays(htinv / (2.0 * h), 0.5, 0.5, op, s0);
+      View1D dl("bk_dl", pver), d("bk_d", pver), du("bk_du", pver);
+      View1D dl0("bk_dl0", pver), d0("bk_d0", pver), du0("bk_du0", pver);
+      View1D dl1("bk_dl1", pver), d1("bk_d1", pver), du1("bk_du1", pver);
+      View1D dl2("bk_dl2", pver), d2("bk_d2", pver), du2("bk_du2", pver);
+      View2D X0("bk_X0", pver, ncnst), X1("bk_X1", pver, ncnst),
+          X2("bk_X2", pver, ncnst);
+      auto kp = g.eddy_diff_kp, km = g.eddy_diff_km, op_ = g.overlapp,
+           om = g.overlapm;
+      auto raercol = g.raercol;
+      const Real hr = static_cast<Real>(h);
+      auto policy = mam4::ThreadTeamPolicy(1u, team_size);
+      Kokkos::parallel_for(
+          "tridiag_backends", policy,
+          KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
+            assemble_bands(team, 0, hr, cloud_family, kp, km, op_, om, dl, d,
+                           du);
+            Kokkos::parallel_for(
+                Kokkos::TeamVectorRange(team, 0, pver), [&](int k) {
+                  dl0(k) = dl1(k) = dl2(k) = dl(k);
+                  d0(k) = d1(k) = d2(k) = d(k);
+                  du0(k) = du1(k) = du2(k) = du(k);
+                  for (int mm = 0; mm < ncnst; ++mm)
+                    X0(k, mm) = X1(k, mm) = X2(k, mm) = raercol(k, 0, mm);
+                });
+            team.team_barrier();
+            ekat::tridiag::bfb(team, dl0, d0, du0, X0);
+            team.team_barrier();
+            ekat::tridiag::cr(team, dl1, d1, du1, X1);
+            team.team_barrier();
+            Kokkos::single(Kokkos::PerTeam(team),
+                           [&]() { ekat::tridiag::thomas(dl2, d2, du2, X2); });
+            team.team_barrier();
+          });
+      Kokkos::fence();
+      auto h0 = Kokkos::create_mirror_view(X0);
+      auto h1 = Kokkos::create_mirror_view(X1);
+      auto h2 = Kokkos::create_mirror_view(X2);
+      Kokkos::deep_copy(h0, X0);
+      Kokkos::deep_copy(h1, X1);
+      Kokkos::deep_copy(h2, X2);
+      const Mat A = scalar_matrix(op, h, cloud_family);
+      std::vector<double> x(pver), b(pver);
+      for (int mm = 0; mm < ncnst; ++mm) {
+        for (int k = 0; k < pver; ++k)
+          b[k] = s0.I[k][mm];
+        double xnorm = 0.0;
+        for (int i = 0; i < 3; ++i) {
+          for (int k = 0; k < pver; ++k)
+            x[k] = (i == 0) ? h0(k, mm) : (i == 1) ? h1(k, mm) : h2(k, mm);
+          const double res = normalized_residual(A, x, b);
+          worst_res = std::max(worst_res, res);
+          if (res > tol)
+            logger.error("backend {} residual {:.3e} > {:.3e} (h tinv {}, {})",
+                         names[i], res, tol, htinv,
+                         cloud_family ? "A_C" : "A_I");
+          REQUIRE(res <= tol);
+          xnorm = std::max(xnorm, norm_inf(x));
+        }
+        for (int k = 0; k < pver; ++k) {
+          const double spread =
+              std::max({std::fabs(double(h0(k, mm)) - double(h1(k, mm))),
+                        std::fabs(double(h0(k, mm)) - double(h2(k, mm))),
+                        std::fabs(double(h1(k, mm)) - double(h2(k, mm)))}) /
+              xnorm;
+          worst_spread = std::max(worst_spread, spread);
+          REQUIRE(spread <= tol);
+        }
+      }
+    }
+  }
+  logger.info("tridiagonal backends (bfb, cr, thomas) on A_C and A_I, h tinv "
+              "10 and 450: worst residual {:.3e}, worst relative spread "
+              "between backends {:.3e}, tolerance {:.3e}",
+              worst_res, worst_spread, tol);
+}
