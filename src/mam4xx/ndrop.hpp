@@ -1,5 +1,6 @@
 #ifndef MAM4XX_NDROP_HPP
 #define MAM4XX_NDROP_HPP
+#define MAM4XX_USE_ANALYTICAL_QSAT
 
 #include "aero_config.hpp"
 #include "aero_model.hpp"
@@ -40,11 +41,11 @@ constexpr int ncnst_tot = 25;
 // max number of species in a mode
 constexpr int nspec_max = 8;
 
-KOKKOS_INLINE_FUNCTION
-void get_aer_mmr_sum(const int imode, const int nspec,
-                     const Real state_q[aero_model::pcnst],
-                     const Real qcldbrn1d[maxd_aspectype],
-                     Real &vaerosolsum_icol, Real &hygrosum_icol) {
+template <typename SubView>
+KOKKOS_INLINE_FUNCTION void
+get_aer_mmr_sum(const int imode, const int nspec, const SubView &state_q,
+                const Real qcldbrn1d[maxd_aspectype], Real &vaerosolsum_icol,
+                Real &hygrosum_icol) {
 
   // @param[in] imode  mode index
   // @param[in] nspec  total # of species in mode imode
@@ -79,11 +80,11 @@ void get_aer_mmr_sum(const int imode, const int nspec,
   }                                  // end
 } // end get_aer_mmr_sum
 
-KOKKOS_INLINE_FUNCTION
-void get_aer_num(const Real voltonumbhi_amode, const Real voltonumblo_amode,
-                 const int num_idx, const Real state_q[aero_model::pcnst],
-                 const Real air_density, const Real vaerosol,
-                 const Real qcldbrn1d_num, Real &naerosol) {
+template <typename SubView>
+KOKKOS_INLINE_FUNCTION void
+get_aer_num(const Real voltonumbhi_amode, const Real voltonumblo_amode,
+            const int num_idx, const SubView &state_q, const Real air_density,
+            const Real vaerosol, const Real qcldbrn1d_num, Real &naerosol) {
 
   // input arguments
   // @param[in] imode        mode index
@@ -166,16 +167,16 @@ void maxsat(
   return;
 } // end maxsat
 
-KOKKOS_INLINE_FUNCTION
-void loadaer(const Real state_q[aero_model::pcnst], Real air_density,
-             const int phase,
-             const Real voltonumbhi_amode[AeroConfig::num_modes()],
-             const Real voltonumblo_amode[AeroConfig::num_modes()],
-             const Real qcldbrn1d[maxd_aspectype][AeroConfig::num_modes()],
-             const Real qcldbrn1d_num[AeroConfig::num_modes()],
-             Real naerosol[AeroConfig::num_modes()],
-             Real vaerosol[AeroConfig::num_modes()],
-             Real hygro[AeroConfig::num_modes()]) {
+template <typename SubView>
+KOKKOS_INLINE_FUNCTION void
+loadaer(const SubView &state_q, Real air_density, const int phase,
+        const Real voltonumbhi_amode[AeroConfig::num_modes()],
+        const Real voltonumblo_amode[AeroConfig::num_modes()],
+        const Real qcldbrn1d[maxd_aspectype][AeroConfig::num_modes()],
+        const Real qcldbrn1d_num[AeroConfig::num_modes()],
+        Real naerosol[AeroConfig::num_modes()],
+        Real vaerosol[AeroConfig::num_modes()],
+        Real hygro[AeroConfig::num_modes()]) {
 
   // return aerosol number, volume concentrations, and bulk hygroscopicity at
   // one specific column and level
@@ -248,15 +249,15 @@ void loadaer(const Real state_q[aero_model::pcnst], Real air_density,
   } // end imode
 } // loadaer
 
-KOKKOS_INLINE_FUNCTION
-void ccncalc(const Real state_q[aero_model::pcnst], const Real tair,
-             const Real qcldbrn[maxd_aspectype][AeroConfig::num_modes()],
-             const Real qcldbrn_num[AeroConfig::num_modes()],
-             const Real air_density,
-             const Real voltonumbhi_amode[AeroConfig::num_modes()],
-             const Real voltonumblo_amode[AeroConfig::num_modes()],
-             const Real exp45logsig[AeroConfig::num_modes()],
-             const Real alogsig[AeroConfig::num_modes()], Real ccn[psat]) {
+template <typename SubView, typename Vector>
+KOKKOS_INLINE_FUNCTION void
+ccncalc(const SubView &state_q, const Real tair,
+        const Real qcldbrn[maxd_aspectype][AeroConfig::num_modes()],
+        const Real qcldbrn_num[AeroConfig::num_modes()], const Real air_density,
+        const Real voltonumbhi_amode[AeroConfig::num_modes()],
+        const Real voltonumblo_amode[AeroConfig::num_modes()],
+        const Real exp45logsig[AeroConfig::num_modes()],
+        const Real alogsig[AeroConfig::num_modes()], const Vector &ccn) {
 
   // calculates number concentration of aerosols activated as CCN at
   // supersaturation supersat.
@@ -357,6 +358,9 @@ void ccncalc(const Real state_q[aero_model::pcnst], const Real tair,
 
 } /// ccncalc
 
+// FIXME: We need to decide whether to use linear interpolation or an analytical
+// expression to compute SVP. I would rather use the analytical expression.
+#if defined(MAM4XX_USE_ANALYTICAL_QSAT)
 KOKKOS_INLINE_FUNCTION
 void qsat(const Real t, const Real p, Real &svp, Real &qsat) {
   //  ------------------------------------------------------------------
@@ -380,6 +384,25 @@ void qsat(const Real t, const Real p, Real &svp, Real &qsat) {
   // Ensures returned svp is consistent with limiters on qsat.
   svp = mam4::min(svp, p);
 } // qsat
+#else
+// Does linear interpolation from nearest values found in table (estbl),
+// matching elemental function estblf(t) in E3SM wv_saturation.F90.
+
+KOKKOS_INLINE_FUNCTION
+void qsat(const Real t, const Real p, Real &es, Real &qs) {
+  // Saturation vapor pressure table initialized matching E3SM Fortran
+  // wv_saturation.F90 wv_sat_init:
+  //   do i = 1, plenest
+  //      estbl(i) = svp_trans(tmin + real(i-1, r8))
+  //   end do
+  Real estbl[wv_sat_methods::estbl_plen];
+  wv_sat_methods::init_estbl(estbl);
+  es = wv_sat_methods::estblf(t, estbl);
+  qs = wv_sat_methods::wv_sat_svp_to_qsat(es, p);
+  // Ensures returned es is consistent with limiters on qs.
+  es = mam4::min(es, p);
+}
+#endif
 
 KOKKOS_INLINE_FUNCTION
 void ndrop_init(Real exp45logsig[AeroConfig::num_modes()],
@@ -426,7 +449,8 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
                     const Real aten, Real fn[AeroConfig::num_modes()],
                     Real fm[AeroConfig::num_modes()],
                     Real fluxn[AeroConfig::num_modes()],
-                    Real fluxm[AeroConfig::num_modes()], Real &flux_fullact) {
+                    Real fluxm[AeroConfig::num_modes()], Real &flux_fullact,
+                    const Real smax_prescribed = mam4::max()) {
   //    ---------------------------------------------------------------------------------
   // Calculates number, surface, and mass fraction of aerosols activated as CCN
   // calculates flux of cloud droplets, surface area, and aerosol mass into
@@ -491,6 +515,10 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
     return;
   }
 
+  // return if max supersaturation is 0 or negative
+  if (smax_prescribed <= zero) {
+    return;
+  }
   const Real rair = Constants::r_gas_dry_air;
   const Real rh2o = Constants::r_gas_h2o_vapor;
   // latent heat of evaporation [J/kg]
@@ -581,9 +609,12 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
     eta[imode] = etafactor1 * etafactor2[imode];
   } // end imode
 
-  Real supersat = zero;
+  // Find maximum supersaturation
+  // Use smax_prescribed if it is present; otherwise get smax from subr maxsat
+  Real supersat = smax_prescribed;
+  if (smax_prescribed == mam4::max())
+    maxsat(zeta, eta, nmode, ssat_crit_imode, supersat);
 
-  maxsat(zeta, eta, nmode, ssat_crit_imode, supersat);
   // ([fraction]))
   const Real lnsupersat = mam4::log(supersat);
 
@@ -603,23 +634,21 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
   // is vertical velocity equal to flux of activated aerosol fraction assuming
   // 100% activation [m/s]?
   flux_fullact = w_in;
-
 } // activate_modal
 
-KOKKOS_INLINE_FUNCTION
-void get_activate_frac(const Real state_q_kload[aero_model::pcnst],
-                       const Real air_density_kload, const Real air_density_kk,
-                       const Real wtke,
-                       const Real tair, // in
-                       const Real voltonumbhi_amode[AeroConfig::num_modes()],
-                       const Real voltonumblo_amode[AeroConfig::num_modes()],
-                       const Real exp45logsig[AeroConfig::num_modes()],
-                       const Real alogsig[AeroConfig::num_modes()],
-                       const Real aten, Real fn[AeroConfig::num_modes()],
-                       Real fm[AeroConfig::num_modes()],
-                       Real fluxn[AeroConfig::num_modes()],
-                       Real fluxm[AeroConfig::num_modes()],
-                       Real &flux_fullact) {
+template <typename SubView>
+KOKKOS_INLINE_FUNCTION void
+get_activate_frac(const SubView &state_q_kload, const Real air_density_kload,
+                  const Real air_density_kk, const Real wtke,
+                  const Real tair, // in
+                  const Real voltonumbhi_amode[AeroConfig::num_modes()],
+                  const Real voltonumblo_amode[AeroConfig::num_modes()],
+                  const Real exp45logsig[AeroConfig::num_modes()],
+                  const Real alogsig[AeroConfig::num_modes()], const Real aten,
+                  Real fn[AeroConfig::num_modes()],
+                  Real fm[AeroConfig::num_modes()],
+                  Real fluxn[AeroConfig::num_modes()],
+                  Real fluxm[AeroConfig::num_modes()], Real &flux_fullact) {
 
   // input arguments
   //  @param [in] state_q_kload(:)         aerosol mmrs at level from which to
@@ -668,14 +697,14 @@ void get_activate_frac(const Real state_q_kload[aero_model::pcnst],
 
 } // get_activate_frac
 
-KOKKOS_INLINE_FUNCTION
-void update_from_cldn_profile(
+template <typename SubView>
+KOKKOS_INLINE_FUNCTION void update_from_cldn_profile(
     const Real cldn_col_in, const Real cldn_col_in_kp1, const Real dtinv,
     const Real wtke_col_in, const Real zs,
     const Real dz, // in
     const Real temp_col_in, const Real air_density, const Real air_density_kp1,
     const Real csbot_cscen,
-    const Real state_q_col_in_kp1[aero_model::pcnst], // in
+    const SubView &state_q_col_in_kp1, // in
     const Real voltonumbhi_amode[AeroConfig::num_modes()],
     const Real voltonumblo_amode[AeroConfig::num_modes()],
     const Real exp45logsig[AeroConfig::num_modes()],
@@ -684,7 +713,7 @@ void update_from_cldn_profile(
     Real &nsource_col, // inout
     Real &qcld, Real factnum_col[AeroConfig::num_modes()],
     Real &eddy_diff, // out
-    Real nact[AeroConfig::num_modes()], Real mact[AeroConfig::num_modes()]) {
+    const ColumnView &nact, const ColumnView mact) {
   // clang-format off
   // input arguments
   // cldn_col_in(:)       cloud fraction [fraction] at kk
@@ -847,20 +876,19 @@ void update_from_cldn_profile(
   } // end cldn_col_in(kk) > cld_thresh
 } // end update_from_cldn_profile
 
-KOKKOS_INLINE_FUNCTION
-void update_from_newcld(const Real cldn_col_in, const Real cldo_col_in,
-                        const Real dtinv, // in
-                        const Real wtke_col_in, const Real temp_col_in,
-                        const Real air_density,
-                        const Real state_q_col_in[aero_model::pcnst], // in
-                        const Real voltonumbhi_amode[AeroConfig::num_modes()],
-                        const Real voltonumblo_amode[AeroConfig::num_modes()],
-                        const Real exp45logsig[AeroConfig::num_modes()],
-                        const Real alogsig[AeroConfig::num_modes()],
-                        const Real aten, Real &qcld, View1D raercol_nsav,
-                        View1D raercol_cw_nsav, // inout
-                        Real &nsource_col_out,
-                        Real factnum_col_out[AeroConfig::num_modes()]) {
+template <typename SubView>
+KOKKOS_INLINE_FUNCTION void update_from_newcld(
+    const Real cldn_col_in, const Real cldo_col_in,
+    const Real dtinv, // in
+    const Real wtke_col_in, const Real temp_col_in, const Real air_density,
+    const SubView &state_q_col_in, // in
+    const Real voltonumbhi_amode[AeroConfig::num_modes()],
+    const Real voltonumblo_amode[AeroConfig::num_modes()],
+    const Real exp45logsig[AeroConfig::num_modes()],
+    const Real alogsig[AeroConfig::num_modes()], const Real aten, Real &qcld,
+    View1D raercol_nsav,
+    View1D raercol_cw_nsav, // inout
+    Real &nsource_col_out, Real factnum_col_out[AeroConfig::num_modes()]) {
 
   // input arguments
   // real(r8), intent(in) :: cldn_col_in       cloud fraction [fraction]
@@ -1454,13 +1482,10 @@ void dropmixnuc(
         for (int imode = 0; imode < ntot_amode; ++imode)
           factnum_k[imode] = factnum(imode, k);
 
-        // FIXME: It is dangerous to call data() on a view and expect the
-        // resulting vector to be continuous in memory. Depending on the
-        // 2D layout, the memory could be strided.
         update_from_newcld(cldn(k), cldo(k), dtinv, // in
                            wtke(k), temp(k),
                            conversions::density_of_ideal_gas(temp(k), pmid(k)),
-                           state_q_k.data(), // in
+                           state_q_k, // in
                            voltonumbhi_amode, voltonumblo_amode, exp45logsig,
                            alogsig, aten, qcld(k),
                            ekat::subview(raercol, k, nsav),    // inout
@@ -1491,14 +1516,14 @@ void dropmixnuc(
             temp(k), conversions::density_of_ideal_gas(temp(k), pmid(k)),
             conversions::density_of_ideal_gas(temp(kp1), pmid(kp1)),
             csbot_cscen(k),
-            state_q_kp1.data(), // in
+            state_q_kp1, // in
             voltonumbhi_amode, voltonumblo_amode, exp45logsig, alogsig, aten,
             ekat::subview(raercol, k, nsav), ekat::subview(raercol, kp1, nsav),
             ekat::subview(raercol_cw, k, nsav),
             nsource(k), // inout
             qcld(k), factnum_k,
             eddy_diff(k), // out
-            nact_k.data(), mact_k.data());
+            nact_k, mact_k);
         for (int imode = 0; imode < ntot_amode; ++imode)
           factnum(imode, k) = factnum_k[imode];
       });
@@ -1588,10 +1613,10 @@ void dropmixnuc(
 
         //  Use interstitial and cloud-borne aerosol to compute output
         // ccn fields.
-        ccncalc(state_q_k.data(), temp(k), qcldbrn, qcldbrn_num,
+        ccncalc(state_q_k, temp(k), qcldbrn, qcldbrn_num,
                 conversions::density_of_ideal_gas(temp(k), pmid(k)),
                 voltonumbhi_amode, voltonumblo_amode, exp45logsig, alogsig,
-                ccn_k.data());
+                ccn_k);
       }); // end parfor(k)
   team.team_barrier();
 } // dropmixnuc

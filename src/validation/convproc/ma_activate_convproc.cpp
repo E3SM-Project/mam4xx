@@ -11,72 +11,72 @@
 using namespace skywalker;
 
 namespace {
+using View1D = typename mam4::DeviceType::view_1d<Real>;
+using View1DHost = typename mam4::HostType::view_1d<Real>;
+
 void get_input(const Input &input, const std::string &name, const int size,
-               std::vector<Real> &host, mam4::ColumnView &dev) {
+               std::vector<Real> &host, View1D &dev) {
   host = input.get_array(name);
+  dev = View1D(name, size);
+
   EKAT_ASSERT(host.size() == size);
-  dev = mam4::validation::create_column_view(size);
-  auto host_view = Kokkos::create_mirror_view(dev);
-  for (int n = 0; n < size; ++n)
-    host_view[n] = host[n];
+  auto host_view = View1DHost((Real *)host.data(), size);
   Kokkos::deep_copy(dev, host_view);
 }
+
 void set_output(Output &output, const std::string &name, const int size,
-                std::vector<Real> &host, const mam4::ColumnView &dev) {
+                std::vector<Real> &host, const View1D &dev) {
   host.resize(size);
   auto host_view = Kokkos::create_mirror_view(dev);
   Kokkos::deep_copy(host_view, dev);
-  for (int n = 0; n < size; ++n)
-    host[n] = host_view[n];
+  for (int i = 0; i < size; ++i) {
+    host[i] = host_view[i];
+  }
   output.set(name, host);
 }
 } // namespace
-void ma_activate_convproc(Ensemble *ensemble) {
-  // We don't need any settings for this particular test.
-  // Settings settings = ensemble->settings();
 
+void ma_activate_convproc(Ensemble *ensemble) {
   auto aero_species =
       mam4::aero_species_on_device(mam4::default_aero_species());
 
   // Run the ensemble.
   ensemble->process([=](const Input &input, Output &output) {
     const int pcnst_extd = mam4::ConvProc::pcnst_extd;
-    // Fetch ensemble parameters
-    // Convert to C++ index by subtracting one.
-    const Real f_ent = input.get("f_ent");
-    EKAT_ASSERT(std::abs(f_ent - 0.3036903622e-01) < .000001);
-    const Real dt_u = input.get("dt_u");
-    EKAT_ASSERT(std::abs(dt_u - 0.7956304995e+03) < .000001);
-    const Real wup = input.get("wup");
-    EKAT_ASSERT(std::abs(wup - 0.3518837909e+01) < .000001);
-    const Real tair = input.get("tair");
-    EKAT_ASSERT(std::abs(tair - 0.2854111562e+03) < .000001);
-    const Real rhoair = input.get("rhoair");
-    EKAT_ASSERT(std::abs(rhoair - 0.9353223498e+00) < .000001);
-    const int kk = input.get("kk") - 1;
-    const int kactfirst = input.get("kactfirst") - 1;
-    EKAT_ASSERT(kactfirst == 67);
 
+    // Fetch scalar parameters from array format
+    std::vector<Real> f_ent_arr = input.get_array("f_ent");
+    const Real f_ent = f_ent_arr[0];
+    std::vector<Real> dt_u_arr = input.get_array("dt_u");
+    const Real dt_u = dt_u_arr[0];
+    std::vector<Real> wup_arr = input.get_array("wup");
+    const Real wup = wup_arr[0];
+    std::vector<Real> tair_arr = input.get_array("tair");
+    const Real tair = tair_arr[0];
+    std::vector<Real> rhoair_arr = input.get_array("rhoair");
+    const Real rhoair = rhoair_arr[0];
+    std::vector<Real> kk_arr = input.get_array("kk");
+    const int kk = (int)kk_arr[0] - 1;
+    std::vector<Real> kactfirst_arr = input.get_array("kactfirst");
+    const int kactfirst = (int)kactfirst_arr[0] - 1;
+
+    // Fetch array inputs and move to device
     std::vector<Real> conu_host, dconudt_host;
-    mam4::ColumnView conu_dev, dconudt_dev;
+    View1D conu_dev, dconudt_dev;
     get_input(input, "conu", pcnst_extd, conu_host, conu_dev);
     get_input(input, "dconudt", pcnst_extd, dconudt_host, dconudt_dev);
+
+    // Call function within parallel_for for GPU compatibility
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "ma_activate_convproc", 1, KOKKOS_LAMBDA(int) {
-          Real conu[pcnst_extd], dconudt[pcnst_extd];
-          for (int i = 0; i < pcnst_extd; ++i)
-            conu[i] = conu_dev[i];
-          for (int i = 0; i < pcnst_extd; ++i)
-            dconudt[i] = dconudt_dev[i];
-          mam4::convproc::ma_activate_convproc(aero_species, conu, dconudt,
-                                               f_ent, dt_u, wup, tair, rhoair,
-                                               kk, kactfirst);
-          for (int i = 0; i < pcnst_extd; ++i)
-            conu_dev[i] = conu[i];
-          for (int i = 0; i < pcnst_extd; ++i)
-            dconudt_dev[i] = dconudt[i];
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
+          mam4::convproc::ma_activate_convproc(
+              aero_species, conu_dev.data(), dconudt_dev.data(), f_ent, dt_u,
+              wup, tair, rhoair, kk, kactfirst);
         });
-    // Check case of iflux_method == 2 which is not part of the e3sm tests.
+    Kokkos::fence();
+
+    // Copy results back to host
     set_output(output, "conu", pcnst_extd, conu_host, conu_dev);
     set_output(output, "dconudt", pcnst_extd, dconudt_host, dconudt_dev);
   });

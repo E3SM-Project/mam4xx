@@ -430,9 +430,6 @@ void mam_amicphys_1subarea_clear(
         for (int i = 0; i < num_modes; ++i)
           qaer_cur[j][i] = qaer_cur_tmp[i][j];
 
-      std::cout << "qso4a_del = " << qso4a_del << "\n";
-      std::cout << "qh2so4_del = " << qh2so4_del << "\n";
-
       // Apply the tendencies to the prognostics.
       const int nait = static_cast<int>(ModeIndex::Aitken);
       qnum_cur[nait] += dndt_ait * dtsubstep;

@@ -91,6 +91,7 @@ TEST_CASE("test_ndrop_init", "mam4_ndrop_unit_tests") {
 }
 
 TEST_CASE("test_get_aer_num", "mam4_ndrop_unit_tests") {
+  using View1DHost = typename mam4::HostType::view_1d<Real>;
   ekat::Comm comm;
   ekat::logger::Logger<> logger("ndrop unit tests",
                                 ekat::logger::LogLevel::debug, comm);
@@ -118,11 +119,12 @@ TEST_CASE("test_get_aer_num", "mam4_ndrop_unit_tests") {
                        voltonumblo_amode};
   Real ans_i;
 
+  View1DHost state(state_q, mam4::aero_model::pcnst);
   for (int i = 0; i < 4; ++i) {
     ans_i = ans[i] * vaerosol;
-    state_q[num_idx] = ((test_num[i] * vaerosol) / air_density - qcldbrn1d_num);
+    state[num_idx] = ((test_num[i] * vaerosol) / air_density - qcldbrn1d_num);
     mam4::ndrop::get_aer_num(voltonumbhi_amode, voltonumblo_amode, num_idx,
-                             state_q, air_density, vaerosol, qcldbrn1d_num,
+                             state, air_density, vaerosol, qcldbrn1d_num,
                              naerosol);
     logger.debug("reference value and computed naerosol = {}, {}", ans_i,
                  naerosol);
@@ -149,6 +151,7 @@ TEST_CASE("test_qsat", "mam4_ndrop_unit_tests") {
     logger.debug("i = {}", i);
     logger.debug("temperature, pressure = {}, {}", t[i], p[i]);
 
+    // Real es_base = mam4::wv_sat_methods::wv_sat_svp_trans(t[i]);
     Real es_base = mam4::wv_sat_methods::wv_sat_svp_trans(t[i]);
     Real qs_base = mam4::wv_sat_methods::wv_sat_svp_to_qsat(es_base, p[i]);
 
@@ -234,7 +237,6 @@ TEST_CASE("test_maxsat", "mam4_ndrop") {
   for (int m = 0; m < nmodes; m++) {
     smc[m] = 0;
   }
-  smax = 0;
   mam4::ndrop::maxsat(zeta, eta, nmodes, smc, smax);
   logger.info("smax = {}", smax);
   REQUIRE(mam4::FloatingPoint<Real>::equiv(smax, 1e-10));
@@ -244,7 +246,6 @@ TEST_CASE("test_maxsat", "mam4_ndrop") {
     eta[m] = 1;
     smc[m] = 1;
   }
-  smax = 0;
   const Real double_answer = 0.4698982924029698;
   const Real single_answer = 0.46989828;
 

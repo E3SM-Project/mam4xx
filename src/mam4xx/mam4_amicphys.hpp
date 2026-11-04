@@ -1377,13 +1377,13 @@ void mam_amicphys_1subarea(
 
       Real uptkaer[max_gas()][max_mode];
 
-      mam4::mam_gasaerexch_1subarea(
-          jtsubstep, dtsubstep, temp, pmid, aircon, nmodes, // in
-          qgas_cur, qgas_avg,                               // inout
-          qgas_netprod_otrproc,                             // in
-          qaer_cur_tmp, qnum_cur_tmp, qwtr_cur_tmp,         // inout
-          dgn_awet,                                         // in
-          uptkaer, uptkrate_h2so4);                         // inout
+      mam4::mam_gasaerexch_1subarea(jtsubstep, dtsubstep, temp, pmid, aircon,
+                                    nmodes,                     // in
+                                    qgas_cur, qgas_avg,         // inout
+                                    qgas_netprod_otrproc,       // in
+                                    qaer_cur_tmp, qnum_cur_tmp, // inout
+                                    dgn_awet,                   // in
+                                    uptkaer, uptkrate_h2so4);   // inout
 
       // copy back the values for aerosols
       for (int is = 0; is < nspecies; ++is) {
@@ -2356,7 +2356,7 @@ KOKKOS_INLINE_FUNCTION void modal_aero_amicphys_intr(
   auto assign_if_allocated = [&](const auto &view, const auto &tend,
                                  const int klev, const int idx,
                                  const int extent) {
-    if (view.data() != nullptr) {
+    if (view.size()) {
       for (int i = 0; i < extent; ++i) {
         view(i, klev) = tend[i][idx];
       }
