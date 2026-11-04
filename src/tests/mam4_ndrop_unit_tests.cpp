@@ -165,7 +165,6 @@ TEST_CASE("test_qsat", "mam4_ndrop_unit_tests") {
     logger.debug("qs [base]: [ {} ]", qs_base);
     logger.debug("qs [calc]: [ {} ]", qs_calc);
 
-    std::cout<<__FILE__<<":"<<__LINE__<<"  "<<i<<" "<<es_base<<" "<< p[i]<<std::endl;
     REQUIRE(
         mam4::FloatingPoint<Real>::equiv(es_calc, mam4::min(es_base, p[i])));
     REQUIRE(mam4::FloatingPoint<Real>::equiv(qs_calc, qs_base));

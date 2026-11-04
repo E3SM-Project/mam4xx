@@ -44,7 +44,7 @@ void newton_raphson_iter(Ensemble *ensemble) {
                         // work arrays
                         epsilon);
 
-    for (int i = 0; i < lsol.size(); ++i) 
+    for (int i = 0; i < lsol.size(); ++i)
       lsol[i] = lsol_host(i);
     std::vector<Real> converged_out;
     for (int i = 0; i < clscnt4; ++i) {

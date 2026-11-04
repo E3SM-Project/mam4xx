@@ -83,8 +83,6 @@ void mam_soaexch_1subarea(const Real dtsubstep,                 // in
                           Real qgas_cur[max_gas],               // in/out
                           Real qgas_avg[max_gas],               // in/out
                           Real qaer_cur[max_aer][max_mode],     // in/out
-                          Real qnum_cur[max_mode],              // in/out
-                          Real qwtr_cur[max_mode],              // in/out
                           const Real uptkaer[max_gas][max_mode] // in
 ) {
 
@@ -99,26 +97,16 @@ void mam_soaexch_1subarea(const Real dtsubstep,                 // in
   Real qgas_prv[max_gas] = {0.0};
   Real qaer_prv[max_aer][max_mode] = {{0.0}};
   Real uptkaer_soag_tmp[nsoa][max_mode] = {{0.0}};
-  Real a_ooa_sum_tmp[max_mode] = {0.0};
   Real a_opoa[max_mode] = {0.0};
   Real a_soa[ntot_soaspec][max_mode] = {{0.0}};
-  Real a_soa_tmp[ntot_soaspec][max_mode] = {{0.0}};
-  Real beta[ntot_soaspec][max_mode] = {{0.0}};
-  Real del_g_soa_tmp[ntot_soaspec] = {0.0};
   Real g0_soa[ntot_soaspec] = {0.0};
   Real g_soa[ntot_soaspec] = {0.0};
   Real g_star[ntot_soaspec][max_mode] = {{0.0}};
-  Real phi[ntot_soaspec][max_mode] = {{0.0}};
   Real sat[ntot_soaspec][max_mode] = {{0.0}};
 
   // BAD CONSTANT
   constexpr Real delh_vap_soa = 156.0e3;
   constexpr Real p0_soa_298 = 1.0e-10;
-
-  Real p0_soa[ntot_soaspec];
-  for (int ll = 0; ll < ntot_soaspec; ++ll) {
-    p0_soa[ll] = 1.0e-10;
-  }
 
   // BAD CONSTANT
   Real opoa_frac[ntot_poaspec][max_mode];
@@ -142,7 +130,6 @@ void mam_soaexch_1subarea(const Real dtsubstep,                 // in
     skip_soamode[n] = true;
   }
 
-  Real tmpa, tmpb, tmpc;
   constexpr Real alpha_astem = 0.05; // Parameter used in calc of time step
   constexpr Real dtsub_fixed = -1.0; // Fixed sub-step for time integration (s)
   // BAD CONSTANT
@@ -155,10 +142,10 @@ void mam_soaexch_1subarea(const Real dtsubstep,                 // in
   // Calculate ambient equilibrium soa gas
   for (int ll = 0; ll < ntot_soaspec; ++ll) {
     // BAD CONSTANT
-    p0_soa[ll] = p0_soa_298 * mam4::exp(-(delh_vap_soa / rgas) *
-                                        ((1.0 / temp) - (1.0 / 298.0)));
+    const Real p0_soa = p0_soa_298 * mam4::exp(-(delh_vap_soa / rgas) *
+                                               ((1.0 / temp) - (1.0 / 298.0)));
     // BAD CONSTANT
-    g0_soa[ll] = 1.01325e5 * p0_soa[ll] / pmid;
+    g0_soa[ll] = 1.01325e5 * p0_soa / pmid;
   }
 
   // Main integration loop -- does multiple substeps to reach dtfull
@@ -232,25 +219,20 @@ void mam_soaexch_1subarea(const Real dtsubstep,                 // in
     }
 
     // Determine time step
-    tmpa = 0.0; // time integration parameter for all soa species
-    for (int n = 0; n < ntot_soamode; ++n) {
-      if (skip_soamode[n])
-        continue;
-      a_ooa_sum_tmp[n] = a_opoa[n];
-      for (int ll = 0; ll < ntot_soaspec; ++ll) {
-        a_ooa_sum_tmp[n] += a_soa[ll][n];
-      }
-    }
+    Real tmpa = 0.0; // time integration parameter for all soa species
     for (int ll = 0; ll < ntot_soaspec; ++ll) {
-      tmpb = 0.0; // time integration parameter for a single soa species
+      Real tmpb = 0.0; // time integration parameter for a single soa species
       for (int n = 0; n < ntot_soamode; ++n) {
         if (skip_soamode[n])
           continue;
-        sat[ll][n] = g0_soa[ll] / mam4::max(a_ooa_sum_tmp[n], a_min1);
+        Real a_ooa_sum = a_opoa[n];
+        for (int ll = 0; ll < ntot_soaspec; ++ll)
+          a_ooa_sum += a_soa[ll][n];
+        sat[ll][n] = g0_soa[ll] / mam4::max(a_ooa_sum, a_min1);
         g_star[ll][n] = sat[ll][n] * a_soa[ll][n];
-        phi[ll][n] = (g_soa[ll] - g_star[ll][n]) /
-                     mam4::max(g_soa[ll], mam4::max(g_star[ll][n], g_min1));
-        tmpb += uptkaer_soag_tmp[ll][n] * abs(phi[ll][n]);
+        const Real phi = (g_soa[ll] - g_star[ll][n]) /
+                         mam4::max(g_soa[ll], mam4::max(g_star[ll][n], g_min1));
+        tmpb += uptkaer_soag_tmp[ll][n] * abs(phi);
       }
       tmpa = mam4::max(tmpa, tmpb);
     }
@@ -276,23 +258,20 @@ void mam_soaexch_1subarea(const Real dtsubstep,                 // in
     for (int n = 0; n < ntot_soamode; ++n) {
       if (skip_soamode[n])
         continue;
+      Real a_ooa_sum = a_opoa[n];
       for (int ll = 0; ll < ntot_soaspec; ++ll) {
-        a_soa_tmp[ll][n] = a_soa[ll][n];
-        beta[ll][n] = dtcur * uptkaer_soag_tmp[ll][n];
-        del_g_soa_tmp[ll] = g_soa[ll] - g_star[ll][n];
-        if (del_g_soa_tmp[ll] > 0.0) {
-          a_soa_tmp[ll][n] += beta[ll][n] * del_g_soa_tmp[ll];
+        Real a_soa_sum = a_soa[ll][n];
+        const Real beta = dtcur * uptkaer_soag_tmp[ll][n];
+        const Real del_g_soa = g_soa[ll] - g_star[ll][n];
+        if (del_g_soa > 0.0) {
+          a_soa_sum += beta * del_g_soa;
         }
-      }
-      a_ooa_sum_tmp[n] = a_opoa[n];
-      for (int ll = 0; ll < ntot_soaspec; ++ll) {
-        a_ooa_sum_tmp[n] += a_soa_tmp[ll][n];
+        a_ooa_sum += a_soa_sum;
       }
       for (int ll = 0; ll < ntot_soaspec; ++ll) {
-        if (del_g_soa_tmp[ll] > 0.0) {
-          sat[ll][n] = g0_soa[ll] / mam4::max(a_ooa_sum_tmp[n], a_min1);
-          g_star[ll][n] =
-              sat[ll][n] * a_soa_tmp[ll][n]; // this just needed for diagnostics
+        const Real del_g_soa = g_soa[ll] - g_star[ll][n];
+        if (del_g_soa > 0.0) {
+          sat[ll][n] = g0_soa[ll] / mam4::max(a_ooa_sum, a_min1);
         }
       }
     }
@@ -301,12 +280,13 @@ void mam_soaexch_1subarea(const Real dtsubstep,                 // in
     // with g_star(ll,n) calculated semi-implicitly
     for (int ll = 0; ll < ntot_soaspec; ++ll) {
       tmpa = 0.0;
-      tmpb = 0.0;
+      Real tmpb = 0.0;
       for (int n = 0; n < ntot_soamode; ++n) {
         if (skip_soamode[n])
           continue;
-        tmpa += a_soa[ll][n] / (1.0 + beta[ll][n] * sat[ll][n]);
-        tmpb += beta[ll][n] / (1.0 + beta[ll][n] * sat[ll][n]);
+        const Real beta = dtcur * uptkaer_soag_tmp[ll][n];
+        tmpa += a_soa[ll][n] / (1.0 + beta * sat[ll][n]);
+        tmpb += beta / (1.0 + beta * sat[ll][n]);
       }
 
       g_soa[ll] = (tot_soa[ll] - tmpa) / (1.0 + tmpb);
@@ -314,8 +294,9 @@ void mam_soaexch_1subarea(const Real dtsubstep,                 // in
       for (int n = 0; n < ntot_soamode; ++n) {
         if (skip_soamode[n])
           continue;
-        a_soa[ll][n] = (a_soa[ll][n] + beta[ll][n] * g_soa[ll]) /
-                       (1.0 + beta[ll][n] * sat[ll][n]);
+        const Real beta = dtcur * uptkaer_soag_tmp[ll][n];
+        a_soa[ll][n] =
+            (a_soa[ll][n] + beta * g_soa[ll]) / (1.0 + beta * sat[ll][n]);
       }
     }
 
@@ -323,11 +304,10 @@ void mam_soaexch_1subarea(const Real dtsubstep,                 // in
     for (int igas = 0; igas < nsoa; ++igas) {
       int iaer = igas;
       qgas_cur[igas] = g_soa[igas];
-      tmpc = qgas_cur[igas] - qgas_prv[igas];
+      const Real tmpc = qgas_cur[igas] - qgas_prv[igas];
       qgas_avg[igas] += dtcur * (qgas_prv[igas] + 0.5 * tmpc);
       for (int n = 0; n < ntot_soamode; ++n) {
         qaer_cur[iaer][n] = a_soa[iaer][n];
-        tmpc = qaer_cur[iaer][n] - qaer_prv[iaer][n];
       }
     }
 

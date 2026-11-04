@@ -40,8 +40,7 @@ void mam_soaexch_1subarea(Ensemble *ensemble) {
 
     // Call the function
     mam_soaexch_1subarea(dtsubstep, temp, pmid, qgas_cur_vec.data(),
-                         qgas_avg_vec.data(), qaer_cur, qnum_cur_vec.data(),
-                         qwtr_cur_vec.data(), uptkaer);
+                         qgas_avg_vec.data(), qaer_cur, uptkaer);
 
     for (int idx = 0; idx < max_aer; ++idx) {
       for (int mode = 0; mode < max_mode; ++mode) {

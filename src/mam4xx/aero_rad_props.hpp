@@ -317,7 +317,6 @@ void aero_rad_props_sw(const ThreadTeam &team, const Real dt,
    Find tropopause (or quit simulation if not found) as extinction should be
    applied only above tropopause */
   const int ilev_tropp = tropopause_or_quit(pmid, pint, temperature, zm, zi);
-  // std::cout << ilev_tropp << " ilev_tropp \n";
   modal_aero_sw(team, dt, progs, atm, pdel, pdeldry, tau, tau_w, tau_w_g,
                 tau_w_f, aersol_optics_data, calcsizedata, aodvis, work);
 

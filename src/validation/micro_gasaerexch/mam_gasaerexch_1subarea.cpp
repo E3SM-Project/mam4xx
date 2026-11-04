@@ -68,7 +68,7 @@ void mam_gasaerexch_1subarea(Ensemble *ensemble) {
     mam4::mam_gasaerexch_1subarea(jtsubstep, dtsubstep, temp, pmid, aircon,
                                   n_mode, qgas_cur, qgas_avg,
                                   qgas_netprod_otrproc, qaer_cur, qnum_cur,
-                                  qwtr_cur, dgn_awet, uptkaer, uptkrate_h2so4);
+                                  dgn_awet, uptkaer, uptkrate_h2so4);
 
     // Prepare output arrays
     std::vector<Real> qgas_cur_out(max_gas);

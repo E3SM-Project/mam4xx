@@ -1377,13 +1377,13 @@ void mam_amicphys_1subarea(
 
       Real uptkaer[max_gas()][max_mode];
 
-      mam4::mam_gasaerexch_1subarea(
-          jtsubstep, dtsubstep, temp, pmid, aircon, nmodes, // in
-          qgas_cur, qgas_avg,                               // inout
-          qgas_netprod_otrproc,                             // in
-          qaer_cur_tmp, qnum_cur_tmp, qwtr_cur_tmp,         // inout
-          dgn_awet,                                         // in
-          uptkaer, uptkrate_h2so4);                         // inout
+      mam4::mam_gasaerexch_1subarea(jtsubstep, dtsubstep, temp, pmid, aircon,
+                                    nmodes,                     // in
+                                    qgas_cur, qgas_avg,         // inout
+                                    qgas_netprod_otrproc,       // in
+                                    qaer_cur_tmp, qnum_cur_tmp, // inout
+                                    dgn_awet,                   // in
+                                    uptkaer, uptkrate_h2so4);   // inout
 
       // copy back the values for aerosols
       for (int is = 0; is < nspecies; ++is) {
