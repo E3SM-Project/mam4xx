@@ -90,7 +90,8 @@ struct ImplicitWorkspace {
 
   KOKKOS_INLINE_FUNCTION bool valid() const {
     constexpr int nfam = 2 * AeroConfig::num_modes();
-    return rhs_cloud.extent_int(0) == pver &&
+    return rhs_cloud.span_is_contiguous() && rhs_inter.span_is_contiguous() &&
+           rhs_drop.span_is_contiguous() && rhs_cloud.extent_int(0) == pver &&
            rhs_cloud.extent_int(1) == ncnst_tot + 1 &&
            rhs_inter.extent_int(0) == pver &&
            rhs_inter.extent_int(1) == ncnst_tot &&
@@ -123,7 +124,7 @@ struct MixingStatus {
   // substeps rejected by the acceptance checks and redone with Forward Euler
   // (under SingleStep, one rejection runs the full controller loop)
   int fallback_count;
-  // substeps rejected by the conservation budget of zeroing
+  // substeps rejected for any negative candidate, including roundoff
   int material_negative_count;
   // negative entries in the input state (host-supplied), both phases + qcld;
   // counted only when an implicit integrator runs (the explicit path reports 0)
@@ -164,17 +165,6 @@ KOKKOS_INLINE_FUNCTION Real rate_up(const int k, const int top_lev,
 KOKKOS_INLINE_FUNCTION Real rate_down(const int k,
                                       const ColumnView &eddy_diff_kp) {
   return k == pver - 1 ? Real(0) : eddy_diff_kp(k);
-}
-
-// Relative conservation budget of zeroing per constituent per substep:
-// beta = max(5 nlev eps, 1e-11) L, with L the old-state ledger. When host
-// negatives dominate a constituent (L < 0) the budget is negative and every
-// candidate with any negative mass is rejected, so the column takes the FE
-// path; input_negative_count attributes that outcome.
-KOKKOS_INLINE_FUNCTION Real zeroing_budget(const Real ledger) {
-  const Real rel =
-      mam4::max(Real(5) * Real(pver) * machine_epsilon(), Real(1e-11));
-  return rel * ledger;
 }
 
 // ---------------------------------------------------------------------------
@@ -227,11 +217,32 @@ int count_negative_input(const ThreadTeam &team, const int top_lev,
   return count;
 }
 
+// The initial qualification envelope is enforced on physical rates only.
+// Compare without overflowing h*rate for otherwise valid finite inputs.
+KOKKOS_INLINE_FUNCTION
+bool within_coefficient_range(const Real h, const Real rate) {
+  return rate <= Real(1) ? h * rate <= Real(500) : h <= Real(500) / rate;
+}
+KOKKOS_INLINE_FUNCTION
+bool within_implicit_range(const ThreadTeam &team, const int top_lev,
+                           const Real h, const ColumnView &kp,
+                           const ColumnView &km) {
+  int outside = 0;
+  Kokkos::parallel_reduce(Kokkos::TeamVectorRange(team, top_lev, pver),
+      [&](int k, int &acc) {
+        if (!within_coefficient_range(h, rate_up(k, top_lev, km)) ||
+            !within_coefficient_range(h, rate_down(k, kp))) ++acc;
+      }, outside);
+  team.team_barrier();
+  return pver <= 128 && outside == 0;
+}
+
 // Structural preconditions: nonnegative capped activation rates everywhere
 // and zero activation at the surface cell (always true in dropmixnuc).
 KOKKOS_INLINE_FUNCTION
 bool activation_preconditions_hold(const ThreadTeam &team, const int top_lev,
-                                   const View2D &nact, const View2D &mact) {
+                                   const View2D &nact, const View2D &mact,
+                                   const ColumnView &eddy_diff_kp) {
   int violations = 0;
   Kokkos::parallel_reduce(
       Kokkos::TeamVectorRange(team, top_lev, pver),
@@ -239,7 +250,8 @@ bool activation_preconditions_hold(const ThreadTeam &team, const int top_lev,
         for (int imode = 0; imode < nmodes; ++imode) {
           const Real n = nact(k, imode);
           const Real m = mact(k, imode);
-          if (!(n >= Real(0)) || !(m >= Real(0)))
+          if (!is_finite(n) || !is_finite(m) || n < Real(0) || m < Real(0) ||
+              n > eddy_diff_kp(k) || m > eddy_diff_kp(k))
             ++acc;
           if (k == pver - 1 && (n != Real(0) || m != Real(0)))
             ++acc;
@@ -363,17 +375,44 @@ solve_tridiagonal(const ThreadTeam &team, const View1D &dl, const View1D &d,
   team.team_barrier();
 }
 
+// Inspect a solved RHS before any dependent stage reads it. A negative is
+// rejected even at roundoff scale; no clipping or ledger repair is performed.
+KOKKOS_INLINE_FUNCTION
+bool check_candidate_rhs(const ThreadTeam &team, const int top_lev,
+                         const View2D &rhs, const int first_rhs,
+                         int &negative_count) {
+  int nonfinite = 0, negative = 0;
+  Kokkos::parallel_reduce(
+      Kokkos::TeamVectorRange(team, top_lev, pver),
+      [&](int k, int &acc) {
+        for (int j = first_rhs; j < rhs.extent_int(1); ++j)
+          if (!is_finite(rhs(k, j))) ++acc;
+      }, nonfinite);
+  Kokkos::parallel_reduce(
+      Kokkos::TeamVectorRange(team, top_lev, pver),
+      [&](int k, int &acc) {
+        for (int j = first_rhs; j < rhs.extent_int(1); ++j)
+          if (rhs(k, j) < Real(0)) ++acc;
+      }, negative);
+  team.team_barrier();
+  negative_count = negative;
+  return nonfinite == 0 && negative == 0;
+}
+
 // ---------------------------------------------------------------------------
 // IMEX-Euler substep: candidate state into workspace, state views untouched
 // ---------------------------------------------------------------------------
 
 KOKKOS_INLINE_FUNCTION
-void imex_substep(const ThreadTeam &team, const Real h, const int top_lev,
+bool imex_substep(const ThreadTeam &team, const Real h, const int top_lev,
                   const int nsav, const View2D &nact, const View2D &mact,
                   const ColumnView &qcld, const View3D &raercol,
                   const View3D &raercol_cw, const ColumnView &eddy_diff_kp,
                   const ColumnView &eddy_diff_km, const ColumnView &overlapp,
-                  const ColumnView &overlapm, const ImplicitWorkspace &ws) {
+                  const ColumnView &overlapm, const ImplicitWorkspace &ws,
+                  int *negative_count = nullptr) {
+  int negative = 0;
+  if (negative_count) *negative_count = 0;
   // cloud-borne and droplet right-hand sides: old state plus explicit source
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, 0, pver), [&](int k) {
     if (k < top_lev) {
@@ -399,6 +438,10 @@ void imex_substep(const ThreadTeam &team, const Real h, const int top_lev,
   assemble_bands(team, top_lev, h, true, eddy_diff_kp, eddy_diff_km, overlapp,
                  overlapm, ws.dl, ws.d, ws.du);
   solve_tridiagonal(team, ws.dl, ws.d, ws.du, ws.rhs_cloud);
+  if (!check_candidate_rhs(team, top_lev, ws.rhs_cloud, 0, negative)) {
+    if (negative_count) *negative_count = negative;
+    return false;
+  }
 
   // interstitial right-hand sides: old state, explicit sink, return at C^{n+1}
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, 0, pver), [&](int k) {
@@ -428,6 +471,9 @@ void imex_substep(const ThreadTeam &team, const Real h, const int top_lev,
   assemble_bands(team, top_lev, h, false, eddy_diff_kp, eddy_diff_km, overlapp,
                  overlapm, ws.dl, ws.d, ws.du);
   solve_tridiagonal(team, ws.dl, ws.d, ws.du, ws.rhs_inter);
+  const bool ok = check_candidate_rhs(team, top_lev, ws.rhs_inter, 0, negative);
+  if (negative_count) *negative_count = negative;
+  return ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -585,7 +631,9 @@ bool be_substep(const ThreadTeam &team, const Real h, const int top_lev,
                 const ColumnView &qcld, const View3D &raercol,
                 const View3D &raercol_cw, const ColumnView &eddy_diff_kp,
                 const ColumnView &eddy_diff_km, const ColumnView &overlapp,
-                const ColumnView &overlapm, const ImplicitWorkspace &ws) {
+                const ColumnView &overlapm, const ImplicitWorkspace &ws,
+                int *negative_count = nullptr) {
+  if (negative_count) *negative_count = 0;
   int failures = 0;
   Kokkos::parallel_reduce(
       Kokkos::TeamThreadRange(team, nfamilies),
@@ -598,6 +646,14 @@ bool be_substep(const ThreadTeam &team, const Real h, const int top_lev,
       failures);
   team.team_barrier();
   if (failures != 0)
+    return false;
+  int negative_cloud = 0, negative_inter = 0;
+  const bool cloud_ok = check_candidate_rhs(
+      team, top_lev, ws.rhs_cloud, 1, negative_cloud);
+  const bool inter_ok = check_candidate_rhs(
+      team, top_lev, ws.rhs_inter, 0, negative_inter);
+  if (negative_count) *negative_count = negative_cloud + negative_inter;
+  if (!cloud_ok || !inter_ok)
     return false;
 
   // droplets: source from the solved new-level interstitial modal numbers
@@ -621,78 +677,27 @@ bool be_substep(const ThreadTeam &team, const Real h, const int top_lev,
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, 0, pver),
                        [&](int k) { ws.rhs_cloud(k, 0) = ws.rhs_drop(k, 0); });
   team.team_barrier();
-  return true;
+  int negative = 0;
+  const bool ok = check_candidate_rhs(team, top_lev, ws.rhs_drop, 0, negative);
+  if (negative_count) *negative_count = negative;
+  return ok;
 }
 
 // ---------------------------------------------------------------------------
 // Acceptance checks and commit
 // ---------------------------------------------------------------------------
 
-// Evaluates the candidate in the workspace against the old state in the nsav
-// buffer. Returns the number of nonfinite candidate entries and the number of
-// fields whose weighted negative mass exceeds the conservation budget.
-// Weights are w_k = pdel_k/g = 1/zn(k).
-KOKKOS_INLINE_FUNCTION
-void evaluate_acceptance(const ThreadTeam &team, const int top_lev,
-                         const int nsav, const ColumnView &zn,
-                         const ColumnView &qcld, const View3D &raercol,
-                         const View3D &raercol_cw, const ImplicitWorkspace &ws,
-                         int &nonfinite_count, int &budget_violations) {
-  int nonfinite = 0;
-  int violations = 0;
-  Kokkos::parallel_reduce(
-      Kokkos::TeamThreadRange(team, ncloud_rhs),
-      [&](const int j, int &acc) {
-        for (int k = top_lev; k < pver; ++k) {
-          if (j == 0) {
-            if (!is_finite(ws.rhs_cloud(k, 0)))
-              ++acc;
-          } else {
-            if (!is_finite(ws.rhs_cloud(k, j)) ||
-                !is_finite(ws.rhs_inter(k, j - 1)))
-              ++acc;
-          }
-        }
-      },
-      nonfinite);
-  Kokkos::parallel_reduce(
-      Kokkos::TeamThreadRange(team, ncloud_rhs),
-      [&](const int j, int &acc) {
-        Real ledger = Real(0);
-        Real zeroed = Real(0);
-        for (int k = top_lev; k < pver; ++k) {
-          const Real w = Real(1) / zn(k);
-          if (j == 0) {
-            ledger += w * qcld(k);
-            zeroed += w * mam4::max(Real(0), -ws.rhs_cloud(k, 0));
-          } else {
-            const int mm = j - 1;
-            ledger += w * (raercol(k, nsav, mm) + raercol_cw(k, nsav, mm));
-            zeroed += w * (mam4::max(Real(0), -ws.rhs_cloud(k, j)) +
-                           mam4::max(Real(0), -ws.rhs_inter(k, mm)));
-          }
-        }
-        if (!(zeroed <= zeroing_budget(ledger)))
-          ++acc;
-      },
-      violations);
-  team.team_barrier();
-  nonfinite_count = nonfinite;
-  budget_violations = violations;
-}
-
-// Commit the accepted candidate into the nnew buffer and qcld, zeroing the
-// (budget-bounded) negative entries.
+// Copy the accepted raw candidate without clipping or repair.
 KOKKOS_INLINE_FUNCTION
 void commit_candidate(const ThreadTeam &team, const int top_lev, const int nnew,
                       const ColumnView &qcld, const View3D &raercol,
                       const View3D &raercol_cw, const ImplicitWorkspace &ws) {
   Kokkos::parallel_for(
       Kokkos::TeamVectorRange(team, top_lev, pver), [&](int k) {
-        qcld(k) = mam4::max(Real(0), ws.rhs_cloud(k, 0));
+        qcld(k) = ws.rhs_cloud(k, 0);
         for (int mm = 0; mm < ncnst_tot; ++mm) {
-          raercol_cw(k, nnew, mm) = mam4::max(Real(0), ws.rhs_cloud(k, 1 + mm));
-          raercol(k, nnew, mm) = mam4::max(Real(0), ws.rhs_inter(k, mm));
+          raercol_cw(k, nnew, mm) = ws.rhs_cloud(k, 1 + mm);
+          raercol(k, nnew, mm) = ws.rhs_inter(k, mm);
         }
       });
   team.team_barrier();
@@ -706,9 +711,9 @@ void commit_candidate(const ThreadTeam &team, const int top_lev, const int nnew,
 // substep policy, falling back to Forward Euler per the design. On entry the
 // controller has produced dtmix and nsubmix; nsav/nnew are the FE buffer
 // indices and are updated exactly as the FE loop would. Preconditions that
-// fail structurally (workspace, activation rates) take the FE path and are
-// recorded as a fallback; nonfinite input or a nonfinite FE result is an
-// unrecoverable error.
+// must already be checked before controller arithmetic. An out-of-range
+// valid operator takes full FE; invalid input/workspace or a nonfinite FE
+// result is an unrecoverable error.
 KOKKOS_INLINE_FUNCTION
 void advance(const ThreadTeam &team, const Real dtmicro, const Real dtmix,
              const int nsubmix, const int top_lev, const ColumnView &zn,
@@ -721,9 +726,6 @@ void advance(const ThreadTeam &team, const Real dtmicro, const Real dtmix,
              MixingStatus *status) {
   MixingStatus st;
 
-  EKAT_KERNEL_REQUIRE_MSG(count_nonfinite_input(team, top_lev, nsav, qcld,
-                                                raercol, raercol_cw) == 0,
-                          "ndrop implicit mixing: nonfinite input state");
   st.input_negative_count =
       count_negative_input(team, top_lev, nsav, qcld, raercol, raercol_cw);
 
@@ -731,17 +733,14 @@ void advance(const ThreadTeam &team, const Real dtmicro, const Real dtmix,
   const int n_impl = single ? 1 : nsubmix;
   const Real h = single ? dtmicro : dtmix;
 
-  bool run_full_fe = false;
-  // an unallocated workspace with an implicit integrator is a caller error;
-  // debug builds stop here, release builds record a fallback and run FE
-  EKAT_KERNEL_ASSERT_MSG(ws.valid(),
-                         "ndrop implicit mixing: workspace not allocated");
-  if (!ws.valid() ||
-      !activation_preconditions_hold(team, top_lev, nact, mact)) {
-    // structural precondition failure: record and take the FE path
-    st.fallback_count = 1;
-    run_full_fe = true;
-  }
+  EKAT_KERNEL_REQUIRE_MSG(ws.valid(),
+                          "ndrop implicit mixing: workspace not allocated");
+  EKAT_KERNEL_REQUIRE_MSG(
+      activation_preconditions_hold(team, top_lev, nact, mact, eddy_diff_kp),
+      "ndrop implicit mixing: invalid activation operator");
+  bool run_full_fe = !within_implicit_range(team, top_lev, h,
+                                           eddy_diff_kp, eddy_diff_km);
+  if (run_full_fe) st.fallback_count = 1;
 
   if (!run_full_fe) {
     for (int isub = 0; isub < n_impl; ++isub) {
@@ -751,29 +750,23 @@ void advance(const ThreadTeam &team, const Real dtmicro, const Real dtmix,
         nnew = ntemp;
       }
       bool solver_ok;
+      int negative = 0;
       if (options.integrator == MixingIntegrator::IMEX) {
-        imex_substep(team, h, top_lev, nsav, nact, mact, qcld, raercol,
+        solver_ok = imex_substep(team, h, top_lev, nsav, nact, mact, qcld, raercol,
                      raercol_cw, eddy_diff_kp, eddy_diff_km, overlapp, overlapm,
-                     ws);
-        solver_ok = true;
+                     ws, &negative);
       } else {
         solver_ok = be_substep(team, h, top_lev, nsav, nact, mact, qcld,
                                raercol, raercol_cw, eddy_diff_kp, eddy_diff_km,
-                               overlapp, overlapm, ws);
+                               overlapp, overlapm, ws, &negative);
       }
-      int nonfinite = 0;
-      int violations = 0;
-      if (solver_ok) {
-        evaluate_acceptance(team, top_lev, nsav, zn, qcld, raercol, raercol_cw,
-                            ws, nonfinite, violations);
-      }
-      const bool accept = solver_ok && nonfinite == 0 && violations == 0;
+      const bool accept = solver_ok;
       if (accept) {
         commit_candidate(team, top_lev, nnew, qcld, raercol, raercol_cw, ws);
         ++st.nsubmix_executed;
       } else {
         ++st.fallback_count;
-        if (solver_ok && nonfinite == 0)
+        if (negative != 0)
           ++st.material_negative_count;
         if (single) {
           // discard the implicit step; nsav/nnew are still the entry values
@@ -806,11 +799,11 @@ void advance(const ThreadTeam &team, const Real dtmicro, const Real dtmix,
       forward_euler_substep(team, dtmix, top_lev, nsav, nnew, nact, mact, qcld,
                             qncld, raercol, raercol_cw, eddy_diff_kp,
                             eddy_diff_km, overlapp, overlapm);
+      // Stop before a later redo step can consume a nonfinite result.
+      EKAT_KERNEL_REQUIRE_MSG(
+          count_nonfinite_input(team, top_lev, nnew, qcld, raercol, raercol_cw) == 0,
+          "ndrop implicit mixing: nonfinite Forward Euler result");
     }
-    EKAT_KERNEL_REQUIRE_MSG(
-        count_nonfinite_input(team, top_lev, nnew, qcld, raercol, raercol_cw) ==
-            0,
-        "ndrop implicit mixing: nonfinite Forward Euler result");
     st.nsubmix_executed = nsubmix;
   }
 

@@ -71,6 +71,22 @@ EkatCreateUnitTest(mam4_ndrop_implicit_mixing_unit_tests
   mam4_ndrop_implicit_mixing_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
 
+# Fatal error paths need separate processes; hidden Catch sections keep them
+# out of the normal executable run. Register them explicitly for CI/CTest.
+function(ndrop_abort_test section message)
+  add_test(NAME ndrop_abort_${section}
+    COMMAND ${CMAKE_COMMAND}
+      "-DTEST_EXE=$<TARGET_FILE:mam4_ndrop_implicit_mixing_unit_tests>"
+      "-DSECTION=${section}" "-DEXPECTED_MESSAGE=${message}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/expect_ndrop_abort.cmake")
+  set_tests_properties(ndrop_abort_${section} PROPERTIES RUN_SERIAL TRUE)
+endfunction()
+ndrop_abort_test(nonfinite-state "nonfinite input state")
+ndrop_abort_test(invalid-geometry "invalid geometry/operator")
+ndrop_abort_test(missing-workspace "invalid timestep, levels, buffers or workspace")
+ndrop_abort_test(controller-overflow "controller count is not representable")
+ndrop_abort_test(nonfinite-redo "nonfinite Forward Euler result")
+
 EkatCreateUnitTest(aero_modes_unit_tests aero_modes_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
 
