@@ -956,7 +956,8 @@ TEST_CASE("invalid_state_detection", "mam4_ndrop_implicit_mixing") {
                        [&]() { ws.rhs_inter(7, 2) = nan; });
         team.team_barrier();
         int nonfinite = 0, violations = 0;
-        const bool valid = check_candidate_rhs(team, 0, ws.rhs_inter, 0, violations);
+        const bool valid =
+            check_candidate_rhs(team, 0, ws.rhs_inter, 0, violations);
         nonfinite = valid ? 0 : 1;
         // a candidate with any negative is rejected
         Kokkos::single(Kokkos::PerTeam(team), [&]() {
@@ -965,7 +966,8 @@ TEST_CASE("invalid_state_detection", "mam4_ndrop_implicit_mixing") {
         });
         team.team_barrier();
         int nonfinite2 = 0, violations2 = 0;
-        const bool valid2 = check_candidate_rhs(team, 0, ws.rhs_inter, 0, violations2);
+        const bool valid2 =
+            check_candidate_rhs(team, 0, ws.rhs_inter, 0, violations2);
         nonfinite2 = valid2 ? 0 : 1;
         // pivot guard: singular and nonfinite pivots are refused
         Mat2 inv;
@@ -980,11 +982,14 @@ TEST_CASE("invalid_state_detection", "mam4_ndrop_implicit_mixing") {
                        [&]() { eddy_diff_kp(30) = nan; });
         team.team_barrier();
         bool family_ok = false;
-        Kokkos::single(Kokkos::PerTeam(team), [&](bool &result) {
-          result = be_family_solve(
-              0, Real(100), 0, 0, nact, mact, raercol, raercol_cw,
-              eddy_diff_kp, eddy_diff_km, overlapp, overlapm, ws);
-        }, family_ok);
+        Kokkos::single(
+            Kokkos::PerTeam(team),
+            [&](bool &result) {
+              result = be_family_solve(0, Real(100), 0, 0, nact, mact, raercol,
+                                       raercol_cw, eddy_diff_kp, eddy_diff_km,
+                                       overlapp, overlapm, ws);
+            },
+            family_ok);
         Kokkos::single(Kokkos::PerTeam(team), [&]() {
           out(0) = clean;
           out(1) = dirty;
@@ -1412,9 +1417,10 @@ TEST_CASE("residual_verification_across_coefficient_range",
       }
     }
   }
-  logger.info("residual grid (45 points, h tinv up to 1000): worst IMEX {:.3e}, "
-              "worst BE {:.3e}, tolerance {:.3e}",
-              worst_imex, worst_be, tol);
+  logger.info(
+      "residual grid (45 points, h tinv up to 1000): worst IMEX {:.3e}, "
+      "worst BE {:.3e}, tolerance {:.3e}",
+      worst_imex, worst_be, tol);
 }
 
 // ===========================================================================
@@ -1587,14 +1593,18 @@ TEST_CASE("numerical_helpers_reject_nonfinite", "mam4_ndrop_implicit_mixing") {
                      -std::numeric_limits<double>::infinity()}) {
     for (int field = 0; field < 3; ++field) {
       HostState dirty = clean;
-      if (field == 0) dirty.N[0] = bad;
-      if (field == 1) dirty.C[0][0] = bad;
-      if (field == 2) dirty.I[0][0] = bad;
+      if (field == 0)
+        dirty.N[0] = bad;
+      if (field == 1)
+        dirty.C[0][0] = bad;
+      if (field == 2)
+        dirty.I[0][0] = bad;
       REQUIRE_FALSE(std::isfinite(max_normalized_diff(op, dirty, clean)));
       REQUIRE_FALSE(std::isfinite(max_normalized_diff(op, clean, dirty)));
       REQUIRE_FALSE(all_nonnegative(dirty, 0));
       if (field != 0)
-        REQUIRE_FALSE(std::isfinite(max_relative_ledger_change(op, dirty, clean)));
+        REQUIRE_FALSE(
+            std::isfinite(max_relative_ledger_change(op, dirty, clean)));
     }
     REQUIRE_FALSE(std::isfinite(norm_inf({bad})));
     REQUIRE_FALSE(std::isfinite(matrix_norm_inf(Mat{{bad}})));
@@ -1604,7 +1614,8 @@ TEST_CASE("numerical_helpers_reject_nonfinite", "mam4_ndrop_implicit_mixing") {
   }
 }
 
-TEST_CASE("strict_rejection_preserves_interval_ledger", "mam4_ndrop_implicit_mixing") {
+TEST_CASE("strict_rejection_preserves_interval_ledger",
+          "mam4_ndrop_implicit_mixing") {
   HostCase c = make_case("two_level", 0);
   const int t = c.top_lev;
   const double r = c.zn[t] * c.eddy_diff[t] * c.csbot[t] * c.zs[t];
@@ -1621,23 +1632,27 @@ TEST_CASE("strict_rejection_preserves_interval_ledger", "mam4_ndrop_implicit_mix
   REQUIRE(raw.I[t][0] < 0.0);
   // This negative passed the former per-substep repair budget.
   REQUIRE(-raw.I[t][0] < 1e-11);
-  const auto fe = run_device(to_device(c), t, c.dtmicro, 1,
-                            MixingOptions(), ImplicitWorkspace());
+  const auto fe = run_device(to_device(c), t, c.dtmicro, 1, MixingOptions(),
+                             ImplicitWorkspace());
   for (auto policy : {ImplicitSubstepPolicy::ControllerCount,
                       ImplicitSubstepPolicy::SingleStep}) {
-    const auto result = run_device(to_device(c), t, c.dtmicro, 1,
-        MixingOptions(MixingIntegrator::IMEX, policy),
-        ImplicitWorkspace::allocate("strict_ledger"));
+    const auto result =
+        run_device(to_device(c), t, c.dtmicro, 1,
+                   MixingOptions(MixingIntegrator::IMEX, policy),
+                   ImplicitWorkspace::allocate("strict_ledger"));
     REQUIRE(result.status.fallback_count ==
-        (policy == ImplicitSubstepPolicy::SingleStep ? 1 : count));
-    REQUIRE(result.status.material_negative_count == result.status.fallback_count);
+            (policy == ImplicitSubstepPolicy::SingleStep ? 1 : count));
+    REQUIRE(result.status.material_negative_count ==
+            result.status.fallback_count);
     REQUIRE(result.status.nsubmix_executed == count);
     REQUIRE(bitwise_equal(result.state, fe.state, t));
-    REQUIRE(max_relative_ledger_change(op, result.state, host_state(c)) <= ledger_budget_rel());
+    REQUIRE(max_relative_ledger_change(op, result.state, host_state(c)) <=
+            ledger_budget_rel());
   }
 }
 
-TEST_CASE("strict_candidate_and_producer_checks", "mam4_ndrop_implicit_mixing") {
+TEST_CASE("strict_candidate_and_producer_checks",
+          "mam4_ndrop_implicit_mixing") {
   using namespace mam4::ndrop::implicit_mixing;
   const FpeTrapMask mask;
   const HostCase c = make_case("mild", 0);
@@ -1655,44 +1670,65 @@ TEST_CASE("strict_candidate_and_producer_checks", "mam4_ndrop_implicit_mixing") 
   mam4::DeviceType::view_1d<int> out("strict_out", 8);
   const Real tiny = -std::numeric_limits<Real>::min();
   const Real inf = std::numeric_limits<Real>::infinity();
-  Kokkos::parallel_for("strict_producer", mam4::ThreadTeamPolicy(1u, team_size),
+  Kokkos::parallel_for(
+      "strict_producer", mam4::ThreadTeamPolicy(1u, team_size),
       KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
         int negative = 0;
-        const bool ok = imex_substep(team, Real(1), 0, 0, d.nact, d.mact,
-            d.qcld, d.raercol, d.raercol_cw, d.eddy_diff_kp, d.eddy_diff_km,
-            d.overlapp, d.overlapm, ws, &negative);
+        const bool ok =
+            imex_substep(team, Real(1), 0, 0, d.nact, d.mact, d.qcld, d.raercol,
+                         d.raercol_cw, d.eddy_diff_kp, d.eddy_diff_km,
+                         d.overlapp, d.overlapm, ws, &negative);
         int touched = 0;
-        Kokkos::parallel_reduce(Kokkos::TeamVectorRange(team, pver),
+        Kokkos::parallel_reduce(
+            Kokkos::TeamVectorRange(team, pver),
             [&](int k, int &acc) {
               for (int j = 0; j < ncnst; ++j)
-                if (ws.rhs_inter(k,j) != Real(-7)) ++acc;
-            }, touched);
+                if (ws.rhs_inter(k, j) != Real(-7))
+                  ++acc;
+            },
+            touched);
         team.team_barrier();
         Kokkos::single(Kokkos::PerTeam(team), [&]() {
-          out(0) = ok; out(1) = negative; out(7) = touched;
+          out(0) = ok;
+          out(1) = negative;
+          out(7) = touched;
         });
         Kokkos::parallel_for(Kokkos::TeamVectorRange(team, pver), [&](int k) {
-          for (int j = 0; j < ncnst; ++j) ws.rhs_inter(k,j) = -Real(0);
+          for (int j = 0; j < ncnst; ++j)
+            ws.rhs_inter(k, j) = -Real(0);
         });
         team.team_barrier();
-        const bool zero_ok = check_candidate_rhs(team, 0, ws.rhs_inter, 0, negative);
-        Kokkos::single(Kokkos::PerTeam(team), [&]() { ws.rhs_inter(0,0) = tiny; });
+        const bool zero_ok =
+            check_candidate_rhs(team, 0, ws.rhs_inter, 0, negative);
+        Kokkos::single(Kokkos::PerTeam(team),
+                       [&]() { ws.rhs_inter(0, 0) = tiny; });
         team.team_barrier();
-        const bool tiny_ok = check_candidate_rhs(team, 0, ws.rhs_inter, 0, negative);
+        const bool tiny_ok =
+            check_candidate_rhs(team, 0, ws.rhs_inter, 0, negative);
         const int tiny_count = negative;
-        Kokkos::single(Kokkos::PerTeam(team), [&]() { ws.rhs_inter(0,0) = inf; });
+        Kokkos::single(Kokkos::PerTeam(team),
+                       [&]() { ws.rhs_inter(0, 0) = inf; });
         team.team_barrier();
-        const bool inf_ok = check_candidate_rhs(team, 0, ws.rhs_inter, 0, negative);
+        const bool inf_ok =
+            check_candidate_rhs(team, 0, ws.rhs_inter, 0, negative);
         Kokkos::single(Kokkos::PerTeam(team), [&]() {
-          out(2) = zero_ok; out(3) = tiny_ok; out(4) = tiny_count; out(5) = inf_ok;
+          out(2) = zero_ok;
+          out(3) = tiny_ok;
+          out(4) = tiny_count;
+          out(5) = inf_ok;
           // The cloud failure must leave old state intact.
           out(6) = d.qcld(0) == Real(-1);
         });
       });
   const auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), out);
-  REQUIRE(h(0) == 0); REQUIRE(h(1) == pver);
-  REQUIRE(h(2) == 1); REQUIRE(h(3) == 0); REQUIRE(h(4) == 1);
-  REQUIRE(h(5) == 0); REQUIRE(h(6) == 1); REQUIRE(h(7) == 0);
+  REQUIRE(h(0) == 0);
+  REQUIRE(h(1) == pver);
+  REQUIRE(h(2) == 1);
+  REQUIRE(h(3) == 0);
+  REQUIRE(h(4) == 1);
+  REQUIRE(h(5) == 0);
+  REQUIRE(h(6) == 1);
+  REQUIRE(h(7) == 0);
 }
 
 TEST_CASE("implicit_range_uses_complete_fe", "mam4_ndrop_implicit_mixing") {
@@ -1705,11 +1741,14 @@ TEST_CASE("implicit_range_uses_complete_fe", "mam4_ndrop_implicit_mixing") {
   const int t = c.top_lev;
   const double r = c.zn[t] * c.eddy_diff[t] * c.csbot[t] * c.zs[t];
   c.dtmicro = 501.0 / r;
-  const auto fe = run_device(to_device(c), t, c.dtmicro, 1, MixingOptions(), ImplicitWorkspace());
-  for (auto method : {MixingIntegrator::IMEX, MixingIntegrator::BackwardEuler}) {
-    const auto actual = run_device(to_device(c), t, c.dtmicro, 1,
-        MixingOptions(method, ImplicitSubstepPolicy::SingleStep),
-        ImplicitWorkspace::allocate("outside_range"));
+  const auto fe = run_device(to_device(c), t, c.dtmicro, 1, MixingOptions(),
+                             ImplicitWorkspace());
+  for (auto method :
+       {MixingIntegrator::IMEX, MixingIntegrator::BackwardEuler}) {
+    const auto actual =
+        run_device(to_device(c), t, c.dtmicro, 1,
+                   MixingOptions(method, ImplicitSubstepPolicy::SingleStep),
+                   ImplicitWorkspace::allocate("outside_range"));
     REQUIRE(actual.status.fallback_count == 1);
     REQUIRE(actual.status.material_negative_count == 0);
     REQUIRE(actual.status.nsubmix_executed == fe.status.nsubmix_executed);
@@ -1717,12 +1756,13 @@ TEST_CASE("implicit_range_uses_complete_fe", "mam4_ndrop_implicit_mixing") {
   }
 }
 
-TEST_CASE("be_nonuniform_clear_cells_and_boundaries", "mam4_ndrop_implicit_mixing") {
-  for (int top : {0, 1, 6, pver-1}) {
+TEST_CASE("be_nonuniform_clear_cells_and_boundaries",
+          "mam4_ndrop_implicit_mixing") {
+  for (int top : {0, 1, 6, pver - 1}) {
     HostCase c = make_case("mild", top);
     c.dtmicro = 1.0;
     for (int k = 0; k < pver; ++k) {
-      c.zn[k] *= 1.0 + 0.01*k;
+      c.zn[k] *= 1.0 + 0.01 * k;
       c.cldn[k] = k % 3 == 0 ? 0.0 : 0.7;
     }
     const HostOperator op = make_operator(c);
@@ -1731,20 +1771,25 @@ TEST_CASE("be_nonuniform_clear_cells_and_boundaries", "mam4_ndrop_implicit_mixin
       if (c.cldn[k] == 0.0) {
         ref.N[k] = 0.0;
         for (int mm = 0; mm < ncnst; ++mm) {
-          ref.I[k][mm] += ref.C[k][mm]; ref.C[k][mm] = 0.0;
+          ref.I[k][mm] += ref.C[k][mm];
+          ref.C[k][mm] = 0.0;
         }
       }
-    const auto actual = run_device(to_device(c), top, c.dtmicro, 1,
-        MixingOptions(MixingIntegrator::BackwardEuler, ImplicitSubstepPolicy::SingleStep),
-        ImplicitWorkspace::allocate("nonuniform"));
+    const auto actual =
+        run_device(to_device(c), top, c.dtmicro, 1,
+                   MixingOptions(MixingIntegrator::BackwardEuler,
+                                 ImplicitSubstepPolicy::SingleStep),
+                   ImplicitWorkspace::allocate("nonuniform"));
     REQUIRE(actual.status.fallback_count == 0);
     REQUIRE(all_nonnegative(actual.state, top));
     REQUIRE(max_normalized_diff(op, actual.state, ref) <= oracle_tol(1));
-    REQUIRE(max_relative_ledger_change(op, actual.state, host_state(c)) <= ledger_budget_rel());
+    REQUIRE(max_relative_ledger_change(op, actual.state, host_state(c)) <=
+            ledger_budget_rel());
   }
 }
 
-TEST_CASE("late_controller_retry_keeps_accepted_work", "mam4_ndrop_implicit_mixing") {
+TEST_CASE("late_controller_retry_keeps_accepted_work",
+          "mam4_ndrop_implicit_mixing") {
   for (int count : {4, 5}) {
     HostCase c = make_case("two_level", 0);
     const int t = c.top_lev;
@@ -1756,26 +1801,31 @@ TEST_CASE("late_controller_retry_keeps_accepted_work", "mam4_ndrop_implicit_mixi
         c.raercol_cw[k][mm] = 0.5;
       }
     REQUIRE(fe_controller_count(c) == count);
-    const auto first = run_device(to_device(c), t, c.dtmicro/count, 1,
-        MixingOptions(MixingIntegrator::IMEX, ImplicitSubstepPolicy::SingleStep),
-        ImplicitWorkspace::allocate("first_accepted"));
+    const auto first =
+        run_device(to_device(c), t, c.dtmicro / count, 1,
+                   MixingOptions(MixingIntegrator::IMEX,
+                                 ImplicitSubstepPolicy::SingleStep),
+                   ImplicitWorkspace::allocate("first_accepted"));
     REQUIRE(first.status.fallback_count == 0);
     HostCase suffix = c;
-    suffix.dtmicro = c.dtmicro/count*(count-1);
+    suffix.dtmicro = c.dtmicro / count * (count - 1);
     suffix.qcld = first.state.N;
     suffix.raercol = first.state.I;
     suffix.raercol_cw = first.state.C;
     const auto expected = run_device(to_device(suffix), t, suffix.dtmicro, 1,
                                      MixingOptions(), ImplicitWorkspace());
-    REQUIRE(expected.status.nsubmix_executed == count-1);
-    const auto actual = run_device(to_device(c), t, c.dtmicro, 1,
-        MixingOptions(MixingIntegrator::IMEX, ImplicitSubstepPolicy::ControllerCount),
-        ImplicitWorkspace::allocate("late_retry"));
-    REQUIRE(actual.status.fallback_count == count-1);
-    REQUIRE(actual.status.material_negative_count == count-1);
+    REQUIRE(expected.status.nsubmix_executed == count - 1);
+    const auto actual =
+        run_device(to_device(c), t, c.dtmicro, 1,
+                   MixingOptions(MixingIntegrator::IMEX,
+                                 ImplicitSubstepPolicy::ControllerCount),
+                   ImplicitWorkspace::allocate("late_retry"));
+    REQUIRE(actual.status.fallback_count == count - 1);
+    REQUIRE(actual.status.material_negative_count == count - 1);
     REQUIRE(actual.status.nsubmix_executed == count);
     REQUIRE(bitwise_equal(actual.state, expected.state, t));
-    REQUIRE(max_relative_ledger_change(make_operator(c), actual.state, host_state(c)) <= ledger_budget_rel());
+    REQUIRE(max_relative_ledger_change(make_operator(c), actual.state,
+                                       host_state(c)) <= ledger_budget_rel());
   }
 }
 
@@ -1784,7 +1834,8 @@ TEST_CASE("zero_reference_and_workspace_layout", "mam4_ndrop_implicit_mixing") {
   HostState zero = host_state(c);
   for (int k = 0; k < pver; ++k) {
     zero.N[k] = 0.0;
-    for (int j = 0; j < ncnst; ++j) zero.C[k][j] = zero.I[k][j] = 0.0;
+    for (int j = 0; j < ncnst; ++j)
+      zero.C[k][j] = zero.I[k][j] = 0.0;
   }
   HostState dirty = zero;
   dirty.I[0][0] = 1e-20;
@@ -1796,16 +1847,19 @@ TEST_CASE("zero_reference_and_workspace_layout", "mam4_ndrop_implicit_mixing") {
   // incompatible with EKAT Thomas's raw row-major RHS indexing.
   for (int which = 0; which < 3; ++which) {
     auto invalid = ws;
-    const int width = which == 0 ? ncnst+1 : (which == 1 ? ncnst : 1);
+    const int width = which == 0 ? ncnst + 1 : (which == 1 ? ncnst : 1);
     Kokkos::LayoutRight layout(pver, width);
-    layout.stride = width+8;
+    layout.stride = width + 8;
     mam4::ndrop::View2D padded("padded_rhs", layout);
     REQUIRE(padded.extent_int(0) == pver);
     REQUIRE(padded.extent_int(1) == width);
     REQUIRE_FALSE(padded.span_is_contiguous());
-    if (which == 0) invalid.rhs_cloud = padded;
-    if (which == 1) invalid.rhs_inter = padded;
-    if (which == 2) invalid.rhs_drop = padded;
+    if (which == 0)
+      invalid.rhs_cloud = padded;
+    if (which == 1)
+      invalid.rhs_inter = padded;
+    if (which == 2)
+      invalid.rhs_drop = padded;
     REQUIRE_FALSE(invalid.valid());
   }
 }
@@ -1816,7 +1870,9 @@ TEST_CASE("implicit_input_errors_abort", "[.ndrop_abort]") {
   const FpeTrapMask mask;
   HostCase c = make_case("mild", 0);
   auto ws = ImplicitWorkspace::allocate("abort_case");
-  SECTION("nonfinite-state") { c.raercol[0][0] = std::numeric_limits<double>::quiet_NaN(); }
+  SECTION("nonfinite-state") {
+    c.raercol[0][0] = std::numeric_limits<double>::quiet_NaN();
+  }
   SECTION("invalid-geometry") { c.zn[0] = 0.0; }
   SECTION("missing-workspace") { ws = ImplicitWorkspace(); }
   SECTION("controller-overflow") { c.dtmicro = 1e15; }
@@ -1828,22 +1884,31 @@ TEST_CASE("implicit_input_errors_abort", "[.ndrop_abort]") {
         c.raercol_cw[k][mm] = 0.9 * std::numeric_limits<Real>::max();
       }
   }
-  run_device(to_device(c), c.top_lev, c.dtmicro, 1,
-      MixingOptions(MixingIntegrator::IMEX, ImplicitSubstepPolicy::SingleStep), ws);
+  run_device(
+      to_device(c), c.top_lev, c.dtmicro, 1,
+      MixingOptions(MixingIntegrator::IMEX, ImplicitSubstepPolicy::SingleStep),
+      ws);
   FAIL("invalid input must stop through the kernel error mechanism");
 }
 
-TEST_CASE("heterogeneous_columns_have_disjoint_workspace", "mam4_ndrop_implicit_mixing") {
+TEST_CASE("heterogeneous_columns_have_disjoint_workspace",
+          "mam4_ndrop_implicit_mixing") {
   HostCase c0 = make_case("mild", 0), c1 = make_case("two_level", 0);
-  const MixingOptions o0(MixingIntegrator::BackwardEuler, ImplicitSubstepPolicy::SingleStep);
-  const MixingOptions o1(MixingIntegrator::IMEX, ImplicitSubstepPolicy::ControllerCount);
+  const MixingOptions o0(MixingIntegrator::BackwardEuler,
+                         ImplicitSubstepPolicy::SingleStep);
+  const MixingOptions o1(MixingIntegrator::IMEX,
+                         ImplicitSubstepPolicy::ControllerCount);
   const auto r0 = run_device(to_device(c0), c0.top_lev, c0.dtmicro, 1, o0,
-                            ImplicitWorkspace::allocate("serial0"));
+                             ImplicitWorkspace::allocate("serial0"));
   const auto r1 = run_device(to_device(c1), c1.top_lev, c1.dtmicro, 1, o1,
-                            ImplicitWorkspace::allocate("serial1"));
+                             ImplicitWorkspace::allocate("serial1"));
   HostCase ref0 = c0, ref1 = c1;
-  ref0.qcld = r0.state.N; ref0.raercol = r0.state.I; ref0.raercol_cw = r0.state.C;
-  ref1.qcld = r1.state.N; ref1.raercol = r1.state.I; ref1.raercol_cw = r1.state.C;
+  ref0.qcld = r0.state.N;
+  ref0.raercol = r0.state.I;
+  ref0.raercol_cw = r0.state.C;
+  ref1.qcld = r1.state.N;
+  ref1.raercol = r1.state.I;
+  ref1.raercol_cw = r1.state.C;
   const auto d0 = to_device(c0), d1 = to_device(c1);
   const auto e0 = to_device(ref0), e1 = to_device(ref1);
   const auto w0 = ImplicitWorkspace::allocate("parallel0");
@@ -1852,7 +1917,8 @@ TEST_CASE("heterogeneous_columns_have_disjoint_workspace", "mam4_ndrop_implicit_
   const Real dt0 = c0.dtmicro, dt1 = c1.dtmicro;
   const MixingStatus s0 = r0.status, s1 = r1.status;
   mam4::DeviceType::view_1d<int> mismatch("column_mismatch", 2);
-  Kokkos::parallel_for("two_columns", mam4::ThreadTeamPolicy(2u, team_size),
+  Kokkos::parallel_for(
+      "two_columns", mam4::ThreadTeamPolicy(2u, team_size),
       KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
         const bool second = team.league_rank() == 1;
         const auto d = second ? d1 : d0;
@@ -1866,9 +1932,9 @@ TEST_CASE("heterogeneous_columns_have_disjoint_workspace", "mam4_ndrop_implicit_
 #ifdef MAM4XX_EVAL_DIAGNOSTICS
         int nsubmix = 0;
 #endif
-        mam4::ndrop::update_from_explmix(team, second ? dt1 : dt0,
-            d.csbot, d.cldn, d.zn, d.zs, d.eddy_diff, d.nact, d.mact, d.qcld,
-            d.raercol, d.raercol_cw, nsav, nnew,
+        mam4::ndrop::update_from_explmix(
+            team, second ? dt1 : dt0, d.csbot, d.cldn, d.zn, d.zs, d.eddy_diff,
+            d.nact, d.mact, d.qcld, d.raercol, d.raercol_cw, nsav, nnew,
 #ifdef MAM4XX_EVAL_DIAGNOSTICS
             nsubmix,
 #endif
@@ -1876,23 +1942,31 @@ TEST_CASE("heterogeneous_columns_have_disjoint_workspace", "mam4_ndrop_implicit_
             d.qncld, options, ws, &actual);
         team.team_barrier();
         int count = 0;
-        Kokkos::parallel_reduce(Kokkos::TeamVectorRange(team, top, pver),
+        Kokkos::parallel_reduce(
+            Kokkos::TeamVectorRange(team, top, pver),
             [&](int k, int &acc) {
-              if (d.qcld(k) != expected.qcld(k)) ++acc;
+              if (d.qcld(k) != expected.qcld(k))
+                ++acc;
               for (int mm = 0; mm < ncnst; ++mm) {
-                if (d.raercol(k,nnew,mm) != expected.raercol(k,0,mm)) ++acc;
-                if (d.raercol_cw(k,nnew,mm) != expected.raercol_cw(k,0,mm)) ++acc;
+                if (d.raercol(k, nnew, mm) != expected.raercol(k, 0, mm))
+                  ++acc;
+                if (d.raercol_cw(k, nnew, mm) != expected.raercol_cw(k, 0, mm))
+                  ++acc;
               }
-            }, count);
+            },
+            count);
         team.team_barrier();
         Kokkos::single(Kokkos::PerTeam(team), [&]() {
-          mismatch(team.league_rank()) = count +
-              (actual.nsubmix_executed != status.nsubmix_executed) +
+          mismatch(team.league_rank()) =
+              count + (actual.nsubmix_executed != status.nsubmix_executed) +
               (actual.fallback_count != status.fallback_count) +
-              (actual.material_negative_count != status.material_negative_count) +
+              (actual.material_negative_count !=
+               status.material_negative_count) +
               (actual.input_negative_count != status.input_negative_count);
         });
       });
-  const auto result = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), mismatch);
-  REQUIRE(result(0) == 0); REQUIRE(result(1) == 0);
+  const auto result =
+      Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), mismatch);
+  REQUIRE(result(0) == 0);
+  REQUIRE(result(1) == 0);
 }

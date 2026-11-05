@@ -228,11 +228,14 @@ bool within_implicit_range(const ThreadTeam &team, const int top_lev,
                            const Real h, const ColumnView &kp,
                            const ColumnView &km) {
   int outside = 0;
-  Kokkos::parallel_reduce(Kokkos::TeamVectorRange(team, top_lev, pver),
+  Kokkos::parallel_reduce(
+      Kokkos::TeamVectorRange(team, top_lev, pver),
       [&](int k, int &acc) {
         if (!within_coefficient_range(h, rate_up(k, top_lev, km)) ||
-            !within_coefficient_range(h, rate_down(k, kp))) ++acc;
-      }, outside);
+            !within_coefficient_range(h, rate_down(k, kp)))
+          ++acc;
+      },
+      outside);
   team.team_barrier();
   return pver <= 128 && outside == 0;
 }
@@ -386,14 +389,18 @@ bool check_candidate_rhs(const ThreadTeam &team, const int top_lev,
       Kokkos::TeamVectorRange(team, top_lev, pver),
       [&](int k, int &acc) {
         for (int j = first_rhs; j < rhs.extent_int(1); ++j)
-          if (!is_finite(rhs(k, j))) ++acc;
-      }, nonfinite);
+          if (!is_finite(rhs(k, j)))
+            ++acc;
+      },
+      nonfinite);
   Kokkos::parallel_reduce(
       Kokkos::TeamVectorRange(team, top_lev, pver),
       [&](int k, int &acc) {
         for (int j = first_rhs; j < rhs.extent_int(1); ++j)
-          if (rhs(k, j) < Real(0)) ++acc;
-      }, negative);
+          if (rhs(k, j) < Real(0))
+            ++acc;
+      },
+      negative);
   team.team_barrier();
   negative_count = negative;
   return nonfinite == 0 && negative == 0;
@@ -412,7 +419,8 @@ bool imex_substep(const ThreadTeam &team, const Real h, const int top_lev,
                   const ColumnView &overlapm, const ImplicitWorkspace &ws,
                   int *negative_count = nullptr) {
   int negative = 0;
-  if (negative_count) *negative_count = 0;
+  if (negative_count)
+    *negative_count = 0;
   // cloud-borne and droplet right-hand sides: old state plus explicit source
   Kokkos::parallel_for(Kokkos::TeamVectorRange(team, 0, pver), [&](int k) {
     if (k < top_lev) {
@@ -439,7 +447,8 @@ bool imex_substep(const ThreadTeam &team, const Real h, const int top_lev,
                  overlapm, ws.dl, ws.d, ws.du);
   solve_tridiagonal(team, ws.dl, ws.d, ws.du, ws.rhs_cloud);
   if (!check_candidate_rhs(team, top_lev, ws.rhs_cloud, 0, negative)) {
-    if (negative_count) *negative_count = negative;
+    if (negative_count)
+      *negative_count = negative;
     return false;
   }
 
@@ -472,7 +481,8 @@ bool imex_substep(const ThreadTeam &team, const Real h, const int top_lev,
                  overlapm, ws.dl, ws.d, ws.du);
   solve_tridiagonal(team, ws.dl, ws.d, ws.du, ws.rhs_inter);
   const bool ok = check_candidate_rhs(team, top_lev, ws.rhs_inter, 0, negative);
-  if (negative_count) *negative_count = negative;
+  if (negative_count)
+    *negative_count = negative;
   return ok;
 }
 
@@ -633,7 +643,8 @@ bool be_substep(const ThreadTeam &team, const Real h, const int top_lev,
                 const ColumnView &eddy_diff_km, const ColumnView &overlapp,
                 const ColumnView &overlapm, const ImplicitWorkspace &ws,
                 int *negative_count = nullptr) {
-  if (negative_count) *negative_count = 0;
+  if (negative_count)
+    *negative_count = 0;
   int failures = 0;
   Kokkos::parallel_reduce(
       Kokkos::TeamThreadRange(team, nfamilies),
@@ -648,11 +659,12 @@ bool be_substep(const ThreadTeam &team, const Real h, const int top_lev,
   if (failures != 0)
     return false;
   int negative_cloud = 0, negative_inter = 0;
-  const bool cloud_ok = check_candidate_rhs(
-      team, top_lev, ws.rhs_cloud, 1, negative_cloud);
-  const bool inter_ok = check_candidate_rhs(
-      team, top_lev, ws.rhs_inter, 0, negative_inter);
-  if (negative_count) *negative_count = negative_cloud + negative_inter;
+  const bool cloud_ok =
+      check_candidate_rhs(team, top_lev, ws.rhs_cloud, 1, negative_cloud);
+  const bool inter_ok =
+      check_candidate_rhs(team, top_lev, ws.rhs_inter, 0, negative_inter);
+  if (negative_count)
+    *negative_count = negative_cloud + negative_inter;
   if (!cloud_ok || !inter_ok)
     return false;
 
@@ -679,7 +691,8 @@ bool be_substep(const ThreadTeam &team, const Real h, const int top_lev,
   team.team_barrier();
   int negative = 0;
   const bool ok = check_candidate_rhs(team, top_lev, ws.rhs_drop, 0, negative);
-  if (negative_count) *negative_count = negative;
+  if (negative_count)
+    *negative_count = negative;
   return ok;
 }
 
@@ -692,14 +705,14 @@ KOKKOS_INLINE_FUNCTION
 void commit_candidate(const ThreadTeam &team, const int top_lev, const int nnew,
                       const ColumnView &qcld, const View3D &raercol,
                       const View3D &raercol_cw, const ImplicitWorkspace &ws) {
-  Kokkos::parallel_for(
-      Kokkos::TeamVectorRange(team, top_lev, pver), [&](int k) {
-        qcld(k) = ws.rhs_cloud(k, 0);
-        for (int mm = 0; mm < ncnst_tot; ++mm) {
-          raercol_cw(k, nnew, mm) = ws.rhs_cloud(k, 1 + mm);
-          raercol(k, nnew, mm) = ws.rhs_inter(k, mm);
-        }
-      });
+  Kokkos::parallel_for(Kokkos::TeamVectorRange(team, top_lev, pver),
+                       [&](int k) {
+                         qcld(k) = ws.rhs_cloud(k, 0);
+                         for (int mm = 0; mm < ncnst_tot; ++mm) {
+                           raercol_cw(k, nnew, mm) = ws.rhs_cloud(k, 1 + mm);
+                           raercol(k, nnew, mm) = ws.rhs_inter(k, mm);
+                         }
+                       });
   team.team_barrier();
 }
 
@@ -710,10 +723,11 @@ void commit_candidate(const ThreadTeam &team, const int top_lev, const int nnew,
 // Advance the column over dtmicro with the selected implicit integrator and
 // substep policy, falling back to Forward Euler per the design. On entry the
 // controller has produced dtmix and nsubmix; nsav/nnew are the FE buffer
-// indices and are updated exactly as the FE loop would. Preconditions that
-// must already be checked before controller arithmetic. An out-of-range
-// valid operator takes full FE; invalid input/workspace or a nonfinite FE
-// result is an unrecoverable error.
+// indices and are updated exactly as the FE loop would. update_from_explmix
+// has already checked the input, geometry, and workspace before the
+// controller arithmetic. A valid operator outside the qualified coefficient
+// range takes the full FE path; an invalid activation operator or a nonfinite
+// FE result is an unrecoverable error.
 KOKKOS_INLINE_FUNCTION
 void advance(const ThreadTeam &team, const Real dtmicro, const Real dtmix,
              const int nsubmix, const int top_lev, const ColumnView &zn,
@@ -738,9 +752,10 @@ void advance(const ThreadTeam &team, const Real dtmicro, const Real dtmix,
   EKAT_KERNEL_REQUIRE_MSG(
       activation_preconditions_hold(team, top_lev, nact, mact, eddy_diff_kp),
       "ndrop implicit mixing: invalid activation operator");
-  bool run_full_fe = !within_implicit_range(team, top_lev, h,
-                                           eddy_diff_kp, eddy_diff_km);
-  if (run_full_fe) st.fallback_count = 1;
+  bool run_full_fe =
+      !within_implicit_range(team, top_lev, h, eddy_diff_kp, eddy_diff_km);
+  if (run_full_fe)
+    st.fallback_count = 1;
 
   if (!run_full_fe) {
     for (int isub = 0; isub < n_impl; ++isub) {
@@ -752,9 +767,9 @@ void advance(const ThreadTeam &team, const Real dtmicro, const Real dtmix,
       bool solver_ok;
       int negative = 0;
       if (options.integrator == MixingIntegrator::IMEX) {
-        solver_ok = imex_substep(team, h, top_lev, nsav, nact, mact, qcld, raercol,
-                     raercol_cw, eddy_diff_kp, eddy_diff_km, overlapp, overlapm,
-                     ws, &negative);
+        solver_ok = imex_substep(
+            team, h, top_lev, nsav, nact, mact, qcld, raercol, raercol_cw,
+            eddy_diff_kp, eddy_diff_km, overlapp, overlapm, ws, &negative);
       } else {
         solver_ok = be_substep(team, h, top_lev, nsav, nact, mact, qcld,
                                raercol, raercol_cw, eddy_diff_kp, eddy_diff_km,
@@ -801,7 +816,8 @@ void advance(const ThreadTeam &team, const Real dtmicro, const Real dtmix,
                             eddy_diff_km, overlapp, overlapm);
       // Stop before a later redo step can consume a nonfinite result.
       EKAT_KERNEL_REQUIRE_MSG(
-          count_nonfinite_input(team, top_lev, nnew, qcld, raercol, raercol_cw) == 0,
+          count_nonfinite_input(team, top_lev, nnew, qcld, raercol,
+                                raercol_cw) == 0,
           "ndrop implicit mixing: nonfinite Forward Euler result");
     }
     st.nsubmix_executed = nsubmix;

@@ -1104,28 +1104,33 @@ void update_from_explmix(
     EKAT_KERNEL_REQUIRE_MSG(
         (mixing_options.integrator == MixingIntegrator::IMEX ||
          mixing_options.integrator == MixingIntegrator::BackwardEuler) &&
-        (mixing_options.policy == ImplicitSubstepPolicy::ControllerCount ||
-         mixing_options.policy == ImplicitSubstepPolicy::SingleStep),
+            (mixing_options.policy == ImplicitSubstepPolicy::ControllerCount ||
+             mixing_options.policy == ImplicitSubstepPolicy::SingleStep),
         "ndrop implicit mixing: invalid options");
-    EKAT_KERNEL_REQUIRE_MSG(top_lev >= 0 && top_lev < pver &&
-        nsav >= 0 && nsav < 2 && nnew >= 0 && nnew < 2 && nsav != nnew &&
-        is_finite(dtmicro) && dtmicro > Real(0) && mixing_workspace.valid(),
-        "ndrop implicit mixing: invalid timestep, levels, buffers or workspace");
+    EKAT_KERNEL_REQUIRE_MSG(top_lev >= 0 && top_lev < pver && nsav >= 0 &&
+                                nsav < 2 && nnew >= 0 && nnew < 2 &&
+                                nsav != nnew && is_finite(dtmicro) &&
+                                dtmicro > Real(0) && mixing_workspace.valid(),
+                            "ndrop implicit mixing: invalid timestep, levels, "
+                            "buffers or workspace");
     EKAT_KERNEL_REQUIRE_MSG(count_nonfinite_input(team, top_lev, nsav, qcld,
-        raercol, raercol_cw) == 0, "ndrop implicit mixing: nonfinite input state");
+                                                  raercol, raercol_cw) == 0,
+                            "ndrop implicit mixing: nonfinite input state");
     int invalid = 0;
-    Kokkos::parallel_reduce(Kokkos::TeamVectorRange(team, top_lev, pver),
+    Kokkos::parallel_reduce(
+        Kokkos::TeamVectorRange(team, top_lev, pver),
         [&](int k, int &acc) {
-          if (!is_finite(zn(k)) || zn(k) <= Real(0) ||
-              !is_finite(zs(k)) || zs(k) < Real(0) ||
-              !is_finite(csbot(k)) || csbot(k) < Real(0) ||
+          if (!is_finite(zn(k)) || zn(k) <= Real(0) || !is_finite(zs(k)) ||
+              zs(k) < Real(0) || !is_finite(csbot(k)) || csbot(k) < Real(0) ||
               !is_finite(eddy_diff(k)) || eddy_diff(k) < Real(0) ||
               !is_finite(cldn(k)) || cldn(k) < Real(0) || cldn(k) > Real(1))
             ++acc;
           for (int m = 0; m < AeroConfig::num_modes(); ++m)
-            if (!is_finite(nact(k,m)) || nact(k,m) < Real(0) ||
-                !is_finite(mact(k,m)) || mact(k,m) < Real(0)) ++acc;
-        }, invalid);
+            if (!is_finite(nact(k, m)) || nact(k, m) < Real(0) ||
+                !is_finite(mact(k, m)) || mact(k, m) < Real(0))
+              ++acc;
+        },
+        invalid);
     team.team_barrier();
     EKAT_KERNEL_REQUIRE_MSG(invalid == 0,
                             "ndrop implicit mixing: invalid geometry/operator");
@@ -1210,18 +1215,22 @@ void update_from_explmix(
   if (!use_explicit) {
     using namespace implicit_mixing;
     int invalid = 0;
-    Kokkos::parallel_reduce(Kokkos::TeamVectorRange(team, top_lev, pver),
+    Kokkos::parallel_reduce(
+        Kokkos::TeamVectorRange(team, top_lev, pver),
         [&](int k, int &acc) {
           if (!is_finite(eddy_diff_kp(k)) || eddy_diff_kp(k) < Real(0) ||
               !is_finite(eddy_diff_km(k)) || eddy_diff_km(k) < Real(0) ||
-              !is_finite(overlapp(k)) || !is_finite(overlapm(k))) ++acc;
-        }, invalid);
+              !is_finite(overlapp(k)) || !is_finite(overlapm(k)))
+            ++acc;
+        },
+        invalid);
     team.team_barrier();
     EKAT_KERNEL_REQUIRE_MSG(invalid == 0 && is_finite(dtmix) && dtmix > Real(0),
                             "ndrop implicit mixing: invalid derived rates");
     const Real ratio = dtmicro / dtmix;
-    EKAT_KERNEL_REQUIRE_MSG(is_finite(ratio) && ratio >= Real(0) &&
-        ratio < Real(std::numeric_limits<int>::max() - 1),
+    EKAT_KERNEL_REQUIRE_MSG(
+        is_finite(ratio) && ratio >= Real(0) &&
+            ratio < Real(std::numeric_limits<int>::max() - 1),
         "ndrop implicit mixing: controller count is not representable");
   }
   // number of substeps and bound
