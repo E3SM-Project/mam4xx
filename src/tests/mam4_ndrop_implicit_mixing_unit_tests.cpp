@@ -1876,6 +1876,12 @@ TEST_CASE("implicit_input_errors_abort", "[.ndrop_abort]") {
   SECTION("invalid-geometry") { c.zn[0] = 0.0; }
   SECTION("missing-workspace") { ws = ImplicitWorkspace(); }
   SECTION("controller-overflow") { c.dtmicro = 1e15; }
+  SECTION("invalid-activation") {
+    // Nonzero exchange and activation below the cap at the surface cell,
+    // which dropmixnuc never produces: the activation operator is invalid.
+    c.eddy_diff[pver - 1] = 3.0;
+    c.nact[pver - 1][0] = 1e-6;
+  }
   SECTION("nonfinite-redo") {
     c = make_case("two_level", 0);
     for (int k = c.top_lev; k < pver; ++k)
@@ -1969,4 +1975,43 @@ TEST_CASE("heterogeneous_columns_have_disjoint_workspace",
       Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), mismatch);
   REQUIRE(result(0) == 0);
   REQUIRE(result(1) == 0);
+}
+
+// Negative host input (FE clips it silently) is counted, and an implicit
+// candidate that inherits it is rejected and falls back to Forward Euler.
+TEST_CASE("negative_input_is_counted_and_falls_back",
+          "mam4_ndrop_implicit_mixing") {
+  HostCase c = make_case("mild", 0);
+  const int k0 = pver - 20, mm0 = 3; // inside the cloudy slab
+  REQUIRE(c.raercol_cw[k0][mm0] > 0.0);
+  c.raercol_cw[k0][mm0] *= -50.0;
+  const HostOperator op = make_operator(c);
+  const int N = fe_controller_count(c);
+  const auto fe = run_device(to_device(c), c.top_lev, c.dtmicro, 1,
+                             MixingOptions(), ImplicitWorkspace());
+  REQUIRE(fe.status.input_negative_count == 0); // counted only when implicit
+  for (const auto method :
+       {MixingIntegrator::IMEX, MixingIntegrator::BackwardEuler}) {
+    // the implicit candidate really goes negative, so rejection is required
+    const HostState raw = method == MixingIntegrator::IMEX
+                              ? imex_oracle_step(op, host_state(c), c.dtmicro)
+                              : be_oracle_step(op, host_state(c), c.dtmicro);
+    REQUIRE_FALSE(all_nonnegative(raw, c.top_lev));
+    for (const auto policy : {ImplicitSubstepPolicy::ControllerCount,
+                              ImplicitSubstepPolicy::SingleStep}) {
+      const auto r = run_device(to_device(c), c.top_lev, c.dtmicro, 1,
+                                MixingOptions(method, policy),
+                                ImplicitWorkspace::allocate("negative_input"));
+      REQUIRE(r.status.input_negative_count == 1);
+      REQUIRE(r.status.fallback_count >= 1);
+      REQUIRE(r.status.material_negative_count == r.status.fallback_count);
+      REQUIRE(r.status.nsubmix_executed == N);
+      REQUIRE(all_nonnegative(r.state, c.top_lev));
+      if (policy == ImplicitSubstepPolicy::SingleStep) {
+        // a rejected single step runs the full FE loop from the old state
+        REQUIRE(r.status.fallback_count == 1);
+        REQUIRE(bitwise_equal(r.state, fe.state, c.top_lev));
+      }
+    }
+  }
 }

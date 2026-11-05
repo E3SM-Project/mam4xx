@@ -85,6 +85,7 @@ ndrop_abort_test(nonfinite-state "nonfinite input state")
 ndrop_abort_test(invalid-geometry "invalid geometry/operator")
 ndrop_abort_test(missing-workspace "invalid timestep, levels, buffers or workspace")
 ndrop_abort_test(controller-overflow "controller count is not representable")
+ndrop_abort_test(invalid-activation "invalid activation operator")
 ndrop_abort_test(nonfinite-redo "nonfinite Forward Euler result")
 
 EkatCreateUnitTest(aero_modes_unit_tests aero_modes_tests.cpp
