@@ -80,7 +80,8 @@ jobs:
         fp-precision: ${{ fromJSON(needs.define_matrix.outputs.precision) }}
         nlev: [72]
         # One extra configuration at the 128-level EAMxx vertical grid. The
-        # 72-level job names are unchanged.
+        # 72-level job names are unchanged. Skywalker validation replays
+        # 72-level reference data, so the 128-level job runs unit tests only.
         include:
           - os: ubuntu-22.04
             build-type: Release
@@ -133,6 +134,7 @@ jobs:
             -DMAM4XX_PRECISION=${{ matrix.fp-precision }} \
             -DKokkos_ARCH_AMDAVX:BOOL=ON \
             -DMAM4XX_NUM_VERTICAL_LEVELS=${{ matrix.nlev }} \
+            -DMAM4XX_ENABLE_SKYWALKER=${{ matrix.nlev == 72 && 'ON' || 'OFF' }} \
             -DMAM4XX_ENABLE_COVERAGE=ON \
             -G "Unix Makefiles"
 
