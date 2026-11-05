@@ -78,7 +78,15 @@ jobs:
         # to get the array instead of a string, need the fromJSON()
         build-type: ${{ fromJSON(needs.define_matrix.outputs.build_type) }}
         fp-precision: ${{ fromJSON(needs.define_matrix.outputs.precision) }}
-    name: gcc-cpu / ${{ matrix.build-type }} - ${{ matrix.fp-precision }}
+        nlev: [72]
+        # One extra configuration at the 128-level EAMxx vertical grid. The
+        # 72-level job names are unchanged.
+        include:
+          - os: ubuntu-22.04
+            build-type: Release
+            fp-precision: double
+            nlev: 128
+    name: gcc-cpu / ${{ matrix.build-type }} - ${{ matrix.fp-precision }}${{ matrix.nlev != 72 && format(' - L{0}', matrix.nlev) || '' }}
     runs-on: ${{ matrix.os }}
 
     # Environment variables
@@ -124,7 +132,7 @@ jobs:
             -DMAM4XX_ENABLE_GPU=OFF \
             -DMAM4XX_PRECISION=${{ matrix.fp-precision }} \
             -DKokkos_ARCH_AMDAVX:BOOL=ON \
-            -DMAM4XX_NUM_VERTICAL_LEVELS=72 \
+            -DMAM4XX_NUM_VERTICAL_LEVELS=${{ matrix.nlev }} \
             -DMAM4XX_ENABLE_COVERAGE=ON \
             -G "Unix Makefiles"
 
