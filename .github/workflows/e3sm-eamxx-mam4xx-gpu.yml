@@ -1,0 +1,133 @@
+name: "E3SM EAMxx-MAM4xx REP test (GPU)"
+
+# Runs one E3SM CIME test, REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnugpu.eamxx-L72,
+# with this mam4xx commit in place of the mam4xx submodule of E3SM, on the self-hosted CUDA
+# runner. Adapted from E3SM's eamxx-v1 workflow (E3SM/.github/workflows/eamxx-v1-testing.yml),
+# which runs its ghci_gnugpu tests on the same kind of runner.
+#
+# - REP runs the case twice and checks that both runs are bit-for-bit identical.
+# - There is no baseline comparison by default: E3SM's eamxx-v1 does not run this GPU test,
+#   so E3SM master blesses no baselines for it. A manual run can still ask for one, which
+#   fails unless such baselines exist on the runner. This workflow never blesses: the
+#   baselines belong to E3SM.
+
+on:
+  # Runs on PRs against main
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, ready_for_review, reopened]
+    paths:
+      - '.github/workflows/e3sm-eamxx-mam4xx-gpu.yml'
+      - 'src/mam4xx/**'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+
+  # Manual run
+  workflow_dispatch:
+    inputs:
+      e3sm_ref:
+        description: 'E3SM branch, tag or commit to test with'
+        required: true
+        type: string
+        default: 'master'
+      compare:
+        description: 'Compare with the E3SM master baselines (none are blessed for this test)'
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  # Two runs are in the same group if they are testing the same git ref
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    # Login shell, so the runner's modules and environment are loaded
+    shell: bash -leo pipefail {0}
+
+env:
+  TEST: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnugpu.eamxx-L72
+  # Unique per run, so runs sharing the runner's /tmp do not collide
+  TEST_ID: mam4xx-${{ github.run_id }}-${{ github.run_attempt }}
+  E3SM_REF: ${{ inputs.e3sm_ref || 'master' }}
+  # Compare only if a manual run asks for it
+  CT_FLAGS: ${{ github.event_name == 'workflow_dispatch' && inputs.compare && '-c -b master' || '' }}
+
+jobs:
+  rep-test-gpu:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    runs-on: [self-hosted, e3sm, cuda]
+    timeout-minutes: 180
+    name: REP_D_Ln5 F2010-EAMxx-MAM4xx (ghci_gnugpu, eamxx-L72)
+    steps:
+      - name: Check out E3SM
+        uses: actions/checkout@v4
+        with:
+          repository: E3SM-Project/E3SM
+          ref: ${{ env.E3SM_REF }}
+          path: E3SM
+          persist-credentials: false
+          show-progress: false
+          submodules: recursive
+      - name: Remove the mam4xx submodule of E3SM
+        run: |
+          echo "E3SM pins mam4xx at $(git -C E3SM rev-parse HEAD:externals/mam4xx); replacing it with this commit"
+          rm -rf E3SM/externals/mam4xx
+      - name: Check out this mam4xx commit in its place
+        uses: actions/checkout@v4
+        with:
+          path: E3SM/externals/mam4xx
+          persist-credentials: false
+          show-progress: false
+      - name: Show action trigger
+        uses: ./E3SM/externals/mam4xx/.github/actions/show-workflow-trigger
+      - name: Print test specs
+        run: |
+          echo "test      : $TEST"
+          echo "test id   : $TEST_ID"
+          echo "E3SM      : $E3SM_REF ($(git -C E3SM rev-parse HEAD))"
+          echo "mam4xx    : $(git -C E3SM/externals/mam4xx rev-parse HEAD)"
+          echo "flags     : ${CT_FLAGS:-none (no baseline comparison)}"
+          nvidia-smi --query-gpu=name --format=csv,noheader || echo "nvidia-smi not found"
+      - name: Run test
+        id: run-tests
+        working-directory: E3SM/cime/scripts
+        run: |
+          ./create_test "$TEST" $CT_FLAGS --test-id "$TEST_ID" --wait
+      - name: Print TestStatus.log
+        if: ${{ always() && steps.run-tests.outcome == 'failure' }}
+        run: |
+          for f in /tmp/"$TEST.$TEST_ID"/TestStatus.log; do
+            echo "::group::$f"
+            cat "$f"
+            echo "::endgroup::"
+          done
+      - name: Upload log files
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs.${{ env.TEST }}
+          path: |
+            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/TestStatus
+            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/TestStatus.log
+            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/bld/**/*.bldlog.*
+            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/run/**/*.log.*
+            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/run/**/*.cprnc.out
+          retention-days: 14
+      - name: Upload nc files
+        if: ${{ failure() && steps.run-tests.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: outputs.${{ env.TEST }}
+          path: |
+            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/run/**/*.nc*
+          retention-days: 14
+      # The runner is shared and keeps /tmp between runs
+      - name: Clean up the test directory
+        if: ${{ always() }}
+        run: |
+          rm -rf /tmp/"$TEST.$TEST_ID" /tmp/cs.*."$TEST_ID"*
