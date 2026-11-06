@@ -17,7 +17,7 @@ void maxsat(Ensemble *ensemble) {
     std::vector<Real> eta(nmode);
     eta = input.get_array("eta");
     smc = input.get_array("smc");
-    Real smax = 0;
+    Real smax = {};
     mam4::ndrop::maxsat(zeta, eta.data(), nmode, smc.data(), smax);
     output.set("smax", smax);
   });
