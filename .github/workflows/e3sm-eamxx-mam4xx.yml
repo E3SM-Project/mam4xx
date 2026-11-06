@@ -11,6 +11,15 @@ on:
       - 'CMakeLists.txt'
       - 'cmake/**'
 
+  # Runs on main after a merge, which also refreshes the inputdata cache
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/e3sm-eamxx-mam4xx.yml'
+      - 'src/mam4xx/**'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+
   # Manual run
   workflow_dispatch:
     inputs:
@@ -19,11 +28,10 @@ on:
         required: true
         type: string
         default: 'master'
-      compare:
-        description: 'Compare with the E3SM master baselines'
-        required: true
-        type: boolean
-        default: true
+
+  # Weekly, which also keeps the cache entry from expiring (7 days unused)
+  schedule:
+    - cron: '0 9 * * 1'
 
 concurrency:
   # Two runs are in the same group if they are testing the same git ref
@@ -32,27 +40,30 @@ concurrency:
 
 permissions:
   contents: read
-
-defaults:
-  run:
-    # Login shell, so the runner's modules and environment are loaded
-    shell: bash -leo pipefail {0}
-
-env:
-  TEST: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnu.eamxx-L72
-  # Unique per run, so runs sharing the runner's /tmp do not collide
-  TEST_ID: mam4xx-${{ github.run_id }}-${{ github.run_attempt }}
-  E3SM_REF: ${{ inputs.e3sm_ref || 'master' }}
-  # PRs compare; manual runs compare unless unchecked
-  CT_FLAGS: ${{ (github.event_name != 'workflow_dispatch' || inputs.compare) && '-c -b master' || '' }}
+  # To delete superseded inputdata cache entries
+  actions: write
 
 jobs:
   rep-test:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
-    runs-on: [self-hosted, e3sm, gnu]
-    timeout-minutes: 180
-    name: REP_D_Ln5 F2010-EAMxx-MAM4xx (ghci_gnu, eamxx-L72)
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    name: REP_D_Ln5 F2010-EAMxx-MAM4xx (e3sm-container gnu, eamxx-L72)
+    env:
+      IMAGE: ghcr.io/e3sm-project/e3sm-image:gnu13-openmpi4
+      COMPILER: gnu
+      TEST: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.e3sm-container_gnu.eamxx-L72
+      E3SM_REF: ${{ inputs.e3sm_ref || 'master' }}
+      INPUTDATA_KEY: mam4xx-e3sm-inputdata-REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx
     steps:
+      # Hosted runners start with ~20 GB free; the image, E3SM with submodules, inputdata
+      # and a case build need more. These are preinstalled SDKs nothing here uses.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost /usr/local/.ghcup /usr/share/swift
+          sudo docker image prune --all --force > /dev/null
+          df -h /
       - name: Check out E3SM
         uses: actions/checkout@v4
         with:
@@ -77,22 +88,81 @@ jobs:
       - name: Print test specs
         run: |
           echo "test      : $TEST"
-          echo "test id   : $TEST_ID"
+          echo "image     : $IMAGE"
           echo "E3SM      : $E3SM_REF ($(git -C E3SM rev-parse HEAD))"
           echo "mam4xx    : $(git -C E3SM/externals/mam4xx rev-parse HEAD)"
-          echo "flags     : ${CT_FLAGS:-none (no baseline comparison)}"
-      - name: Run test
+      - name: Restore inputdata
+        id: inputdata
+        uses: actions/cache/restore@v4
+        with:
+          path: inputdata
+          key: ${{ env.INPUTDATA_KEY }}-${{ github.run_id }}
+          restore-keys: ${{ env.INPUTDATA_KEY }}-
+      - name: Pull the image
+        run: docker pull "$IMAGE"
+      # As the image's default user (uid 1000), with the image's own CIME machine, which
+      # enable.sh opts into. The runner's own uid is 1001, so hand it what the test writes
+      # to, and take it back after for the cache and the log upload.
+      - name: Run the test
         id: run-tests
-        working-directory: E3SM/cime/scripts
         run: |
-          ./create_test "$TEST" $CT_FLAGS --test-id "$TEST_ID" --wait
+          mkdir -p inputdata scratch
+          find inputdata -type f | wc -l > inputdata.count
+          sudo chown -R 1000:1000 E3SM inputdata scratch
+          rc=0
+          docker run --rm -e TEST \
+            -v "$PWD/E3SM:/projects/e3sm/work/E3SM" \
+            -v "$PWD/inputdata:/projects/e3sm/data/inputdata" \
+            -v "$PWD/scratch:/home/e3sm/e3sm_scratch" \
+            "$IMAGE" bash -lc '. /projects/e3sm/cime/enable.sh &&
+              cd /projects/e3sm/work/E3SM/cime/scripts &&
+              ./create_test "$TEST" --wait --test-id gh --parallel-jobs "$(nproc)"' || rc=$?
+          sudo chown -R "$(id -u):$(id -g)" E3SM inputdata scratch
+          if [ "$(find inputdata -type f | wc -l)" -gt "$(cat inputdata.count)" ]; then
+            echo "new_inputdata=true" >> "$GITHUB_OUTPUT"
+          fi
+          image=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE")
+          {
+            echo "### $TEST"
+            echo
+            echo "Image \`$image\`, CPU $(lscpu | sed -n 's/^Model name: *//p')"
+            echo "E3SM \`$(git -C E3SM rev-parse HEAD)\`, mam4xx \`$(git -C E3SM/externals/mam4xx rev-parse HEAD)\`"
+            echo
+            echo '```'
+            cat scratch/*.gh/TestStatus 2>/dev/null || echo "no TestStatus"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          du -sh inputdata
+          exit "$rc"
       - name: Print TestStatus.log
         if: ${{ always() && steps.run-tests.outcome == 'failure' }}
         run: |
-          for f in /tmp/"$TEST.$TEST_ID"/TestStatus.log; do
-            echo "::group::$f"
-            cat "$f"
-            echo "::endgroup::"
+          cat scratch/*.gh/TestStatus.log
+      # From main only: an entry saved on any other ref is visible to that ref alone, while
+      # the cleanup below is repository-wide.
+      - name: Save inputdata
+        id: save-inputdata
+        if: ${{ always() && github.ref == 'refs/heads/main' && steps.run-tests.outputs.new_inputdata == 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: inputdata
+          key: ${{ steps.inputdata.outputs.cache-primary-key }}
+      # cache/save succeeds even when it saved nothing, so delete only once the new entry is listed
+      - name: Delete superseded inputdata
+        if: ${{ always() && steps.save-inputdata.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_KEY: ${{ steps.inputdata.outputs.cache-primary-key }}
+        run: |
+          entries=$(gh cache list -R "$GITHUB_REPOSITORY" --ref refs/heads/main \
+            --key "$INPUTDATA_KEY-" --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"')
+          if ! awk -v k="$NEW_KEY" '$2 == k { found = 1 } END { exit !found }' <<< "$entries"; then
+            echo "$NEW_KEY is not saved on main; keeping the older entries"
+            exit 0
+          fi
+          awk -v k="$NEW_KEY" '$2 != k' <<< "$entries" | while read -r id key; do
+            gh cache delete -R "$GITHUB_REPOSITORY" "$id" && echo "deleted $key" ||
+              echo "could not delete $key"
           done
       - name: Upload log files
         if: ${{ always() }}
@@ -100,11 +170,10 @@ jobs:
         with:
           name: logs.${{ env.TEST }}
           path: |
-            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/TestStatus
-            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/TestStatus.log
-            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/bld/**/*.bldlog.*
-            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/run/**/*.log.*
-            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/run/**/*.cprnc.out
+            scratch/*.gh/TestStatus*
+            scratch/*.gh/bld/*.bldlog.*
+            scratch/*.gh/run/*.log.*
+            scratch/*.gh/run/*.cprnc.out
           retention-days: 14
       - name: Upload nc files
         if: ${{ failure() && steps.run-tests.outcome == 'failure' }}
@@ -112,10 +181,5 @@ jobs:
         with:
           name: outputs.${{ env.TEST }}
           path: |
-            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/run/**/*.nc*
+            scratch/*.gh/run/*.nc*
           retention-days: 14
-      # The runner is shared and keeps /tmp between runs
-      - name: Clean up the test directory
-        if: ${{ always() }}
-        run: |
-          rm -rf /tmp/"$TEST.$TEST_ID" /tmp/cs.*."$TEST_ID"*
