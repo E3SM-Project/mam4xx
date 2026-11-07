@@ -4,7 +4,8 @@ on:
   # Runs on PRs against main
   pull_request:
     branches: [ main ]
-    types: [opened, synchronize, ready_for_review, reopened]
+    # edited: rerun when the PR description changes, which can set the E3SM branch
+    types: [opened, synchronize, ready_for_review, reopened, edited]
     paths:
       - '.github/workflows/e3sm-eamxx-mam4xx.yml'
       - 'src/mam4xx/**'
@@ -28,6 +29,11 @@ on:
         required: true
         type: string
         default: 'master'
+      e3sm_repo:
+        description: 'E3SM repository (owner/name), for a branch on a fork'
+        required: true
+        type: string
+        default: 'E3SM-Project/E3SM'
 
   # Weekly, which also keeps the cache entry from expiring (7 days unused)
   schedule:
@@ -45,7 +51,9 @@ permissions:
 
 jobs:
   rep-test:
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    # Skip drafts, and PR edits that leave the description alone (e.g. a new title)
+    if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft &&
+            (github.event.action != 'edited' || github.event.changes.body)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
     name: REP_D_Ln5 F2010-EAMxx-MAM4xx (e3sm-container gnu, eamxx-L72)
@@ -53,9 +61,40 @@ jobs:
       IMAGE: ghcr.io/e3sm-project/e3sm-image:gnu13-openmpi4
       COMPILER: gnu
       TEST: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.e3sm-container_gnu.eamxx-L72
-      E3SM_REF: ${{ inputs.e3sm_ref || 'master' }}
       INPUTDATA_KEY: mam4xx-e3sm-inputdata-REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx
     steps:
+      # The E3SM repository and ref, in this order: the manual run inputs, the PR description
+      # (lines "E3SM_REF: <branch, tag or commit>" and, for a fork, "E3SM_REPO: <owner/name>"),
+      # or E3SM-Project/E3SM master. The PR description is untrusted, so it reaches the shell
+      # only through env and must match a strict pattern.
+      - name: Choose the E3SM branch
+        id: e3sm
+        env:
+          INPUT_REF: ${{ inputs.e3sm_ref }}
+          INPUT_REPO: ${{ inputs.e3sm_repo }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          repo=E3SM-Project/E3SM ref=master from="default"
+          if [ -n "$PR_BODY" ]; then
+            body=$(printf '%s\n' "$PR_BODY" | tr -d '\r`')
+            v=$(sed -nE 's/^[[:space:]]*E3SM_REF[[:space:]]*:[[:space:]]*([^[:space:]]+).*/\1/p' <<< "$body" | head -n 1)
+            if [ -n "$v" ]; then ref=$v from="PR description"; fi
+            v=$(sed -nE 's/^[[:space:]]*E3SM_REPO[[:space:]]*:[[:space:]]*([^[:space:]]+).*/\1/p' <<< "$body" | head -n 1)
+            if [ -n "$v" ]; then repo=$v; fi
+          fi
+          if [ -n "$INPUT_REF" ]; then ref=$INPUT_REF from="manual run input"; fi
+          if [ -n "$INPUT_REPO" ]; then repo=$INPUT_REPO; fi
+          if ! [[ $repo =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::E3SM_REPO '$repo' is not of the form owner/name"
+            exit 1
+          fi
+          if ! [[ $ref =~ ^[A-Za-z0-9._/-]+$ ]] || [[ $ref == -* || $ref == *..* ]]; then
+            echo "::error::E3SM_REF '$ref' is not a valid branch, tag or commit"
+            exit 1
+          fi
+          echo "E3SM: $repo at $ref (from $from)"
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       # Hosted runners start with ~20 GB free; the image, E3SM with submodules, inputdata
       # and a case build need more. These are preinstalled SDKs nothing here uses.
       - name: Free disk space
@@ -67,8 +106,8 @@ jobs:
       - name: Check out E3SM
         uses: actions/checkout@v4
         with:
-          repository: E3SM-Project/E3SM
-          ref: ${{ env.E3SM_REF }}
+          repository: ${{ steps.e3sm.outputs.repo }}
+          ref: ${{ steps.e3sm.outputs.ref }}
           path: E3SM
           persist-credentials: false
           show-progress: false
@@ -89,7 +128,7 @@ jobs:
         run: |
           echo "test      : $TEST"
           echo "image     : $IMAGE"
-          echo "E3SM      : $E3SM_REF ($(git -C E3SM rev-parse HEAD))"
+          echo "E3SM      : ${{ steps.e3sm.outputs.repo }} at ${{ steps.e3sm.outputs.ref }} ($(git -C E3SM rev-parse HEAD))"
           echo "mam4xx    : $(git -C E3SM/externals/mam4xx rev-parse HEAD)"
       - name: Restore inputdata
         id: inputdata
