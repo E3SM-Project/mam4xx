@@ -6,10 +6,14 @@ name: "E3SM EAMxx-MAM4xx REP test (GPU)"
 # which runs its ghci_gnugpu tests on the same kind of runner.
 #
 # - REP runs the case twice and checks that both runs are bit-for-bit identical.
-# - There is no baseline comparison by default: E3SM's eamxx-v1 does not run this GPU test,
-#   so E3SM master blesses no baselines for it. A manual run can still ask for one, which
-#   fails unless such baselines exist on the runner. This workflow never blesses: the
-#   baselines belong to E3SM.
+# - As in eamxx-v1, create_test also compares the history files, bit-for-bit, with stored
+#   baselines on the runner, but under the name main-mam4xx (-c -b main-mam4xx), so they
+#   stay apart from E3SM's own baselines, named master. The BASELINE phase fails if this
+#   mam4xx commit changes answers, or if no main-mam4xx baselines exist yet.
+# - A bless (a manual run on main with bless checked) writes the main-mam4xx baselines
+#   (-o -g -b main-mam4xx), from mam4xx main and the chosen E3SM branch. Bless once to
+#   start, and again after merging a PR that changes answers. A manual run can also turn
+#   the comparison off.
 
 on:
   # Runs on PRs against main
@@ -37,7 +41,12 @@ on:
         type: string
         default: 'E3SM-Project/E3SM'
       compare:
-        description: 'Compare with the E3SM master baselines (none are blessed for this test)'
+        description: 'Compare with the main-mam4xx baselines'
+        required: true
+        type: boolean
+        default: true
+      bless:
+        description: 'Generate the main-mam4xx baselines (main only)'
         required: true
         type: boolean
         default: false
@@ -59,8 +68,12 @@ env:
   TEST: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnugpu.eamxx-L72
   # Unique per run, so runs sharing the runner's /tmp do not collide
   TEST_ID: mam4xx-${{ github.run_id }}-${{ github.run_attempt }}
-  # Compare only if a manual run asks for it
-  CT_FLAGS: ${{ github.event_name == 'workflow_dispatch' && inputs.compare && '-c -b master' || '' }}
+  # The mam4xx team's baselines; E3SM's own are named master
+  BASELINE_NAME: main-mam4xx
+  BLESS: ${{ github.event_name == 'workflow_dispatch' && inputs.bless }}
+  # Bless: generate, overwriting. Otherwise compare, unless a manual run turns it off.
+  CT_FLAGS: ${{ github.event_name == 'workflow_dispatch' && inputs.bless && '-o -g -b main-mam4xx' ||
+                (github.event_name != 'workflow_dispatch' || inputs.compare) && '-c -b main-mam4xx' || '' }}
 
 jobs:
   rep-test-gpu:
@@ -71,6 +84,12 @@ jobs:
     timeout-minutes: 180
     name: REP_D_Ln5 F2010-EAMxx-MAM4xx (ghci_gnugpu, eamxx-L72)
     steps:
+      # Baselines from any other branch would be compared against by every PR
+      - name: Refuse to bless off main
+        if: ${{ env.BLESS == 'true' && github.ref != 'refs/heads/main' }}
+        run: |
+          echo "::error::bless only from main (this is ${{ github.ref }})"
+          exit 1
       # The E3SM repository and ref, in this order: the manual run inputs, the PR description
       # (lines "E3SM_REF: <branch, tag or commit>" and, for a fork, "E3SM_REPO: <owner/name>"),
       # or E3SM-Project/E3SM master. The PR description is untrusted, so it reaches the shell
@@ -131,6 +150,7 @@ jobs:
           echo "E3SM      : ${{ steps.e3sm.outputs.repo }} at ${{ steps.e3sm.outputs.ref }} ($(git -C E3SM rev-parse HEAD))"
           echo "mam4xx    : $(git -C E3SM/externals/mam4xx rev-parse HEAD)"
           echo "flags     : ${CT_FLAGS:-none (no baseline comparison)}"
+          echo "baselines : $BASELINE_NAME${BLESS:+ (bless: $BLESS)}"
           nvidia-smi --query-gpu=name --format=csv,noheader || echo "nvidia-smi not found"
       - name: Run test
         id: run-tests
