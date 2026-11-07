@@ -1,9 +1,9 @@
-name: "E3SM EAMxx-MAM4xx REP test (GPU)"
+name: "E3SM EAMxx-MAM4xx REP tests (ghci)"
 
-# Runs one E3SM CIME test, REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnugpu.eamxx-L72,
-# with this mam4xx commit in place of the mam4xx submodule of E3SM, on the self-hosted CUDA
-# runner. Adapted from E3SM's eamxx-v1 workflow (E3SM/.github/workflows/eamxx-v1-testing.yml),
-# which runs its ghci_gnugpu tests on the same kind of runner.
+# Runs the E3SM CIME test REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.<machine>.eamxx-L72 on
+# E3SM's self-hosted ghci runners, with this mam4xx commit in place of the mam4xx submodule of
+# E3SM: ghci_gnu on the gnu (CPU) runner, as in E3SM's eamxx-v1 workflow
+# (E3SM/.github/workflows/eamxx-v1-testing.yml), and ghci_gnugpu on the CUDA runner.
 #
 # - REP runs the case twice and checks that both runs are bit-for-bit identical.
 # - As in eamxx-v1, create_test gets "-c -b master": the history files are also compared,
@@ -19,7 +19,7 @@ on:
     # edited: rerun when the PR description changes, which can set the E3SM branch
     types: [opened, synchronize, ready_for_review, reopened, edited]
     paths:
-      - '.github/workflows/e3sm-eamxx-mam4xx-gpu.yml'
+      - '.github/workflows/e3sm-eamxx-mam4xx-ghci.yml'
       - 'src/mam4xx/**'
       - 'CMakeLists.txt'
       - 'cmake/**'
@@ -57,20 +57,27 @@ defaults:
     shell: bash -leo pipefail {0}
 
 env:
-  TEST: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnugpu.eamxx-L72
   # Unique per run, so runs sharing the runner's /tmp do not collide
   TEST_ID: mam4xx-${{ github.run_id }}-${{ github.run_attempt }}
   # As in eamxx-v1: always compare, unless a manual run turns it off
   CT_FLAGS: ${{ (github.event_name != 'workflow_dispatch' || inputs.compare) && '-c -b master' || '' }}
 
 jobs:
-  rep-test-gpu:
+  rep-test:
     # Skip drafts, and PR edits that leave the description alone (e.g. a new title)
     if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft &&
             (github.event.action != 'edited' || github.event.changes.body)) }}
-    runs-on: [self-hosted, e3sm, cuda]
+    runs-on: [self-hosted, e3sm, '${{ matrix.runner }}']
     timeout-minutes: 180
-    name: REP_D_Ln5 F2010-EAMxx-MAM4xx (ghci_gnugpu, eamxx-L72)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: gnu, name: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnu.eamxx-L72}
+          - {runner: cuda, name: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnugpu.eamxx-L72}
+    name: ${{ matrix.name }}
+    env:
+      TEST: ${{ matrix.name }}
     steps:
       # The E3SM repository and ref, in this order: the manual run inputs, the PR description
       # (lines "E3SM_REF: <branch, tag or commit>" and, for a fork, "E3SM_REPO: <owner/name>"),
@@ -132,7 +139,9 @@ jobs:
           echo "E3SM      : ${{ steps.e3sm.outputs.repo }} at ${{ steps.e3sm.outputs.ref }} ($(git -C E3SM rev-parse HEAD))"
           echo "mam4xx    : $(git -C E3SM/externals/mam4xx rev-parse HEAD)"
           echo "flags     : ${CT_FLAGS:-none (no baseline comparison)}"
-          nvidia-smi --query-gpu=name --format=csv,noheader || echo "nvidia-smi not found"
+          if [ "${{ matrix.runner }}" = cuda ]; then
+            nvidia-smi --query-gpu=name --format=csv,noheader || echo "nvidia-smi not found"
+          fi
       - name: Run test
         id: run-tests
         working-directory: E3SM/cime/scripts
