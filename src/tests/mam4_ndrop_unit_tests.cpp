@@ -149,9 +149,17 @@ TEST_CASE("test_qsat", "mam4_ndrop_unit_tests") {
     logger.debug("i = {}", i);
     logger.debug("temperature, pressure = {}, {}", t[i], p[i]);
 
+#if defined(MAM4XX_USE_ANALYTICAL_QSAT)
+    // ndrop::qsat evaluates the analytical expression directly.
     Real es_base = mam4::wv_sat_methods::wv_sat_svp_trans(t[i]);
-    Real qs_base = mam4::wv_sat_methods::wv_sat_svp_to_qsat(es_base, p[i]);
+#else
+    // ndrop::qsat does linear interpolation from a precomputed table.
+    Real estbl[mam4::wv_sat_methods::estbl_plen];
+    mam4::wv_sat_methods::init_estbl(estbl);
+    Real es_base = mam4::wv_sat_methods::estblf(t[i], estbl);
+#endif
 
+    Real qs_base = mam4::wv_sat_methods::wv_sat_svp_to_qsat(es_base, p[i]);
     Real es_calc = es_base;
     Real qs_calc = qs_base;
 
@@ -234,7 +242,6 @@ TEST_CASE("test_maxsat", "mam4_ndrop") {
   for (int m = 0; m < nmodes; m++) {
     smc[m] = 0;
   }
-  smax = 0;
   mam4::ndrop::maxsat(zeta, eta, nmodes, smc, smax);
   logger.info("smax = {}", smax);
   REQUIRE(mam4::FloatingPoint<Real>::equiv(smax, 1e-10));
@@ -244,7 +251,6 @@ TEST_CASE("test_maxsat", "mam4_ndrop") {
     eta[m] = 1;
     smc[m] = 1;
   }
-  smax = 0;
   const Real double_answer = 0.4698982924029698;
   const Real single_answer = 0.46989828;
 

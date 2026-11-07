@@ -40,9 +40,7 @@ void compute_massflux(Ensemble *ensemble) {
     // Fetch ensemble parameters
     // Convert to C++ index by subtracting one.
     const int ktop = input.get("ktop") - 1;
-    EKAT_ASSERT(ktop == 47);
     const int kbot = input.get("kbot");
-    EKAT_ASSERT(kbot == 71);
     Real xx_mfup_max = input.get("xx_mfup_max");
     EKAT_ASSERT(xx_mfup_max == 0);
 
@@ -57,8 +55,9 @@ void compute_massflux(Ensemble *ensemble) {
     mu_i_dev = mam4::validation::create_column_view(nlev + 1);
     md_i_dev = mam4::validation::create_column_view(nlev + 1);
     xx_mfup_max_dev = mam4::validation::create_column_view(1);
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "compute_massflux", 1, KOKKOS_LAMBDA(int) {
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           Real dpdry_i[nlev];
           for (int i = 0; i < nlev; ++i)
             dpdry_i[i] = dpdry_i_dev[i];
@@ -74,8 +73,8 @@ void compute_massflux(Ensemble *ensemble) {
           Real mu_i[nlev + 1];
           Real md_i[nlev + 1];
           Real mfup_max = xx_mfup_max;
-          mam4::convproc::compute_massflux(nlev, ktop, kbot, dpdry_i, du, eu,
-                                           ed, mu_i, md_i, mfup_max);
+          mam4::convproc::compute_massflux(team, nlev, ktop, kbot, dpdry_i, du,
+                                           eu, ed, mu_i, md_i, mfup_max);
           for (int i = 0; i < nlev + 1; ++i)
             mu_i_dev[i] = mu_i[i];
           for (int i = 0; i < nlev + 1; ++i)

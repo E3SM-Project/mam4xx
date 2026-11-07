@@ -1,5 +1,6 @@
 #ifndef MAM4XX_NDROP_HPP
 #define MAM4XX_NDROP_HPP
+#define MAM4XX_USE_ANALYTICAL_QSAT
 
 #include "aero_config.hpp"
 #include "aero_model.hpp"
@@ -357,6 +358,9 @@ void ccncalc(const Real state_q[aero_model::pcnst], const Real tair,
 
 } /// ccncalc
 
+// FIXME: We need to decide whether to use linear interpolation or an analytical
+// expression to compute SVP. I would rather use the analytical expression.
+#if defined(MAM4XX_USE_ANALYTICAL_QSAT)
 KOKKOS_INLINE_FUNCTION
 void qsat(const Real t, const Real p, Real &svp, Real &qsat) {
   //  ------------------------------------------------------------------
@@ -380,6 +384,25 @@ void qsat(const Real t, const Real p, Real &svp, Real &qsat) {
   // Ensures returned svp is consistent with limiters on qsat.
   svp = mam4::min(svp, p);
 } // qsat
+#else
+// Does linear interpolation from nearest values found in table (estbl),
+// matching elemental function estblf(t) in E3SM wv_saturation.F90.
+
+KOKKOS_INLINE_FUNCTION
+void qsat(const Real t, const Real p, Real &es, Real &qs) {
+  // Saturation vapor pressure table initialized matching E3SM Fortran
+  // wv_saturation.F90 wv_sat_init:
+  //   do i = 1, plenest
+  //      estbl(i) = svp_trans(tmin + real(i-1, r8))
+  //   end do
+  Real estbl[wv_sat_methods::estbl_plen];
+  wv_sat_methods::init_estbl(estbl);
+  es = wv_sat_methods::estblf(t, estbl);
+  qs = wv_sat_methods::wv_sat_svp_to_qsat(es, p);
+  // Ensures returned es is consistent with limiters on qs.
+  es = mam4::min(es, p);
+}
+#endif
 
 KOKKOS_INLINE_FUNCTION
 void ndrop_init(Real exp45logsig[AeroConfig::num_modes()],
@@ -426,7 +449,8 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
                     const Real aten, Real fn[AeroConfig::num_modes()],
                     Real fm[AeroConfig::num_modes()],
                     Real fluxn[AeroConfig::num_modes()],
-                    Real fluxm[AeroConfig::num_modes()], Real &flux_fullact) {
+                    Real fluxm[AeroConfig::num_modes()], Real &flux_fullact,
+                    const Real smax_prescribed = mam4::max()) {
   //    ---------------------------------------------------------------------------------
   // Calculates number, surface, and mass fraction of aerosols activated as CCN
   // calculates flux of cloud droplets, surface area, and aerosol mass into
@@ -491,6 +515,10 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
     return;
   }
 
+  // return if max supersaturation is 0 or negative
+  if (smax_prescribed <= zero) {
+    return;
+  }
   const Real rair = Constants::r_gas_dry_air;
   const Real rh2o = Constants::r_gas_h2o_vapor;
   // latent heat of evaporation [J/kg]
@@ -581,9 +609,12 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
     eta[imode] = etafactor1 * etafactor2[imode];
   } // end imode
 
-  Real supersat = zero;
+  // Find maximum supersaturation
+  // Use smax_prescribed if it is present; otherwise get smax from subr maxsat
+  Real supersat = smax_prescribed;
+  if (smax_prescribed == mam4::max())
+    maxsat(zeta, eta, nmode, ssat_crit_imode, supersat);
 
-  maxsat(zeta, eta, nmode, ssat_crit_imode, supersat);
   // ([fraction]))
   const Real lnsupersat = mam4::log(supersat);
 
@@ -603,7 +634,6 @@ void activate_modal(const Real w_in, const Real wmaxf, const Real tair,
   // is vertical velocity equal to flux of activated aerosol fraction assuming
   // 100% activation [m/s]?
   flux_fullact = w_in;
-
 } // activate_modal
 
 KOKKOS_INLINE_FUNCTION

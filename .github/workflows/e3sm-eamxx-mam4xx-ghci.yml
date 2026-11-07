@@ -1,0 +1,182 @@
+name: "E3SM EAMxx-MAM4xx REP tests (ghci)"
+
+# Runs the E3SM CIME test REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.<machine>.eamxx-L72 on
+# E3SM's self-hosted ghci runners, with this mam4xx commit in place of the mam4xx submodule of
+# E3SM: ghci_gnu on the gnu (CPU) runner, as in E3SM's eamxx-v1 workflow
+# (E3SM/.github/workflows/eamxx-v1-testing.yml), and ghci_gnugpu on the CUDA runner.
+#
+# - REP runs the case twice and checks that both runs are bit-for-bit identical.
+# - As in eamxx-v1, create_test gets "-c -b master": the history files are also compared,
+#   bit-for-bit, with the E3SM master baselines on the runner. The BASELINE phase fails if
+#   E3SM has not blessed this test there, or if this mam4xx commit changes answers. A manual
+#   run can turn the comparison off. This workflow never blesses: the baselines belong to
+#   E3SM.
+
+on:
+  # Runs on PRs against main
+  pull_request:
+    branches: [ main ]
+    # edited: rerun when the PR description changes, which can set the E3SM branch
+    types: [opened, synchronize, ready_for_review, reopened, edited]
+    paths:
+      - '.github/workflows/e3sm-eamxx-mam4xx-ghci.yml'
+      - 'src/mam4xx/**'
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+
+  # Manual run
+  workflow_dispatch:
+    inputs:
+      e3sm_ref:
+        description: 'E3SM branch, tag or commit to test with'
+        required: true
+        type: string
+        default: 'master'
+      e3sm_repo:
+        description: 'E3SM repository (owner/name), for a branch on a fork'
+        required: true
+        type: string
+        default: 'E3SM-Project/E3SM'
+      compare:
+        description: 'Compare with the E3SM master baselines'
+        required: true
+        type: boolean
+        default: true
+
+concurrency:
+  # Two runs are in the same group if they are testing the same git ref
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    # Login shell, so the runner's modules and environment are loaded
+    shell: bash -leo pipefail {0}
+
+env:
+  # Unique per run, so runs sharing the runner's /tmp do not collide
+  TEST_ID: mam4xx-${{ github.run_id }}-${{ github.run_attempt }}
+  # As in eamxx-v1: always compare, unless a manual run turns it off
+  CT_FLAGS: ${{ (github.event_name != 'workflow_dispatch' || inputs.compare) && '-c -b master' || '' }}
+
+jobs:
+  rep-test:
+    # Skip drafts, and PR edits that leave the description alone (e.g. a new title)
+    if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft &&
+            (github.event.action != 'edited' || github.event.changes.body)) }}
+    runs-on: [self-hosted, e3sm, '${{ matrix.runner }}']
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: gnu, name: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnu.eamxx-L72}
+          - {runner: cuda, name: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnugpu.eamxx-L72}
+    name: ${{ matrix.name }}
+    env:
+      TEST: ${{ matrix.name }}
+    steps:
+      # The E3SM repository and ref, in this order: the manual run inputs, the PR description
+      # (lines "E3SM_REF: <branch, tag or commit>" and, for a fork, "E3SM_REPO: <owner/name>"),
+      # or E3SM-Project/E3SM master. The PR description is untrusted, so it reaches the shell
+      # only through env and must match a strict pattern.
+      - name: Choose the E3SM branch
+        id: e3sm
+        env:
+          INPUT_REF: ${{ inputs.e3sm_ref }}
+          INPUT_REPO: ${{ inputs.e3sm_repo }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          repo=E3SM-Project/E3SM ref=master from="default"
+          if [ -n "$PR_BODY" ]; then
+            body=$(printf '%s\n' "$PR_BODY" | tr -d '\r`')
+            v=$(sed -nE 's/^[[:space:]]*E3SM_REF[[:space:]]*:[[:space:]]*([^[:space:]]+).*/\1/p' <<< "$body" | head -n 1)
+            if [ -n "$v" ]; then ref=$v from="PR description"; fi
+            v=$(sed -nE 's/^[[:space:]]*E3SM_REPO[[:space:]]*:[[:space:]]*([^[:space:]]+).*/\1/p' <<< "$body" | head -n 1)
+            if [ -n "$v" ]; then repo=$v; fi
+          fi
+          if [ -n "$INPUT_REF" ]; then ref=$INPUT_REF from="manual run input"; fi
+          if [ -n "$INPUT_REPO" ]; then repo=$INPUT_REPO; fi
+          if ! [[ $repo =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::E3SM_REPO '$repo' is not of the form owner/name"
+            exit 1
+          fi
+          if ! [[ $ref =~ ^[A-Za-z0-9._/-]+$ ]] || [[ $ref == -* || $ref == *..* ]]; then
+            echo "::error::E3SM_REF '$ref' is not a valid branch, tag or commit"
+            exit 1
+          fi
+          echo "E3SM: $repo at $ref (from $from)"
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      - name: Check out E3SM
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.e3sm.outputs.repo }}
+          ref: ${{ steps.e3sm.outputs.ref }}
+          path: E3SM
+          persist-credentials: false
+          show-progress: false
+          submodules: recursive
+      - name: Remove the mam4xx submodule of E3SM
+        run: |
+          echo "E3SM pins mam4xx at $(git -C E3SM rev-parse HEAD:externals/mam4xx); replacing it with this commit"
+          rm -rf E3SM/externals/mam4xx
+      - name: Check out this mam4xx commit in its place
+        uses: actions/checkout@v4
+        with:
+          path: E3SM/externals/mam4xx
+          persist-credentials: false
+          show-progress: false
+      - name: Show action trigger
+        uses: ./E3SM/externals/mam4xx/.github/actions/show-workflow-trigger
+      - name: Print test specs
+        run: |
+          echo "test      : $TEST"
+          echo "test id   : $TEST_ID"
+          echo "E3SM      : ${{ steps.e3sm.outputs.repo }} at ${{ steps.e3sm.outputs.ref }} ($(git -C E3SM rev-parse HEAD))"
+          echo "mam4xx    : $(git -C E3SM/externals/mam4xx rev-parse HEAD)"
+          echo "flags     : ${CT_FLAGS:-none (no baseline comparison)}"
+          if [ "${{ matrix.runner }}" = cuda ]; then
+            nvidia-smi --query-gpu=name --format=csv,noheader || echo "nvidia-smi not found"
+          fi
+      - name: Run test
+        id: run-tests
+        working-directory: E3SM/cime/scripts
+        run: |
+          ./create_test "$TEST" $CT_FLAGS --test-id "$TEST_ID" --wait
+      - name: Print TestStatus.log
+        if: ${{ always() && steps.run-tests.outcome == 'failure' }}
+        run: |
+          for f in /tmp/"$TEST.$TEST_ID"/TestStatus.log; do
+            echo "::group::$f"
+            cat "$f"
+            echo "::endgroup::"
+          done
+      - name: Upload log files
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs.${{ env.TEST }}
+          path: |
+            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/TestStatus
+            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/TestStatus.log
+            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/bld/**/*.bldlog.*
+            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/run/**/*.log.*
+            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/run/**/*.cprnc.out
+          retention-days: 14
+      - name: Upload nc files
+        if: ${{ failure() && steps.run-tests.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: outputs.${{ env.TEST }}
+          path: |
+            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/run/**/*.nc*
+          retention-days: 14
+      # The runner is shared and keeps /tmp between runs
+      - name: Clean up the test directory
+        if: ${{ always() }}
+        run: |
+          rm -rf /tmp/"$TEST.$TEST_ID" /tmp/cs.*."$TEST_ID"*
