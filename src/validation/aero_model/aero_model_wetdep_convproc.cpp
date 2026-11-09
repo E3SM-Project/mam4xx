@@ -270,7 +270,7 @@ void aero_model_wetdep_convproc(Ensemble *ensemble) {
               // Convection mass flux parameters
               scratch1Dviews, mu_icol, md_icol, du_icol, eu_icol, ed_icol,
               dp_icol, p_del_dry_icol, ktop, kbot, convproc_do_aer,
-              convproc_do_gas, species_class, mmtoo_prevap_resusp, aero_config);
+              convproc_do_gas, 1, species_class, mmtoo_prevap_resusp, aero_config);
 
           team.team_barrier();
           Kokkos::parallel_for(
