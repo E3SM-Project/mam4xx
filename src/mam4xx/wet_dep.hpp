@@ -2327,6 +2327,11 @@ void aero_model_wetdep(
           aerdepwetis_convproc(i) = aerdepwetis_convproc_local[i];
         });
     team.team_barrier();
+  } else {
+    Kokkos::parallel_for(
+        Kokkos::TeamVectorRange(team, pcnst_local), [&](int i) {
+          aerdepwetis_convproc(i) = 0.0;
+    });
   }
   // make sure that ptend is updated in tendencies
   team.team_barrier();
