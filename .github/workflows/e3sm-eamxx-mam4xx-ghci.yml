@@ -11,32 +11,34 @@ name: "E3SM EAMxx-MAM4xx REP tests (ghci)"
 #   E3SM has not blessed this test there, or if this mam4xx commit changes answers. A manual
 #   run can turn the comparison off. This workflow never blesses: the baselines belong to
 #   E3SM.
+# - PR runs use E3SM-Project/E3SM master. To test a PR against another E3SM branch (e.g. one
+#   with matching EAMxx interface changes), run the workflow manually from the Actions tab on
+#   the PR's branch, with the e3sm_repo and e3sm_branch inputs.
 
 on:
   # Runs on PRs against main
   pull_request:
     branches: [ main ]
-    # edited: rerun when the PR description changes, which can set the E3SM branch
-    types: [opened, synchronize, ready_for_review, reopened, edited]
+    types: [opened, synchronize, ready_for_review, reopened]
     paths:
       - '.github/workflows/e3sm-eamxx-mam4xx-ghci.yml'
       - 'src/mam4xx/**'
       - 'CMakeLists.txt'
       - 'cmake/**'
 
-  # Manual run
+  # Manual run, e.g. to test a mam4xx PR against an E3SM branch other than master
   workflow_dispatch:
     inputs:
-      e3sm_ref:
-        description: 'E3SM branch, tag or commit to test with'
-        required: true
-        type: string
-        default: 'master'
       e3sm_repo:
-        description: 'E3SM repository (owner/name), for a branch on a fork'
-        required: true
+        description: 'repo where e3sm should be grabbed'
+        required: false
         type: string
-        default: 'E3SM-Project/E3SM'
+        default: E3SM-Project/E3SM
+      e3sm_branch:
+        description: 'branch to use for e3sm'
+        required: false
+        type: string
+        default: master
       compare:
         description: 'Compare with the E3SM master baselines'
         required: true
@@ -64,9 +66,7 @@ env:
 
 jobs:
   rep-test:
-    # Skip drafts, and PR edits that leave the description alone (e.g. a new title)
-    if: ${{ github.event_name != 'pull_request' || (!github.event.pull_request.draft &&
-            (github.event.action != 'edited' || github.event.changes.body)) }}
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: [self-hosted, e3sm, '${{ matrix.runner }}']
     timeout-minutes: 180
     strategy:
@@ -78,44 +78,15 @@ jobs:
     name: ${{ matrix.name }}
     env:
       TEST: ${{ matrix.name }}
+      # PR runs use E3SM master; a manual run can choose another repo or branch
+      E3SM_REPO: ${{ inputs.e3sm_repo || 'E3SM-Project/E3SM' }}
+      E3SM_BRANCH: ${{ inputs.e3sm_branch || 'master' }}
     steps:
-      # The E3SM repository and ref, in this order: the manual run inputs, the PR description
-      # (lines "E3SM_REF: <branch, tag or commit>" and, for a fork, "E3SM_REPO: <owner/name>"),
-      # or E3SM-Project/E3SM master. The PR description is untrusted, so it reaches the shell
-      # only through env and must match a strict pattern.
-      - name: Choose the E3SM branch
-        id: e3sm
-        env:
-          INPUT_REF: ${{ inputs.e3sm_ref }}
-          INPUT_REPO: ${{ inputs.e3sm_repo }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: |
-          repo=E3SM-Project/E3SM ref=master from="default"
-          if [ -n "$PR_BODY" ]; then
-            body=$(printf '%s\n' "$PR_BODY" | tr -d '\r`')
-            v=$(sed -nE 's/^[[:space:]]*E3SM_REF[[:space:]]*:[[:space:]]*([^[:space:]]+).*/\1/p' <<< "$body" | head -n 1)
-            if [ -n "$v" ]; then ref=$v from="PR description"; fi
-            v=$(sed -nE 's/^[[:space:]]*E3SM_REPO[[:space:]]*:[[:space:]]*([^[:space:]]+).*/\1/p' <<< "$body" | head -n 1)
-            if [ -n "$v" ]; then repo=$v; fi
-          fi
-          if [ -n "$INPUT_REF" ]; then ref=$INPUT_REF from="manual run input"; fi
-          if [ -n "$INPUT_REPO" ]; then repo=$INPUT_REPO; fi
-          if ! [[ $repo =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]]; then
-            echo "::error::E3SM_REPO '$repo' is not of the form owner/name"
-            exit 1
-          fi
-          if ! [[ $ref =~ ^[A-Za-z0-9._/-]+$ ]] || [[ $ref == -* || $ref == *..* ]]; then
-            echo "::error::E3SM_REF '$ref' is not a valid branch, tag or commit"
-            exit 1
-          fi
-          echo "E3SM: $repo at $ref (from $from)"
-          echo "repo=$repo" >> "$GITHUB_OUTPUT"
-          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - name: Check out E3SM
         uses: actions/checkout@v4
         with:
-          repository: ${{ steps.e3sm.outputs.repo }}
-          ref: ${{ steps.e3sm.outputs.ref }}
+          repository: ${{ env.E3SM_REPO }}
+          ref: ${{ env.E3SM_BRANCH }}
           path: E3SM
           persist-credentials: false
           show-progress: false
@@ -136,7 +107,7 @@ jobs:
         run: |
           echo "test      : $TEST"
           echo "test id   : $TEST_ID"
-          echo "E3SM      : ${{ steps.e3sm.outputs.repo }} at ${{ steps.e3sm.outputs.ref }} ($(git -C E3SM rev-parse HEAD))"
+          echo "E3SM      : $E3SM_REPO at $E3SM_BRANCH ($(git -C E3SM rev-parse HEAD))"
           echo "mam4xx    : $(git -C E3SM/externals/mam4xx rev-parse HEAD)"
           echo "flags     : ${CT_FLAGS:-none (no baseline comparison)}"
           if [ "${{ matrix.runner }}" = cuda ]; then
@@ -147,10 +118,12 @@ jobs:
         working-directory: E3SM/cime/scripts
         run: |
           ./create_test "$TEST" $CT_FLAGS --test-id "$TEST_ID" --wait
+      # The test directory is /tmp/<test>.<test id>, with "C." before the test id when
+      # comparing (-c) and "G." when generating, so the paths below match any of them
       - name: Print TestStatus.log
         if: ${{ always() && steps.run-tests.outcome == 'failure' }}
         run: |
-          for f in /tmp/"$TEST.$TEST_ID"/TestStatus.log; do
+          for f in /tmp/"$TEST".*"$TEST_ID"/TestStatus.log; do
             echo "::group::$f"
             cat "$f"
             echo "::endgroup::"
@@ -161,11 +134,11 @@ jobs:
         with:
           name: logs.${{ env.TEST }}
           path: |
-            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/TestStatus
-            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/TestStatus.log
-            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/bld/**/*.bldlog.*
-            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/run/**/*.log.*
-            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/run/**/*.cprnc.out
+            /tmp/${{ env.TEST }}.*${{ env.TEST_ID }}/TestStatus
+            /tmp/${{ env.TEST }}.*${{ env.TEST_ID }}/TestStatus.log
+            /tmp/${{ env.TEST }}.*${{ env.TEST_ID }}/bld/**/*.bldlog.*
+            /tmp/${{ env.TEST }}.*${{ env.TEST_ID }}/run/**/*.log.*
+            /tmp/${{ env.TEST }}.*${{ env.TEST_ID }}/run/**/*.cprnc.out
           retention-days: 14
       - name: Upload nc files
         if: ${{ failure() && steps.run-tests.outcome == 'failure' }}
@@ -173,10 +146,10 @@ jobs:
         with:
           name: outputs.${{ env.TEST }}
           path: |
-            /tmp/${{ env.TEST }}.${{ env.TEST_ID }}/run/**/*.nc*
+            /tmp/${{ env.TEST }}.*${{ env.TEST_ID }}/run/**/*.nc*
           retention-days: 14
       # The runner is shared and keeps /tmp between runs
       - name: Clean up the test directory
         if: ${{ always() }}
         run: |
-          rm -rf /tmp/"$TEST.$TEST_ID" /tmp/cs.*."$TEST_ID"*
+          rm -rf /tmp/"${TEST:?}".*"${TEST_ID:?}" /tmp/cs.*."${TEST_ID:?}"*
