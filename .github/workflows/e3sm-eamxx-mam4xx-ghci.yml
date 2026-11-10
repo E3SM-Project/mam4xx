@@ -3,7 +3,7 @@ name: "E3SM EAMxx-MAM4xx REP tests (ghci)"
 # Runs the E3SM CIME test REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.<machine>.eamxx-L72 on
 # E3SM's self-hosted ghci runners, with this mam4xx commit in place of the mam4xx submodule of
 # E3SM: ghci_gnu on the gnu (CPU) runner, as in E3SM's eamxx-v1 workflow
-# (E3SM/.github/workflows/eamxx-v1-testing.yml), and ghci_gnugpu on the CUDA runner.
+# (E3SM/.github/workflows/eamxx-v1-testing.yml), and ghci_gnu-cuda on the CUDA runner.
 #
 # - REP runs the case twice and checks that both runs are bit-for-bit identical.
 # - As in eamxx-v1, create_test gets "-c -b master": the history files are also compared,
@@ -74,7 +74,7 @@ jobs:
       matrix:
         include:
           - {runner: gnu, name: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnu.eamxx-L72}
-          - {runner: cuda, name: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnugpu.eamxx-L72}
+          - {runner: cuda, name: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnu-cuda.eamxx-L72}
     name: ${{ matrix.name }}
     env:
       TEST: ${{ matrix.name }}
