@@ -37,7 +37,7 @@
 box{
   -- experiment design (single-parameter sweep)
   experiment = {
-    name = 'B1_single_mode_sulfate'
+    name = 'B1_single_mode_sulfate',
     sweep = {
       -- RH relative to liquid water, expressed as a fraction, NOT percent.
       -- RH=1.002 means 100.2% RH and fractional supersaturation s=0.002.
@@ -135,12 +135,11 @@ box{
     soag = 0,
   },
 
+  -- Evaluate the production activation-fraction mapping at s=RH-1, bypassing
+  -- maxsat and velocity gates. Report eligible N and dry mass over the entire
+  -- aerosol population, without cloud-fraction weighting or reservoir updates.
+  -- This is equilibrium eligibility, not finite-time growth or a flux test.
   droplet_activation = {
-    -- Evaluate the production activation-fraction mapping at s=RH-1, bypassing
-    -- maxsat and velocity gates. Report eligible N and dry mass over the entire
-    -- aerosol population, without cloud-fraction weighting or reservoir updates.
-    -- This is equilibrium eligibility, not finite-time growth or a flux test.
-
     -- NOTE: These are likely fixed by mam4xx in the first place
     --supersaturation_source = 'derived_from_relative_humidity',
     --updraft_supersaturation_closure: 'disabled',
@@ -153,43 +152,24 @@ box{
 
   output = {
     filename = 'B1_single_mode_sulfate.csv',
+    --NOTE: all fields should be written out for box and column models
 
     --NOTE: these should all be done always to the extent possible
-    --significant_digits: 17
-    --write_initial_state: true
-    --write_requested_and_used_inputs: true
-
-    --NOTE: fields should all be written out all the time!
-    --[[fields = {
-      'supersaturation',
-      'relative_humidity',
-      'temperature',
-      'pressure',
-      'dry_number_median_diameter',
-      'inferred_dry_number_median_diameter',
-      'used_geometric_std_dev',
-      'inferred_kappa',
-      'initial_interstitial_number_and_species_mass',
-      'initial_cloud_borne_number_and_species_mass',
-      'critical_dry_diameter',
-      'activated_number_fraction',
-      'activated_dry_mass_fraction',
-      'activated_number_concentration',       -- f_N*N_total, m^-3
-      'activated_species_mass_concentration', -- f_M*M_j,total, kg/m^3
-      'clipping_and_floor_events',
-    --]]
+    --significant_digits = 17,
+    --write_initial_state = true,
+    --write_requested_and_used_inputs = true,
   },
 
+  -- Compute in a separate checker, not by calling the tested activation kernel.
+  -- Derive s=RH-1 from the actual stored RH for each sweep point, including
+  -- floating-point subtraction roundoff; do not assume exact decimal s values.
+  -- For s>0: D_c=(4*A^3/(27*kappa*s^2))^(1/3), L=ln(sigma_g),
+  -- f_N=0.5*erfc(ln(D_c/D_g)/(sqrt(2)*L)),
+  -- f_M=0.5*erfc((ln(D_c/D_g)-3*L^2)/(sqrt(2)*L)).
+  -- At s=0 use the exact limit f_N=f_M=0 and D_c=+infinity;
+  -- avoid evaluating log(0). All other diagnostics must remain finite.
   verification = {
     reference = 'independent_lognormal_tail_integrals',
-    -- Compute in a separate checker, not by calling the tested activation kernel.
-    -- Derive s=RH-1 from the actual stored RH for each sweep point, including
-    -- floating-point subtraction roundoff; do not assume exact decimal s values.
-    -- For s>0: D_c=(4*A^3/(27*kappa*s^2))^(1/3), L=ln(sigma_g),
-    -- f_N=0.5*erfc(ln(D_c/D_g)/(sqrt(2)*L)),
-    -- f_M=0.5*erfc((ln(D_c/D_g)-3*L^2)/(sqrt(2)*L)).
-    -- At s=0 use the exact limit f_N=f_M=0 and D_c=+infinity;
-    -- avoid evaluating log(0). All other diagnostics must remain finite.
     -- NOTE: the ordering of these expected quantities is determined by the ordering of the parameters
     -- NOTE: in the sweep(s) specified in the `experiment` section. This is not practical for multiple-
     -- NOTE: parameter sweeps without further specification.
