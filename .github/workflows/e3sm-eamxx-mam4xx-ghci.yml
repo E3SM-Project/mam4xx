@@ -1,19 +1,5 @@
 name: "E3SM EAMxx-MAM4xx REP tests (ghci)"
 
-# Runs the E3SM CIME test REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.<machine>.eamxx-L72 on
-# E3SM's self-hosted ghci runners, with this mam4xx commit in place of the mam4xx submodule of
-# E3SM: ghci_gnu on the gnu (CPU) runner, as in E3SM's eamxx-v1 workflow
-# (E3SM/.github/workflows/eamxx-v1-testing.yml), and ghci_gnu-cuda on the CUDA runner.
-#
-# - REP runs the case twice and checks that both runs are bit-for-bit identical.
-# - As in eamxx-v1, create_test gets "-c -b master": the history files are also compared,
-#   bit-for-bit, with the E3SM master baselines on the runner. The BASELINE phase fails if
-#   E3SM has not blessed this test there, or if this mam4xx commit changes answers. A manual
-#   run can turn the comparison off. This workflow never blesses: the baselines belong to
-#   E3SM.
-# - PR runs use E3SM-Project/E3SM master. To test a PR against another E3SM branch (e.g. one
-#   with matching EAMxx interface changes), run the workflow manually from the Actions tab on
-#   the PR's branch, with the e3sm_repo and e3sm_branch inputs.
 
 on:
   # Runs on PRs against main
@@ -74,8 +60,7 @@ jobs:
       matrix:
         include:
           - {runner: gnu, name: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnu.eamxx-L72}
-          # It will be included in a follow-up PR. 
-          #- {runner: cuda, name: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnu-cuda.eamxx-L72}
+          - {runner: cuda, name: ERS_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnu-cuda.eamxx-L72}
     name: ${{ matrix.name }}
     env:
       TEST: ${{ matrix.name }}
