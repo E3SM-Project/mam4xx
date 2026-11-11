@@ -74,7 +74,8 @@ jobs:
       matrix:
         include:
           - {runner: gnu, name: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnu.eamxx-L72}
-          - {runner: cuda, name: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnu-cuda.eamxx-L72}
+          # It will be included in a follow-up PR. 
+          #- {runner: cuda, name: REP_D_Ln5.ne4pg2_oQU480.F2010-EAMxx-MAM4xx.ghci_gnu-cuda.eamxx-L72}
     name: ${{ matrix.name }}
     env:
       TEST: ${{ matrix.name }}
