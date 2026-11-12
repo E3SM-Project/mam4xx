@@ -3,6 +3,7 @@
 
 // clang-format off
 #define MAM4_TEST_DATA_DIR "@CMAKE_CURRENT_SOURCE_DIR@/data"
+#define MAM4_TEST_GAS_CHEMISTRY_SOLVER "@MAM4XX_GAS_CHEMISTRY_SOLVER@"
 // clang-format on
 
 namespace mam4 {}
