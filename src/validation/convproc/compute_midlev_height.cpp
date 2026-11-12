@@ -43,8 +43,9 @@ void compute_midlev_height(Ensemble *ensemble) {
     get_input(input, "dpdry_i", nlev, dpdry_i_host, dpdry_i_dev);
     get_input(input, "rhoair_i", nlev, rhoair_i_host, rhoair_i_dev);
     zmagl_dev = mam4::validation::create_column_view(nlev);
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "compute_midlev_height", 1, KOKKOS_LAMBDA(int) {
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           Real dpdry_i[nlev];
           for (int i = 0; i < nlev; ++i)
             dpdry_i[i] = dpdry_i_dev[i];
@@ -52,7 +53,8 @@ void compute_midlev_height(Ensemble *ensemble) {
           for (int i = 0; i < nlev; ++i)
             rhoair_i[i] = rhoair_i_dev[i];
           Real zmagl[nlev];
-          mam4::convproc::compute_midlev_height(nlev, dpdry_i, rhoair_i, zmagl);
+          mam4::convproc::compute_midlev_height(team, nlev, dpdry_i, rhoair_i,
+                                                zmagl);
           for (int i = 0; i < nlev; ++i)
             zmagl_dev[i] = zmagl[i];
         });

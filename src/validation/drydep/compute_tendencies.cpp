@@ -139,19 +139,7 @@ void compute_tendencies(Ensemble *ensemble) {
     mam4::ColumnView aerdepdrycw =
         mam4::validation::create_column_view(mam4::aero_model::pcnst);
 
-    const int aerosol_categories = mam4::DryDeposition::aerosol_categories;
     mam4::ColumnView rho = mam4::validation::create_column_view(nlev);
-    Kokkos::View<Real *> vlc_dry[mam4::AeroConfig::num_modes()]
-                                [aerosol_categories],
-        vlc_trb[mam4::AeroConfig::num_modes()][aerosol_categories],
-        vlc_grv[mam4::AeroConfig::num_modes()][aerosol_categories];
-    for (int j = 0; j < mam4::AeroConfig::num_modes(); ++j) {
-      for (int i = 0; i < aerosol_categories; ++i) {
-        Kokkos::resize(vlc_dry[j][i], nlev);
-        Kokkos::resize(vlc_trb[j][i], nlev);
-        Kokkos::resize(vlc_grv[j][i], nlev);
-      }
-    }
     Kokkos::View<Real *> dqdt_tmp[mam4::aero_model::pcnst];
     for (int i = 0; i < mam4::aero_model::pcnst; ++i)
       Kokkos::resize(dqdt_tmp[i], nlev);
