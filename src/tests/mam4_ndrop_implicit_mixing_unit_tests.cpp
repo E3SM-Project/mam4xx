@@ -4,8 +4,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 // Unit tests for the optional implicit vertical-mixing integrators in
-// ndrop::update_from_explmix (E3SM docs/design/eamxx_mam4xx_ndrop.md,
-// "Production Implicit Vertical-Mixing Option", verification plan items 1-5).
+// ndrop::update_from_explmix (ndrop_implicit_mixing.hpp).
 //
 // Host-side oracles are assembled directly from the physical equations (not
 // from the production block bands) and solved with dense partial-pivoting

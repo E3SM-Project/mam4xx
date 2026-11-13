@@ -12,10 +12,8 @@
 
 // Optional implicit vertical-mixing integrators for ndrop::update_from_explmix.
 //
-// This header implements the "Production Implicit Vertical-Mixing Option"
-// design section of E3SM docs/design/eamxx_mam4xx_ndrop.md. It provides two
-// runtime-selectable alternatives to the explicit (Forward Euler, FE) mixing
-// substep loop:
+// This header provides two runtime-selectable alternatives to the explicit
+// (Forward Euler, FE) mixing substep loop:
 //
 //   * IMEX-Euler: activation explicit from the old state; vertical mixing and
 //     the cloud-to-interstitial return implicit. Two shared scalar tridiagonal
@@ -217,7 +215,7 @@ int count_negative_input(const ThreadTeam &team, const int top_lev,
   return count;
 }
 
-// The initial qualification envelope is enforced on physical rates only.
+// The verified coefficient range is enforced on physical rates only.
 // Compare without overflowing h*rate for otherwise valid finite inputs.
 KOKKOS_INLINE_FUNCTION
 bool within_coefficient_range(const Real h, const Real rate) {
@@ -505,9 +503,12 @@ KOKKOS_INLINE_FUNCTION void mat2_apply(const Mat2 &m, const Real x0,
 }
 
 // Blocks of the BE family at level k for activation rate act_k, in the
-// unknown ordering x_k = (C_k, I_k). Design doc "Backward Euler on the
-// production stencil": L_k = -h a_k [[oA,0],[1-oA,1]], B_k = lambda I,
+// unknown ordering x_k = (C_k, I_k). Backward Euler on the production
+// stencil gives L_k = -h a_k [[oA,0],[1-oA,1]], B_k = lambda I,
 // U_k = [[-h b oB, -h act],[-h b (1-oB), -h b + h act]].
+// With act <= b (the activation cap) every off-diagonal entry is <= 0, and
+// with weights w_k = 1/zn(k) the matrix is weighted column diagonally
+// dominant (w_k b_k = w_{k+1} a_{k+1}), so it is a nonsingular M-matrix.
 KOKKOS_INLINE_FUNCTION
 void be_blocks(const int k, const int top_lev, const Real h, const Real act,
                const ColumnView &eddy_diff_kp, const ColumnView &eddy_diff_km,
@@ -522,8 +523,8 @@ void be_blocks(const int k, const int top_lev, const Real h, const Real act,
   U = {-h * b * oB, -h * act, -h * b * (Real(1) - oB), -h * b + h * act};
 }
 
-// Guarded inverse of a 2-by-2 pivot. The exact-arithmetic design bound is
-// det >= 1; the guard rejects nonfinite or degenerate pivots at
+// Guarded inverse of a 2-by-2 pivot. In exact arithmetic the M-matrix
+// structure gives det >= 1; the guard rejects nonfinite or degenerate pivots at
 // |det| <= 100 eps ||D||_inf^2.
 KOKKOS_INLINE_FUNCTION
 bool invert_pivot(const Mat2 &D, Mat2 &Dinv) {
@@ -721,7 +722,7 @@ void commit_candidate(const ThreadTeam &team, const int top_lev, const int nnew,
 // ---------------------------------------------------------------------------
 
 // Advance the column over dtmicro with the selected implicit integrator and
-// substep policy, falling back to Forward Euler per the design. On entry the
+// substep policy, falling back to Forward Euler on rejection. On entry the
 // controller has produced dtmix and nsubmix; nsav/nnew are the FE buffer
 // indices and are updated exactly as the FE loop would. update_from_explmix
 // has already checked the input, geometry, and workspace before the

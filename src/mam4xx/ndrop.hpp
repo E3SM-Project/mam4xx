@@ -1090,9 +1090,9 @@ void update_from_explmix(
     const ColumnView &eddy_diff_km, // zn*zs*density*diffusivity   [/s]
     const ColumnView
         &qncld, // work space: stores qcld so qcld can be updated in parallal
-    // Optional implicit vertical-mixing integrator (E3SM design document
-    // docs/design/eamxx_mam4xx_ndrop.md, "Production Implicit Vertical-Mixing
-    // Option"). The defaults reproduce the explicit path bit for bit.
+    // Optional implicit vertical-mixing integrator (IMEX-Euler or Backward
+    // Euler; see ndrop_implicit_mixing.hpp). The defaults reproduce the
+    // explicit path bit for bit.
     const MixingOptions &mixing_options = MixingOptions(),
     const ImplicitWorkspace &mixing_workspace = ImplicitWorkspace(),
     MixingStatus *mixing_status = nullptr) {
