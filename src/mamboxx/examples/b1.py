@@ -34,6 +34,44 @@
 # activation calculation unchanged within roundoff; do not disable safeguards
 # or rebuild the reference from a silently adjusted population to obtain a pass.
 
+#---------------------
+# Verification checks
+#---------------------
+
+# These check functions are called by the box model at the end of a simulation.
+# Each of these check functions accepts an aerosol state and returns true if
+# the state passes the check, false if not. We can minimize unnecessary comments
+# by selecting appropriate names.
+
+def physical_constants_are_correct(state):
+    # constants are always available in the constants table
+    return constants.curvature_temperature == 273.0 and
+           constants.surface_tension == 0.076 and
+           constants.water_molar_mass == 0.018016 and
+           constants.water_density == 1000.0 and
+           constants.gas_constant == 8.314563841815325
+
+
+def number_and_mass_fractions_match_independent_references(state):
+    # for each relevant aerosol mode...
+    return state.prognostics.modes.aerosol_mode.number_fraction == mode_number_fraction_ref and
+           state.prognostics.modes.aerosol_mode.mass_fractions.<species> == mode_species_mass_fraction_ref
+
+
+def no_clipping_occurred(state):
+    return state.diagnostics.num_clips == 0
+
+def mass_and_number_fractions_increase_monatonically_with_supersaturation(state):
+    # this can be done by constructing sensitivities from the various runs
+
+
+def number_fraction_is_one_half_at_critical_supersaturation_of_median_diameter(state):
+    # etc
+
+#----------------------
+# Box model invocation
+#----------------------
+
 box(name = 'B1_single_mode_sulfate',
 
     # single-parameter sweep
@@ -95,7 +133,7 @@ box(name = 'B1_single_mode_sulfate',
         #'initialization': 'derive_species_masses_from_number_size_composition',
 
         # NOTE: these two should be policies for the driver (or not)
-        #'missing_species': zero       
+        #'missing_species': zero
         #'empty_modes':     exact_zero
 
         'initial_cloud_borne_number': 0.0,        # all modes, m^-3
@@ -184,15 +222,10 @@ box(name = 'B1_single_mode_sulfate',
         # NOTE: initialized_mass_and_inferred_size_match_the_lognormal_moment -- verified manifestly
         # NOTE: empty_modes_have_zero_activated_amounts_without_undefined_fractions -- verified manifestly
         'checks': [
-            lambda state: constants.curvature_temperature == 273.0,
-            lambda state: constants.surface_tension == 0.076,
-            lambda state: constants.water_molar_mass == 0.018016,
-            lambda state: constants.water_density == 1000.0,
-            lambda state: constants.gas_constant == 8.314563841815325,
-            lambda state: state.prognostics.aerosol_mode.number_fraction == independent_reference,
-            lambda state: state.prognostics.aerosol_mode.mass_fraction   == independent_reference,
-            lambda state: state.diagnostics.num_clips == 0,
-            fractions_decrease_with_supersaturation,
+            physical_constants_are_correct,
+            number_and_mass_fractions_match_independent_references,
+            no_clipping_occurred,
+            mass_and_number_fractions_increase_monatonically_with_supersaturation,
             number_fraction_is_one_half_at_critical_supersaturation_of_median_diameter,
         ],
     },

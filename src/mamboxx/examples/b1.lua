@@ -34,6 +34,46 @@
 -- activation calculation unchanged within roundoff; do not disable safeguards
 -- or rebuild the reference from a silently adjusted population to obtain a pass.
 
+-------------------------
+-- Verification checks --
+-------------------------
+
+-- These check functions are called by the box model at the end of a simulation.
+-- Each of these check functions accepts an aerosol state and returns true if
+-- the state passes the check, false if not. We can minimize unnecessary comments
+-- by selecting appropriate names.
+
+function physical_constants_are_correct(state)
+  -- constants are always available in the constants table
+  return constants.curvature_temperature == 273.0 and
+         constants.surface_tension == 0.076 and
+         constants.water_molar_mass == 0.018016 and
+         constants.water_density == 1000.0 and
+         constants.gas_constant == 8.314563841815325
+end
+
+function number_and_mass_fractions_match_independent_references(state)
+  -- for each relevant aerosol mode...
+  return state.prognostics.modes.aerosol_mode.number_fraction == mode_number_fraction_ref and
+         state.prognostics.modes.aerosol_mode.mass_fractions.<species> == mode_species_mass_fraction_ref
+end
+
+function no_clipping_occurred(state)
+  return state.diagnostics.num_clips == 0
+end
+
+function mass_and_number_fractions_increase_monatonically_with_supersaturation(state)
+  -- this can be done by constructing sensitivities from the various runs
+end
+
+function number_fraction_is_one_half_at_critical_supersaturation_of_median_diameter(state)
+  -- etc
+end
+
+--------------------------
+-- Box model invocation --
+--------------------------
+
 box{
   -- experiment design (single-parameter sweep)
   experiment = {
@@ -196,18 +236,12 @@ box{
     -- NOTE: all_unrequested_processes_are_disabled -- verified manifestly
     -- NOTE: initialized_mass_and_inferred_size_match_the_lognormal_moment -- verified manifestly
     -- NOTE: empty_modes_have_zero_activated_amounts_without_undefined_fractions -- verified manifestly
-    checks = { 
-      function(state) return constants.curvature_temperature == 273.0 end,
-      function(state) return constants.surface_tension == 0.076 end,
-      function(state) return constants.water_molar_mass == 0.018016 end,
-      function(state) return constants.water_density == 1000.0 end,
-      function(state) return constants.gas_constant == 8.314563841815325 end,
-      function(state) return state.prognostics.aerosol_mode.number_fraction == independent_reference end,
-      function(state) return state.prognostics.aerosol_mode.mass_fraction   == independent_reference end,
-      function(state) return state.diagnostics.num_clips == 0 end,
-      -- NOTE: have to think about how to do these
-      -- both_fractions_are_nondecreasing_with_supersaturation # NOTE: have to think about how to do this
-      -- number_fraction_is_one_half_at_critical_supersaturation_of_median_diameter
+    checks = {
+      physical_constants_are_correct,
+      number_and_mass_fractions_match_independent_references,
+      no_clipping_occurred,
+      mass_and_number_fractions_increase_monatonically_with_supersaturation,
+      number_fraction_is_one_half_at_critical_supersaturation_of_median_diameter,
     },
   },
 }
