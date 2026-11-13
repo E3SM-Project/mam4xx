@@ -1049,6 +1049,17 @@ Real explmix(const Real qold_km1, // number / mass mixing ratio from previous
   return qnew;
 } // end explmix
 
+} // namespace ndrop
+} // namespace mam4
+
+// Optional implicit vertical-mixing integrators (IMEX-Euler, Backward Euler).
+// Included here, at global scope, because it reuses explmix() and the ndrop
+// types defined above.
+#include "ndrop_implicit_mixing.hpp"
+
+namespace mam4 {
+namespace ndrop {
+
 KOKKOS_INLINE_FUNCTION
 void update_from_explmix(
     const ThreadTeam &team,
@@ -1078,8 +1089,52 @@ void update_from_explmix(
     const ColumnView &eddy_diff_kp, // zn*zs*density*diffusivity [/s]
     const ColumnView &eddy_diff_km, // zn*zs*density*diffusivity   [/s]
     const ColumnView
-        &qncld // work space: stores qcld so qcld can be updated in parallal
-) {
+        &qncld, // work space: stores qcld so qcld can be updated in parallal
+    // Optional implicit vertical-mixing integrator (IMEX-Euler or Backward
+    // Euler; see ndrop_implicit_mixing.hpp). The defaults reproduce the
+    // explicit path bit for bit.
+    const MixingOptions &mixing_options = MixingOptions(),
+    const ImplicitWorkspace &mixing_workspace = ImplicitWorkspace(),
+    MixingStatus *mixing_status = nullptr) {
+
+  const bool use_explicit =
+      mixing_options.integrator == MixingIntegrator::ForwardEuler;
+  if (!use_explicit) {
+    using namespace implicit_mixing;
+    EKAT_KERNEL_REQUIRE_MSG(
+        (mixing_options.integrator == MixingIntegrator::IMEX ||
+         mixing_options.integrator == MixingIntegrator::BackwardEuler) &&
+            (mixing_options.policy == ImplicitSubstepPolicy::ControllerCount ||
+             mixing_options.policy == ImplicitSubstepPolicy::SingleStep),
+        "ndrop implicit mixing: invalid options");
+    EKAT_KERNEL_REQUIRE_MSG(top_lev >= 0 && top_lev < pver && nsav >= 0 &&
+                                nsav < 2 && nnew >= 0 && nnew < 2 &&
+                                nsav != nnew && is_finite(dtmicro) &&
+                                dtmicro > Real(0) && mixing_workspace.valid(),
+                            "ndrop implicit mixing: invalid timestep, levels, "
+                            "buffers or workspace");
+    EKAT_KERNEL_REQUIRE_MSG(count_nonfinite_input(team, top_lev, nsav, qcld,
+                                                  raercol, raercol_cw) == 0,
+                            "ndrop implicit mixing: nonfinite input state");
+    int invalid = 0;
+    Kokkos::parallel_reduce(
+        Kokkos::TeamVectorRange(team, top_lev, pver),
+        [&](int k, int &acc) {
+          if (!is_finite(zn(k)) || zn(k) <= Real(0) || !is_finite(zs(k)) ||
+              zs(k) < Real(0) || !is_finite(csbot(k)) || csbot(k) < Real(0) ||
+              !is_finite(eddy_diff(k)) || eddy_diff(k) < Real(0) ||
+              !is_finite(cldn(k)) || cldn(k) < Real(0) || cldn(k) > Real(1))
+            ++acc;
+          for (int m = 0; m < AeroConfig::num_modes(); ++m)
+            if (!is_finite(nact(k, m)) || nact(k, m) < Real(0) ||
+                !is_finite(mact(k, m)) || mact(k, m) < Real(0))
+              ++acc;
+        },
+        invalid);
+    team.team_barrier();
+    EKAT_KERNEL_REQUIRE_MSG(invalid == 0,
+                            "ndrop implicit mixing: invalid geometry/operator");
+  }
 
   // threshold cloud fraction to compute overlap [fraction]
   // BAD CONSTANT
@@ -1155,6 +1210,29 @@ void update_from_explmix(
   // timescale for subloop [s]
   //  BAD CONSTANT
   Real dtmix = 0.9 * dtmin;
+  // Guard the implicit option before converting the controller count to int.
+  // The default FE arithmetic and loop remain unchanged.
+  if (!use_explicit) {
+    using namespace implicit_mixing;
+    int invalid = 0;
+    Kokkos::parallel_reduce(
+        Kokkos::TeamVectorRange(team, top_lev, pver),
+        [&](int k, int &acc) {
+          if (!is_finite(eddy_diff_kp(k)) || eddy_diff_kp(k) < Real(0) ||
+              !is_finite(eddy_diff_km(k)) || eddy_diff_km(k) < Real(0) ||
+              !is_finite(overlapp(k)) || !is_finite(overlapm(k)))
+            ++acc;
+        },
+        invalid);
+    team.team_barrier();
+    EKAT_KERNEL_REQUIRE_MSG(invalid == 0 && is_finite(dtmix) && dtmix > Real(0),
+                            "ndrop implicit mixing: invalid derived rates");
+    const Real ratio = dtmicro / dtmix;
+    EKAT_KERNEL_REQUIRE_MSG(
+        is_finite(ratio) && ratio >= Real(0) &&
+            ratio < Real(std::numeric_limits<int>::max() - 1),
+        "ndrop implicit mixing: controller count is not representable");
+  }
   // number of substeps and bound
   const int nsubmix = dtmicro / dtmix + 1;
 #ifdef MAM4XX_EVAL_DIAGNOSTICS
@@ -1162,6 +1240,19 @@ void update_from_explmix(
 #endif
 
   dtmix = dtmicro / nsubmix;
+
+  // Optional implicit integrators run here; the explicit loop below then has
+  // zero trips. With the default options the explicit loop runs unchanged.
+  if (!use_explicit) {
+    implicit_mixing::advance(team, dtmicro, dtmix, nsubmix, top_lev, zn, nact,
+                             mact, qcld, qncld, raercol, raercol_cw, nsav, nnew,
+                             eddy_diff_kp, eddy_diff_km, overlapp, overlapm,
+                             mixing_options, mixing_workspace, mixing_status);
+  } else if (mixing_status != nullptr) {
+    *mixing_status = MixingStatus();
+    mixing_status->nsubmix_executed = nsubmix;
+  }
+  const int nsubmix_explicit = use_explicit ? nsubmix : 0;
 
   // old_cloud_nsubmix_loop
   //  Note: each pass in submix loop stores updated aerosol values at index
@@ -1171,7 +1262,7 @@ void update_from_explmix(
   //  nnew stores index of most recent updated values (either 1 or 2).
 
   team.team_barrier();
-  for (int isub = 0; isub < nsubmix; isub++) {
+  for (int isub = 0; isub < nsubmix_explicit; isub++) {
     if (0 < isub) {
       // after first pass, switch nsav, nnew so that nsav is the
       // recently updated aerosol
@@ -1311,7 +1402,12 @@ void dropmixnuc(
     const ColumnView &eddy_diff_km, const ColumnView &qncld,
     const ColumnView &srcn, const ColumnView &source, const ColumnView &dz,
     const ColumnView &csbot_cscen, const ColumnView &raertend,
-    const ColumnView &qqcwtend) {
+    const ColumnView &qqcwtend,
+    // optional implicit vertical-mixing integrator; defaults keep the
+    // explicit path bit for bit
+    const MixingOptions &mixing_options = MixingOptions(),
+    const ImplicitWorkspace &mixing_workspace = ImplicitWorkspace(),
+    MixingStatus *mixing_status = nullptr) {
   // vertical diffusion and nucleation of cloud droplets
   // assume cloud presence controlled by cloud fraction
   // doesn't distinguish between warm, cold clouds
@@ -1515,7 +1611,8 @@ void dropmixnuc(
 #endif
                       top_lev,
                       // work vars
-                      overlapp, overlapm, eddy_diff_kp, eddy_diff_km, qncld);
+                      overlapp, overlapm, eddy_diff_kp, eddy_diff_km, qncld,
+                      mixing_options, mixing_workspace, mixing_status);
 
   team.team_barrier();
 
