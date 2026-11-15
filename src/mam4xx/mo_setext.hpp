@@ -50,14 +50,14 @@ void extfrc_set(const ThreadTeam &team, const Forcing *forcings,
       // Fortran to C++ indexing
       auto forcing_mm = forcings[mm];
       const int nn = forcing_mm.frc_ndx - 1;
-      frcing(kk, nn) = zero;
+      frcing(nn, kk) = zero;
 
       for (int isec = 0; isec < forcing_mm.nsectors; ++isec) {
         if (forcing_mm.file_alt_data) {
-          frcing(kk, nn) += forcing_mm.fields_data[isec](pver - 1 - kk);
+          frcing(nn, kk) += forcing_mm.fields_data[isec](pver - 1 - kk);
         } else {
           // forcings(mm)%fields(isec)%data(:ncol,:,lchnk)
-          frcing(kk, nn) += forcing_mm.fields_data[isec](kk);
+          frcing(nn, kk) += forcing_mm.fields_data[isec](kk);
         }
       } // isec
     }   // end mm

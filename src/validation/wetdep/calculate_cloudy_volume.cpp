@@ -53,8 +53,8 @@ void test_calculate_cloudy_volume_process(const Input &input, Output &output) {
   Kokkos::parallel_for(
       "wetdep::calculate_cloudy_volume", 1, KOKKOS_LAMBDA(const int) {
         auto lprec = [&](int i) { return lprec_dev[i]; };
-        mam4::wetdep::calculate_cloudy_volume(nlev, cld_dev.data(), lprec,
-                                              is_tot_cld, cldv_dev.data());
+        mam4::wetdep::calculate_cloudy_volume(nlev, cld_dev, lprec, is_tot_cld,
+                                              cldv_dev);
 
         sumppr_all_dev[0] = lprec_dev[0];
         for (int i = 1; i < nlev; i++)

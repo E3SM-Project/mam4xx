@@ -36,6 +36,7 @@ void compute_ent_det_dp(Ensemble *ensemble) {
   // Settings settings = ensemble->settings();
   // Run the ensemble.
   ensemble->process([=](const Input &input, Output &output) {
+    using View1D = Kokkos::View<Real *>;
     const int nlev = 72;
     // Fetch ensemble parameters
     // Convert to C++ index by subtracting one.
@@ -48,52 +49,26 @@ void compute_ent_det_dp(Ensemble *ensemble) {
 
     std::vector<Real> dpdry_i_host, du_host, eu_host, ed_host, mu_i_host,
         md_i_host, eudp_host, dudp_host, eddp_host, dddp_host;
-    mam4::ColumnView dpdry_i_dev, du_dev, eu_dev, ed_dev, mu_i_dev, md_i_dev,
-        eudp_dev, dudp_dev, eddp_dev, dddp_dev, ntsub_dev;
+    mam4::ColumnView dpdry_i_dev, du_dev, eu_dev, ed_dev, mu_i_dev, md_i_dev;
     get_input(input, "dpdry_i", nlev, dpdry_i_host, dpdry_i_dev);
     get_input(input, "du", nlev, du_host, du_dev);
     get_input(input, "eu", nlev, eu_host, eu_dev);
     get_input(input, "ed", nlev, ed_host, ed_dev);
     get_input(input, "mu_i", nlev + 1, mu_i_host, mu_i_dev);
     get_input(input, "md_i", nlev + 1, md_i_host, md_i_dev);
-    eudp_dev = mam4::validation::create_column_view(nlev);
-    dudp_dev = mam4::validation::create_column_view(nlev);
-    eddp_dev = mam4::validation::create_column_view(nlev);
-    dddp_dev = mam4::validation::create_column_view(nlev);
-    ntsub_dev = mam4::validation::create_column_view(1);
+    View1D eudp_dev("eudp_dev", nlev);
+    View1D dudp_dev("dudp_dev", nlev);
+    View1D eddp_dev("eddp_dev", nlev);
+    View1D dddp_dev("dddp_dev", nlev);
+    View1D ntsub_dev("ntsub_dev", 1);
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "compute_ent_det_dp", 1, KOKKOS_LAMBDA(int) {
-          Real dpdry_i[nlev];
-          for (int i = 0; i < nlev; ++i)
-            dpdry_i[i] = dpdry_i_dev[i];
-          Real mu_i[nlev + 1];
-          for (int i = 0; i < nlev + 1; ++i)
-            mu_i[i] = mu_i_dev[i];
-          Real md_i[nlev + 1];
-          for (int i = 0; i < nlev + 1; ++i)
-            md_i[i] = md_i_dev[i];
-          Real du[nlev];
-          for (int i = 0; i < nlev; ++i)
-            du[i] = du_dev[i];
-          Real eu[nlev];
-          for (int i = 0; i < nlev; ++i)
-            eu[i] = eu_dev[i];
-          Real ed[nlev];
-          for (int i = 0; i < nlev; ++i)
-            ed[i] = ed_dev[i];
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           int ntsub = 0;
-          Real eudp[nlev], dudp[nlev], eddp[nlev], dddp[nlev];
-          mam4::convproc::compute_ent_det_dp(nlev, ktop, kbot, dt, dpdry_i,
-                                             mu_i, md_i, du, eu, ed, ntsub,
-                                             eudp, dudp, eddp, dddp);
-          for (int i = 0; i < nlev; ++i)
-            eudp_dev[i] = eudp[i];
-          for (int i = 0; i < nlev; ++i)
-            dudp_dev[i] = dudp[i];
-          for (int i = 0; i < nlev; ++i)
-            eddp_dev[i] = eddp[i];
-          for (int i = 0; i < nlev; ++i)
-            dddp_dev[i] = dddp[i];
+          mam4::convproc::compute_ent_det_dp(
+              team, nlev, ktop, kbot, dt, dpdry_i_dev, mu_i_dev, md_i_dev,
+              du_dev, eu_dev, ed_dev, ntsub, eudp_dev, dudp_dev, eddp_dev,
+              dddp_dev);
           ntsub_dev[0] = ntsub;
         });
     // Check case of iflux_method == 2 which is not part of the e3sm tests.

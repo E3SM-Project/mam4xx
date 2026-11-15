@@ -32,6 +32,7 @@ void set_output(Output &output, const std::string &name, const int size,
 }
 } // namespace
 void compute_massflux(Ensemble *ensemble) {
+  using View1D = Kokkos::View<Real *>;
   // We don't need any settings for this particular test.
   // Settings settings = ensemble->settings();
   // Run the ensemble.
@@ -48,39 +49,20 @@ void compute_massflux(Ensemble *ensemble) {
 
     std::vector<Real> dpdry_i_host, du_host, eu_host, ed_host, mu_i_host,
         md_i_host;
-    mam4::ColumnView dpdry_i_dev, du_dev, eu_dev, ed_dev, mu_i_dev, md_i_dev,
-        xx_mfup_max_dev;
+    mam4::ColumnView dpdry_i_dev, du_dev, eu_dev, ed_dev, xx_mfup_max_dev;
     get_input(input, "dpdry_i", nlev, dpdry_i_host, dpdry_i_dev);
     get_input(input, "du", nlev, du_host, du_dev);
     get_input(input, "eu", nlev, eu_host, eu_dev);
     get_input(input, "ed", nlev, ed_host, ed_dev);
-    mu_i_dev = mam4::validation::create_column_view(nlev + 1);
-    md_i_dev = mam4::validation::create_column_view(nlev + 1);
+    View1D mu_i_dev("mu_i_dev", nlev + 1);
+    View1D md_i_dev("md_i_dev", nlev + 1);
     xx_mfup_max_dev = mam4::validation::create_column_view(1);
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "compute_massflux", 1, KOKKOS_LAMBDA(int) {
-          Real dpdry_i[nlev];
-          for (int i = 0; i < nlev; ++i)
-            dpdry_i[i] = dpdry_i_dev[i];
-          Real du[nlev];
-          for (int i = 0; i < nlev; ++i)
-            du[i] = du_dev[i];
-          Real eu[nlev];
-          for (int i = 0; i < nlev; ++i)
-            eu[i] = eu_dev[i];
-          Real ed[nlev];
-          for (int i = 0; i < nlev; ++i)
-            ed[i] = ed_dev[i];
-          Real mu_i[nlev + 1];
-          Real md_i[nlev + 1];
-          Real mfup_max = xx_mfup_max;
-          mam4::convproc::compute_massflux(nlev, ktop, kbot, dpdry_i, du, eu,
-                                           ed, mu_i, md_i, mfup_max);
-          for (int i = 0; i < nlev + 1; ++i)
-            mu_i_dev[i] = mu_i[i];
-          for (int i = 0; i < nlev + 1; ++i)
-            md_i_dev[i] = md_i[i];
-          xx_mfup_max_dev[0] = mfup_max;
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
+          mam4::convproc::compute_massflux(team, nlev, ktop, kbot, dpdry_i_dev,
+                                           du_dev, eu_dev, ed_dev, mu_i_dev,
+                                           md_i_dev, xx_mfup_max_dev[0]);
         });
     // Check case of iflux_method == 2 which is not part of the e3sm tests.
     set_output(output, "mu_i", nlev + 1, mu_i_host, mu_i_dev);

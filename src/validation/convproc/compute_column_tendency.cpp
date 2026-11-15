@@ -51,7 +51,7 @@ void set_output(Output &output, const std::string &name, const int size,
 }
 } // namespace
 void compute_column_tendency(Ensemble *ensemble) {
-
+  using View1D = Kokkos::View<Real *>;
   // We don't need any settings for this particular test.
   // Settings settings = ensemble->settings();
 
@@ -92,42 +92,30 @@ void compute_column_tendency(Ensemble *ensemble) {
     get_input(input, "fa_u", nlev, fa_u_host, fa_u_dev);
     get_input(input, "dpdry_i", nlev, dpdry_i_host, dpdry_i_dev);
 
-    mam4::ColumnView sumactiva_dev =
-        mam4::validation::create_column_view(pcnst_extd);
-    mam4::ColumnView sumaqchem_dev =
-        mam4::validation::create_column_view(pcnst_extd);
-    mam4::ColumnView sumwetdep_dev =
-        mam4::validation::create_column_view(pcnst_extd);
-    mam4::ColumnView sumresusp_dev =
-        mam4::validation::create_column_view(pcnst_extd);
-    mam4::ColumnView sumprevap_dev =
-        mam4::validation::create_column_view(pcnst_extd);
-    mam4::ColumnView sumprevap_hist_dev =
-        mam4::validation::create_column_view(pcnst_extd);
+    View1D sumactiva_dev("sumactiva_dev", pcnst_extd);
+    View1D sumaqchem_dev("sumaqchem_dev", pcnst_extd);
+    View1D sumwetdep_dev("sumwetdep_dev", pcnst_extd);
+    View1D sumresusp_dev("sumresusp_dev", pcnst_extd);
+    View1D sumprevap_dev("sumprevap_dev", pcnst_extd);
+    View1D sumprevap_hist_dev("sumprevap_hist_dev", pcnst_extd);
     std::vector<Real> sumactiva_host(pcnst_extd);
     std::vector<Real> sumaqchem_host(pcnst_extd);
     std::vector<Real> sumwetdep_host(pcnst_extd);
     std::vector<Real> sumresusp_host(pcnst_extd);
     std::vector<Real> sumprevap_host(pcnst_extd);
     std::vector<Real> sumprevap_hist_host(pcnst_extd);
+    auto team_policy = mam4::ThreadTeamPolicy(1u, 1u);
     Kokkos::parallel_for(
-        "compute_column_tendency", 1, KOKKOS_LAMBDA(int) {
+        team_policy, KOKKOS_LAMBDA(const mam4::ThreadTeam &team) {
           bool doconvproc_extd[pcnst_extd] = {};
           for (int n = 0; n < pcnst_extd; ++n)
             doconvproc_extd[n] = doconvproc_extd_dev[n];
-          const Real *dpdry_i = dpdry_i_dev.data();
-          const Real *fa_u = fa_u_dev.data();
-          Real *sumactiva = sumactiva_dev.data();
-          Real *sumaqchem = sumaqchem_dev.data();
-          Real *sumwetdep = sumwetdep_dev.data();
-          Real *sumresusp = sumresusp_dev.data();
-          Real *sumprevap = sumprevap_dev.data();
-          Real *sumprevap_hist = sumprevap_hist_dev.data();
           mam4::convproc::compute_column_tendency(
-              doconvproc_extd, ktop, kbot_prevap, dpdry_i, dcondt_resusp_dev,
-              dcondt_prevap_dev, dcondt_prevap_hist_dev, dconudt_activa_dev,
-              dconudt_wetdep_dev, fa_u, sumactiva, sumaqchem, sumwetdep,
-              sumresusp, sumprevap, sumprevap_hist);
+              team, doconvproc_extd, ktop, kbot_prevap, dpdry_i_dev,
+              dcondt_resusp_dev, dcondt_prevap_dev, dcondt_prevap_hist_dev,
+              dconudt_activa_dev, dconudt_wetdep_dev, fa_u_dev, sumactiva_dev,
+              sumaqchem_dev, sumwetdep_dev, sumresusp_dev, sumprevap_dev,
+              sumprevap_hist_dev);
         });
     set_output(output, "sumactiva", pcnst_extd, sumactiva_host, sumactiva_dev);
     set_output(output, "sumaqchem", pcnst_extd, sumaqchem_host, sumaqchem_dev);
