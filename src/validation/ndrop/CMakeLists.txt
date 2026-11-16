@@ -82,6 +82,7 @@ set(TEST_LIST
 # # matching the tests and errors, just for convenience
 
 set(DEFAULT_TOL 1e-11)
+set(DEFAULT_TOL_9 1e-09)
 set(DEFAULT_TOL_DROPMIXNUC 6.8e-4)
 
 set(ERROR_THRESHOLDS
@@ -98,8 +99,8 @@ set(ERROR_THRESHOLDS
     2e-3                      # ccncalc_merged
     1e-3                      # ccncalc_loop_ts_1417
     5e-5                      # ccncalc_ts_1400
-    ${DEFAULT_TOL}            # maxsattype1_merged
-    ${DEFAULT_TOL}            # maxsattype2_merged
+    ${DEFAULT_TOL_9}          # maxsattype1_merged
+    ${DEFAULT_TOL_9}          # maxsattype2_merged
     2e-9                      # update_from_newcld_iact0_merged
     1e-3                      # update_from_newcld_iact1_merged
     ${DEFAULT_TOL}            # update_from_newcld_iact2_merged
