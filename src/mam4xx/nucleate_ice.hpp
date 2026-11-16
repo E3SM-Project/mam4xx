@@ -250,7 +250,7 @@ public:
     Real _nucleate_ice_subgrid;
     // ice nucleation SO2 size threshold for aitken mode
     Real _so4_sz_thresh_icenuc;
-    Config(const Real nucleate_ice_subgrid = 120,
+    Config(const Real nucleate_ice_subgrid = 1.2,
            const Real so4_sz_thresh_icenuc = 8.0e-8)
         : _nucleate_ice_subgrid(nucleate_ice_subgrid),
           _so4_sz_thresh_icenuc(so4_sz_thresh_icenuc) {}
