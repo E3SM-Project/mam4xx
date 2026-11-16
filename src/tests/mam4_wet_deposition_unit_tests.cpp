@@ -193,14 +193,11 @@ TEST_CASE("test_calculate_cloudy_volume", "mam4_wet_deposition_process") {
 
   Kokkos::parallel_for(
       "test_calculate_cloudy_volume_true", 1, KOKKOS_LAMBDA(const int) {
-        Real *cld_device = cld.data();
         Real *lprec_device = lprec.data();
-        Real *cldv_device = cldv.data();
         Real *sumppr_all_device = sumppr_all.data();
         // True is the only flag with validation data available
         auto lprec = [&](int i) { return lprec_device[i]; };
-        mam4::wetdep::calculate_cloudy_volume(nlev, cld_device, lprec, true,
-                                              cldv_device);
+        mam4::wetdep::calculate_cloudy_volume(nlev, cld, lprec, true, cldv);
         sumppr_all_device[0] = lprec_device[0];
         for (int i = 1; i < nlev; i++)
           sumppr_all_device[i] = sumppr_all_device[i - 1] + lprec_device[i];

@@ -364,7 +364,6 @@ void mam_gasaerexch_1subarea(
     const Real qgas_netprod_otrproc[gasaerexch::max_gas],           // in
     Real qaer_cur[gasaerexch::max_aer][mam4::gasaerexch::max_mode], // inout
     Real qnum_cur[gasaerexch::max_mode],                            // inout
-    Real qwtr_cur[gasaerexch::max_mode],                            // inout
     const Real dgn_awet[gasaerexch::max_mode],                      // in
     Real uptkaer[gasaerexch::max_gas][mam4::gasaerexch::max_mode],  // inout
     Real &uptkrate_h2so4) {                                         // inout
@@ -479,7 +478,6 @@ void mam_gasaerexch_1subarea(
   // Do SOA
   mam4::gasaerexch::mam_soaexch_1subarea(dtsubstep, temp, pmid,        // in
                                          qgas_cur, qgas_avg, qaer_cur, // inout
-                                         qnum_cur, qwtr_cur,           // inout
                                          uptkaer);                     // in
 
   // Do other gases (that are assumed non-volatile) with no time sub-stepping

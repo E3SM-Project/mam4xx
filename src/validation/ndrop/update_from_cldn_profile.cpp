@@ -97,14 +97,14 @@ void update_from_cldn_profile(Ensemble *ensemble) {
               cldn_col_in, cldn_col_in_kp1, dtinv, wtke_col_in, zs,
               dz, // ! in
               temp_col_in, air_density, air_density_kp1, csbot_cscen,
-              state_q_col_in_kp1_view.data(), // ! in
+              state_q_col_in_kp1_view, // ! in
               num2vol_ratio_min_nmodes, num2vol_ratio_max_nmodes, exp45logsig,
               alogsig, aten, raercol_nsav_view, raercol_nsav_kp1_view,
               raercol_cw_nsav_view,
               nsource_col_view[0], // inout
               qcld_view[0], factnum_col_view.data(),
               ekd_view[0], // out
-              nact_view.data(), mact_view.data());
+              nact_view, mact_view);
         });
 
     Kokkos::deep_copy(qcld_host, qcld_view);
