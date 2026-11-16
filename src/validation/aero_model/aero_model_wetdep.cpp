@@ -222,8 +222,8 @@ void aero_model_wetdep(Ensemble *ensemble) {
               qaerwat, wetdens,
               // output
               aerdepwetis, aerdepwetcw, work, isprx, aerdepwetis_convproc,
-              // Convection mass flux parameters
-              scratch1Dviews, mu_icol, md_icol, du_icol, eu_icol, ed_icol,
+              // Convection parameters
+              scratch1Dviews, du_icol, eu_icol, ed_icol,
               dp_icol, p_del_dry_icol, ktop, kbot, convproc_do_aer,
               convproc_do_gas, zm_activity, species_class, mmtoo_prevap_resusp,
               aero_config);

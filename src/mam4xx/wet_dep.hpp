@@ -1828,11 +1828,9 @@ void aero_model_wetdep(
     const Int1D &isprx,
     // output: convective aerosol wet deposition (interstitial) [kg/m2/s]
     const View1D &aerdepwetis_convproc,
-    // Convection mass flux parameters (from zm_conv or equivalent)
+    // Convection parameters
     Kokkos::View<Real *>
         scratch1Dviews[ConvProc::Col1DViewInd::NumScratch], // Scratch arrays
-    const ConstColumnView &mu,    // Updraft mass flux [mb/s]
-    const ConstColumnView &md,    // Downdraft mass flux [mb/s]
     const ConstColumnView &du,    // Detrainment from updraft [1/s]
     const ConstColumnView &eu,    // Entrainment into updraft [1/s]
     const ConstColumnView &ed,    // Entrainment into downdraft [1/s]
