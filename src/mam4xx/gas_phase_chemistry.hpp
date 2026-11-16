@@ -20,16 +20,6 @@ using mam4::gas_chemistry::nfs;
 using mam4::gas_chemistry::rxntot;
 // number of photolysis reactions
 using mam4::mo_photo::phtcnt;
-// index of total atm density in invariant array
-// FIXME: Hardwired indices, should be obtained from a config file
-constexpr int ndx_h2so4 = 2;
-constexpr int synoz_ndx = -1;
-
-// Following (indices (ndxes?) are taken from mam4 validation data and
-// translated from
-// 1-based indices to 0-based indices)
-constexpr int usr_HO2_HO2_ndx = 1, usr_DMS_OH_ndx = 5, usr_SO2_OH_ndx = 3,
-              inv_h2o_ndx = 3;
 
 // index of total atm density in invariant array
 using mam4::gas_chemistry::indexm;
@@ -52,6 +42,16 @@ KOKKOS_INLINE_FUNCTION gas_chemistry::ImpSolResult gas_phase_chemistry(
     const Real invariants[nfs], const Real het_rates[gas_pcnst],
     // out
     VectorType &qq) {
+
+  // index of total atm density in invariant array
+  // FIXME: Hardwired indices, should be obtained from a config file
+  constexpr int ndx_h2so4 = 2;
+  constexpr int synoz_ndx = -1;
+
+  // Following (indices (ndxes?) are taken from mam4 validation data and
+  // translated from 1-based indices to 0-based indices)
+  constexpr int usr_HO2_HO2_ndx = 1, usr_DMS_OH_ndx = 5, usr_SO2_OH_ndx = 3,
+                inv_h2o_ndx = 3;
 
   //=====================================================================
   // ... set rates for "tabular" and user specified reactions
