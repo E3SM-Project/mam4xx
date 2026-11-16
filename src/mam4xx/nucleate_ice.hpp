@@ -564,7 +564,7 @@ public:
             nucleate_ice::hetero(regm, wbar, dst3_num, niimm, nidep);
 
             if (nihf <= (niimm + nidep)) {
-              n1 = nihf;
+              n1 = niimm + nidep;
             } else {
               n1 = (niimm + nidep) *
                    mam4::pow((niimm + nidep) / nihf, (tc - regm) / Real(5.));

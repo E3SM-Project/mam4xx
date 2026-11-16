@@ -153,6 +153,29 @@ TEST_CASE("test_calculate_regm_nucleati", "mam4_nucleate_ice_process") {
   REQUIRE(regm < 50.0);
 }
 
+TEST_CASE("test_hom_het_transition_keeps_heterogeneous_nucleation",
+          "mam4_nucleate_ice_process") {
+  const Real wbar = 0.2;
+  const Real dst3_num = 7.6e-4;
+  Real regm;
+  mam4::nucleate_ice::calculate_regm_nucleati(wbar, dst3_num, regm);
+
+  const Real tc = -35.0;
+  REQUIRE(regm - 5.0 > -37.0);
+  REQUIRE(tc >= regm - 5.0);
+  REQUIRE(tc <= regm);
+
+  mam4::NucleateIce nucleate_ice;
+  Real nuci = 0, onihf = 0, oniimm = 0, onidep = 0, onimey = 0;
+  nucleate_ice.nucleati(wbar, tc + 273.15, 70000.0, 1.2, 1.0, 1.0, 1.0,
+                        dst3_num, 1.2, nuci, onihf, oniimm, onidep, onimey);
+
+  REQUIRE(onihf == 0.0);
+  REQUIRE(oniimm > 0.0);
+  REQUIRE(nuci > 0.0);
+  REQUIRE(mam4::abs(nuci - (oniimm + onidep)) < 1.0e-12 * nuci);
+}
+
 TEST_CASE("test_calculate_RHw_hf", "mam4_nucleate_ice_process") {
   ekat::Comm comm;
   ekat::logger::Logger<> logger("nucleate_ice unit tests",
