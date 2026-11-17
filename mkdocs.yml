@@ -2,6 +2,9 @@ site_name: "MAM4xx: A C++ implementation of MAM4 for E3SM"
 
 nav:
   - 'index.md'
+  - Theory Guide:
+    - 'theory/index.md'
+    - 'theory/sulfur-chemistry.md'
   - 'installation.md'
   - 'development.md'
   - 'testing.md'
