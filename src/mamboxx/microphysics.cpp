@@ -42,6 +42,7 @@ void Microphysics::step(const mam4::Atmosphere &atmosphere,
                         mam4::Prognostics &prognostics,
                         const ColumnLocation &location,
                         ExternalConditions &external_conditions,
+                        FixedSpeciesView &invariants,
                         Real dt) {
   size_t n_lev = atmosphere.temperature.size();
  
@@ -348,10 +349,14 @@ void Microphysics::setsox(const Atmosphere &atmosphere,
 void Microphysics::modal_aero_amicphys_intr(const Atmosphere &atmosphere, Real dt) {
   auto policy = TeamPolicyFactory::get_default_team_policy(1, mam4::nlev);
 
+  // FIXME: how can we obtain the wet/dry diameters?
+  /*
   const auto wet_diameter =
     get_field_in("dgnumwet").get_view<const Real ***>();
   const auto dry_diameter =
     get_field_in("dgnum").get_view<const Real ***>();
+  */
+  // FIXME: what is "wet density"?
   const auto wetdens = get_field_in("wetdens").get_view<const Real ***>();
 
   auto& dgncur_awet_loc = dgncur_awet_;

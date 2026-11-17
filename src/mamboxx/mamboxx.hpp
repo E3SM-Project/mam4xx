@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 
+#include "dropmixnuc.hpp"
 #include "microphysics.hpp"
 
 #include <string>

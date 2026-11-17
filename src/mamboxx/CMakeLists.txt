@@ -4,7 +4,14 @@ message(STATUS "Configuring mam4xx box model")
 # Single Column model (Same # of vertical columns as library)
 #-------------------------------------------------------------
 
-add_executable(mamscm column.cpp config.cpp main.cpp run.cpp)
+add_executable(mamscm
+  column.cpp
+  config.cpp
+  main.cpp
+  run.cpp
+  microphysics.cpp
+  dropmixnuc.cpp
+)
 target_link_libraries(mamscm PUBLIC mam4xx)
 target_include_directories(mamscm PUBLIC
   ${EKAT_INCLUDE_DIRS}
@@ -25,7 +32,14 @@ configure_file(
   @ONLY
 )
 
-add_executable(mamboxx column.cpp config.cpp main.cpp run.cpp)
+add_executable(mamboxx
+  column.cpp
+  config.cpp
+  main.cpp
+  run.cpp
+  microphysics.cpp
+  dropmixnuc.cpp
+)
 target_link_libraries(mamboxx PUBLIC mam4xx)
 target_include_directories(mamboxx PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/box>

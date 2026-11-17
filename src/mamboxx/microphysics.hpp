@@ -124,6 +124,7 @@ public:
             mam4::Prognostics &prognostics,
             const ColumnLocation &location,
             ExternalConditions &external_conditions,
+            FixedSpeciesView &invariants,
             Real dt);
 
   // Given the atmospheric conditions and the prognostic state, compute microphysics diagnostics.

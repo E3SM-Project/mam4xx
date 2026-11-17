@@ -35,9 +35,9 @@ struct State {
   mam4::Prognostics prognostics;
 
   struct {
-    mam4::microphysics::ColumnLocation  location;
-    mam4::microphysics::ExternalForcing external_forcing;
-    mam4::microphysics::Invariants      invariants;
+    mam4::microphysics::ColumnLocation     location;
+    mam4::microphysics::ExternalConditions external_conditions;
+    mam4::microphysics::FixedSpeciesView   invariants;
   } microphysics;
 };
 
@@ -149,55 +149,10 @@ std::tuple<Processes, State> initialize(const Config &config) {
   return std::make_tuple(std::move(processes), state);
 }
 
-void external_forcing(State &state, Real dt) {
-  // TODO: add when appropriate
-}
-
-void set_invariants(State &state, Real dt) {
-  auto policy = TeamPolicyFactory::get_default_team_policy(1, mam4::nlev);
-  View1D cnst_offline[mam4::mo_setinv::num_tracer_cnst];
-  // FIXME: populate offline constituents 
-  Kokkos::parallel_for("mamboxx::set_invariants", policy, KOKKOS_LAMBDA(const ThreadTeam &team) {
-    mam4::mo_setinv::setinv(team,                                    // in
-                            state.invariants,                        // out
-                            state.atmosphere.temperature,            // in
-                            state.atmosphere.vapor_mixing_ratio,     // in
-                            cnst_offline,                            // in
-                            state.atmosphere.pressure);              // in
-  });
-}
-
-void compute_o3_column_density(State &state, Real dt) {
-}
-
-void photo_table(State &state, Real dt) {
-}
-
-void sethet(State &state, Real dt) {
-}
-
-void drydep_xactive(State &state, Real dt) {
-}
-
-void gas_phase_chemistry(State &state, Real dt) {
-}
-
-void setsox(State &state, Real dt) {
-}
-
-void modal_aero_amicphys_intr(State &state, Real dt) {
-}
-
-void vmr2mmr_cw(State &state, Real dt) {
-}
-
-void linoz(State &state, Real dt) {
-}
-
 void step(const Processes &processes, State &state, Real dt) {
   if (processes.microphysics.get() != nullptr) {
     processes.microphysics->step(state.atmosphere, state.prognostics,
-                                 state.microphysics.location, state.microphysics.external_forcing,
+                                 state.microphysics.location, state.microphysics.external_conditions,
                                  state.microphysics.invariants, dt);
   }
 }
