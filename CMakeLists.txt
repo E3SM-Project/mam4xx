@@ -23,7 +23,7 @@ endif()
 # are we building as part of EAMxx, or in standalone mode?
 if (NOT DEFINED EAMXX_VERSION_MAJOR)
   set(MAM4XX_STANDALONE ON)
-  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD 20)
   set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # emit compile_commands.json for use with clangd
 else()
   set(MAM4XX_STANDALONE OFF)
