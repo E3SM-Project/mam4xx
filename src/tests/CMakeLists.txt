@@ -66,11 +66,11 @@ EkatCreateUnitTest(mam4_photo_setcol
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
 
 EkatCreateUnitTest(gas_chem_direct_solver_unit_tests
-  gas_chem_direct_solver_unit_tests.cpp
+  SOURCES gas_chem_direct_solver_unit_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
 
 EkatCreateUnitTest(gas_phase_chemistry_smoke_tests
-  gas_phase_chemistry_smoke_tests.cpp
+  SOURCES gas_phase_chemistry_smoke_tests.cpp
   LIBS mam4xx_tests USER_DEFINED_TEST_SESSION)
 
 
