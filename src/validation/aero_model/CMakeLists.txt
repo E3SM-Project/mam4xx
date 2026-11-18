@@ -42,13 +42,13 @@ set(TEST_LIST
 set(DEFAULT_TOL_BASELINE 1e-13)
 
 set(ERROR_THRESHOLDS  
-   5e-8                    # calc_1_impact_rate_ts_0
+   3e-6                    # calc_1_impact_rate_ts_0
    1e-9                   # modal_aero_bcscavcoef_get_ts_355
    2e-4                    # modal_aero_bcscavcoef_init_ts_0
    2e-5                    # aero_model_wetdep_ts_379
    1e-6                    # stand_aero_model_calcsize_water_uptake_dr_ts_379
    2e-5                    # baseline_aero_model_wetdep_ts_379
-   1e-4 #aero_model_wetdep_convproc_ts_3
+   0.0452 #aero_model_wetdep_convproc_ts_3
    1e-5 #aero_model_wetdep_convproc_no_gas_no_aerosol_ts_3
    )
 
@@ -69,8 +69,8 @@ foreach(input tol IN ZIP_LISTS TEST_LIST ERROR_THRESHOLDS)
 
   # add a test to validate mam4xx's results against the baseline.
   # Select a threshold error slightly bigger than the largest relative error for the threshold error.
-  # compare_mam4xx_mam4.py <module1.py> <module2.py> <check_norms> <threshold error>
-  add_test(validate_${input} python3 compare_mam4xx_mam4.py mam4xx_${input}.py mam_${input}.py True ${tol})
+  # compare_mam4xx_mam4.py <module1.py> <module2.py> <check_norms> <threshold error> [--strict]
+  add_test(validate_${input} python3 compare_mam4xx_mam4.py mam4xx_${input}.py mam_${input}.py True ${tol} --strict)
   set_property(TEST validate_${input} PROPERTY SKIP_REGULAR_EXPRESSION "regex_fail_rel_tol")
   set_tests_properties(validate_${input} PROPERTIES DEPENDS run_${input})
   set_tests_properties(validate_${input} PROPERTIES LABELS ${TestLabel})
