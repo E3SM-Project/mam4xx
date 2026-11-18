@@ -10,10 +10,6 @@
 #include <ekat_parameter_list.hpp>
 #include <ekat_yaml.hpp>
 
-#include <ekat_assert.hpp>
-#include <ekat_parameter_list.hpp>
-#include <ekat_yaml.hpp>
-
 namespace mamboxx {
 
 namespace {

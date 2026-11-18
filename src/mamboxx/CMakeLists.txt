@@ -1,5 +1,8 @@
 message(STATUS "Configuring mam4xx box model")
 
+# Configure an appropriate Python interpreter for parsing input and running verification checks.
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+
 #-------------------------------------------------------------
 # Single Column model (Same # of vertical columns as library)
 #-------------------------------------------------------------
@@ -12,7 +15,7 @@ add_executable(mamscm
   microphysics.cpp
   dropmixnuc.cpp
 )
-target_link_libraries(mamscm PUBLIC mam4xx)
+target_link_libraries(mamscm PUBLIC mam4xx Python3::Python)
 target_include_directories(mamscm PUBLIC
   ${EKAT_INCLUDE_DIRS}
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
@@ -40,7 +43,7 @@ add_executable(mamboxx
   microphysics.cpp
   dropmixnuc.cpp
 )
-target_link_libraries(mamboxx PUBLIC mam4xx)
+target_link_libraries(mamboxx PUBLIC mam4xx Python3::Python)
 target_include_directories(mamboxx PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/box>
   ${EKAT_INCLUDE_DIRS}
