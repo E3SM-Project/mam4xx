@@ -23,6 +23,9 @@ using View3D            = mam4::DeviceType::view_3d<Real>;
 using ThreadTeam        = mam4::ThreadTeam;
 using TeamPolicyFactory = ekat::TeamPolicyFactory<ekat::KokkosTypes<ekat::DefaultDevice>::ExeSpace>;
 
+struct Config {
+};
+
 // WorkArrays collects all the work arrays used by the DropMixNuc class. These work arrays are
 // used as needed by DropMixNuc but ownership is not transferred. This allows DropMixNuc to
 // share memory with other processes.

@@ -57,6 +57,7 @@ struct TimeConfig {
 // aerosol process switchboard
 struct ControlConfig {
   mam4::microphysics::Config microphysics;
+  mam4::aci::Config          aerosol_cloud_interaction;
 };
 
 // prevailing atmospheric conditions (column data)
@@ -96,6 +97,7 @@ struct Diagnostics {
 };
 
 struct Config {
+  std::string      name;
   TimeConfig       time;
   ControlConfig    control;
   AtmosphereConfig atmosphere;

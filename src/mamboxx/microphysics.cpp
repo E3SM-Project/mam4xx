@@ -360,13 +360,12 @@ void Microphysics::modal_aero_amicphys_intr(const Atmosphere &atmosphere, Real d
   auto policy = TeamPolicyFactory::get_default_team_policy(1, mam4::nlev);
 
   // FIXME: how can we obtain the wet/dry diameters?
+  // FIXME: what is "wet density"?
   /*
   const auto wet_diameter =
     get_field_in("dgnumwet").get_view<const Real ***>();
   const auto dry_diameter =
     get_field_in("dgnum").get_view<const Real ***>();
-  */
-  // FIXME: what is "wet density"?
   const auto wetdens = get_field_in("wetdens").get_view<const Real ***>();
 
   auto& dgncur_awet_loc = dgncur_awet_;
@@ -381,6 +380,7 @@ void Microphysics::modal_aero_amicphys_intr(const Atmosphere &atmosphere, Real d
         wetdens_loc(kk, imode) = wetdens(imode, kk);
       }
       });
+  */
 
   const auto& config_amicphys = config_.amicphys;
 
@@ -397,9 +397,11 @@ void Microphysics::modal_aero_amicphys_intr(const Atmosphere &atmosphere, Real d
   Kokkos::parallel_for("MAMMicrophysics::run_impl::modal_aero_amicphys_intr", policy,
       KOKKOS_LAMBDA(const ThreadTeam &team) {
 
+      /* FIXME: still don't know how to obtain these
       const auto& dgncur_awet_icol = ekat::subview(dgncur_awet_loc,icol);
       const auto& dgncur_a_icol = ekat::subview(dgncur_a_loc,icol);
       const auto& wetdens_icol = ekat::subview(wetdens_loc,icol);
+      */
 
       Kokkos::parallel_for(
           Kokkos::TeamVectorRange(team, nlev),
@@ -415,9 +417,14 @@ void Microphysics::modal_aero_amicphys_intr(const Atmosphere &atmosphere, Real d
           const Real pblh = atmosphere.planetary_boundary_layer_height;
           const Real qv = atmosphere.vapor_mixing_ratio(kk);
           const Real cldfrac = atmosphere.cloud_fraction(kk);
+          /* FIXME:
           const auto& dgncur_awet_kk = ekat::subview(dgncur_awet_icol,kk);
           const auto& dgncur_a_kk = ekat::subview(dgncur_a_icol,kk);
           const auto& wetdens_kk = ekat::subview(wetdens_icol,kk);
+           */
+          View1D dgncur_awet_kk;
+          View1D dgncur_a_kk;
+          View1D wetdens_kk;
 
           auto vmr_kk = ekat::subview(vmr,kk);
           auto vmrcw_kk = ekat::subview(vmrcw,kk);
