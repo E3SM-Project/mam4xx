@@ -223,10 +223,9 @@ void aero_model_wetdep(Ensemble *ensemble) {
               // output
               aerdepwetis, aerdepwetcw, work, isprx, aerdepwetis_convproc,
               // Convection parameters
-              scratch1Dviews, du_icol, eu_icol, ed_icol,
-              dp_icol, p_del_dry_icol, ktop, kbot, convproc_do_aer,
-              convproc_do_gas, zm_activity, species_class, mmtoo_prevap_resusp,
-              aero_config);
+              scratch1Dviews, du_icol, eu_icol, ed_icol, dp_icol,
+              p_del_dry_icol, ktop, kbot, convproc_do_aer, convproc_do_gas,
+              zm_activity, species_class, mmtoo_prevap_resusp, aero_config);
 
           team.team_barrier();
           Kokkos::parallel_for(

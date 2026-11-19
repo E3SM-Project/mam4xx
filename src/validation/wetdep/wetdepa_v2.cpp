@@ -11,13 +11,13 @@
 using namespace skywalker;
 
 KOKKOS_INLINE_FUNCTION
-void wetdep_prevap_step(
-    const int is_st_cu, const int mam_prevap_resusp_optcc, const Real pdel_ik,
-    const Real pprdx, const Real srcx, const Real arainx,
-    const Real precabx_old, const Real precabx_base_old,
-    const Real scavabx_old, const Real precnumx_base_old,
-    Real &precabx_new, Real &precabx_base_new,
-    Real &scavabx_new, Real &precnumx_base_new) {
+void wetdep_prevap_step(const int is_st_cu, const int mam_prevap_resusp_optcc,
+                        const Real pdel_ik, const Real pprdx, const Real srcx,
+                        const Real arainx, const Real precabx_old,
+                        const Real precabx_base_old, const Real scavabx_old,
+                        const Real precnumx_base_old, Real &precabx_new,
+                        Real &precabx_base_new, Real &scavabx_new,
+                        Real &precnumx_base_new) {
   constexpr Real small_value_30 = 1.e-30;
   const Real gravit = mam4::Constants::gravity;
 
@@ -26,7 +26,8 @@ void wetdep_prevap_step(
 
   Real tmpa = mam4::max(0.0, pprdx * pdel_ik / gravit);
   precabx_base_new = mam4::max(0.0, precabx_base_old + tmpa);
-  precabx_new = mam4::utils::min_max_bound(0.0, precabx_base_new, precabx_old + tmpa);
+  precabx_new =
+      mam4::utils::min_max_bound(0.0, precabx_base_new, precabx_old + tmpa);
 
   if (mam_prevap_resusp_optcc <= 130) {
     tmpa = mam4::max(0.0, srcx * pdel_ik / gravit);
@@ -204,23 +205,24 @@ void test_wetdepa_v2_process(const Input &input, Output &output) {
 
           // Scavenging quantities
           const Real clddiff = cldt_dev[kk] - cldc_dev[kk];
-          const Real tracer_tmp = mam4::min(
-              qqcw_dev[kk], tracer_dev[kk] * (clddiff / mam4::max(small_value_2,
-                                                                 (1. - clddiff))));
+          const Real tracer_tmp =
+              mam4::min(qqcw_dev[kk],
+                        tracer_dev[kk] * (clddiff / mam4::max(small_value_2,
+                                                              (1. - clddiff))));
           const Real tracer_incu =
               f_act_conv_dev[kk] * (tracer_dev[kk] + tracer_tmp);
-          Real tracer_mean = tracer_dev[kk] *
-                                 (1. - cldc_dev[kk] * f_act_conv_dev[kk]) -
-                             cldc_dev[kk] * f_act_conv_dev[kk] * tracer_tmp;
+          Real tracer_mean =
+              tracer_dev[kk] * (1. - cldc_dev[kk] * f_act_conv_dev[kk]) -
+              cldc_dev[kk] * f_act_conv_dev[kk] * tracer_tmp;
           tracer_mean = mam4::max(0., tracer_mean);
 
           // Convective scavenging
-          Real fracp_c =
-              cmfdqr_dev[kk] * deltat /
-              mam4::max(small_value_12,
-                        cldc_dev[kk] * conicw_dev[kk] +
-                            (cmfdqr_dev[kk] + dlf_dev[kk]) * deltat);
-          fracp_c = mam4::utils::min_max_bound(0.0, 1.0, fracp_c) * cldc_dev[kk];
+          Real fracp_c = cmfdqr_dev[kk] * deltat /
+                         mam4::max(small_value_12,
+                                   cldc_dev[kk] * conicw_dev[kk] +
+                                       (cmfdqr_dev[kk] + dlf_dev[kk]) * deltat);
+          fracp_c =
+              mam4::utils::min_max_bound(0.0, 1.0, fracp_c) * cldc_dev[kk];
           Real srcc = 0;
           Real finc = 0;
           mam4::wetdep::wetdep_scavenging(
@@ -229,9 +231,9 @@ void test_wetdepa_v2_process(const Input &input, Output &output) {
               tracer_mean, srcc, finc);
 
           // Stratiform scavenging
-          Real fracp_s = precs_dev[kk] * deltat /
-                         mam4::max(small_value_12,
-                                   cwat_dev[kk] + precs_dev[kk] * deltat);
+          Real fracp_s =
+              precs_dev[kk] * deltat /
+              mam4::max(small_value_12, cwat_dev[kk] + precs_dev[kk] * deltat);
           fracp_s = mam4::utils::min_max_bound(0.0, 1.0, fracp_s);
           Real srcs = 0;
           Real fins = 0;
@@ -250,9 +252,9 @@ void test_wetdepa_v2_process(const Input &input, Output &output) {
           const Real srct = (srcc + srcs) * omsm;
 
           // Diagnostics
-          const Real fracp = deltat * srct /
-                             mam4::max(cldvst_dev[kk] * tracer_dev[kk],
-                                       small_value_36);
+          const Real fracp =
+              deltat * srct /
+              mam4::max(cldvst_dev[kk] * tracer_dev[kk], small_value_36);
           fracis_dev[kk] = 1.0 - mam4::utils::min_max_bound(0.0, 1.0, fracp);
           iscavt_dev[kk] = -(srcc * finc + srcs * fins) * omsm;
           icscavt_dev[kk] = -(srcc * finc) * omsm;
@@ -262,10 +264,10 @@ void test_wetdepa_v2_process(const Input &input, Output &output) {
             bsscavt_dev[kk] = -(srcs * (1.0 - fins)) * omsm +
                               fracev_st * scavabs * gravit / pdel_dev[kk];
             // Update column fluxes for optcc == 0
-            scavabs = scavabs * (1.0 - fracev_st) +
-                      srcs * pdel_dev[kk] / gravit;
-            scavabc = scavabc * (1.0 - fracev_cu) +
-                      srcc * pdel_dev[kk] / gravit;
+            scavabs =
+                scavabs * (1.0 - fracev_st) + srcs * pdel_dev[kk] / gravit;
+            scavabc =
+                scavabc * (1.0 - fracev_cu) + srcc * pdel_dev[kk] / gravit;
             precabs += (precs_dev[kk] - evaps_dev[kk]) * pdel_dev[kk] / gravit;
             precabc += (cmfdqr_dev[kk] - evapc_dev[kk]) * pdel_dev[kk] / gravit;
           } else {
@@ -277,8 +279,10 @@ void test_wetdepa_v2_process(const Input &input, Output &output) {
             Real resusp_s = mam4::wetdep::wetdep_resusp(
                 1, mam_prevap_resusp_optcc, pdel_dev[kk], evaps_dev[kk],
                 precabs, precabs_base, scavabs, precnums_base);
-            const Real tmpa_s = mam4::max(0.0, evaps_dev[kk] * pdel_dev[kk] / gravit);
-            Real precabx_tmp_s = mam4::utils::min_max_bound(0.0, precabs_base, precabs - tmpa_s);
+            const Real tmpa_s =
+                mam4::max(0.0, evaps_dev[kk] * pdel_dev[kk] / gravit);
+            Real precabx_tmp_s =
+                mam4::utils::min_max_bound(0.0, precabs_base, precabs - tmpa_s);
             Real precabx_base_tmp_s = precabs_base;
             Real scavabx_tmp_s = scavabs;
             Real precnumx_base_tmp_s = precnums_base;
@@ -295,19 +299,21 @@ void test_wetdepa_v2_process(const Input &input, Output &output) {
                 scavabx_tmp_s = mam4::max(0.0, scavabs - resusp_s);
               }
             }
-            wetdep_prevap_step(
-                1, mam_prevap_resusp_optcc, pdel_dev[kk], precs_dev[kk],
-                srcs, arainx_s, precabx_tmp_s, precabx_base_tmp_s,
-                scavabx_tmp_s, precnumx_base_tmp_s, precabs, precabs_base,
-                scavabs, precnums_base);
+            wetdep_prevap_step(1, mam_prevap_resusp_optcc, pdel_dev[kk],
+                               precs_dev[kk], srcs, arainx_s, precabx_tmp_s,
+                               precabx_base_tmp_s, scavabx_tmp_s,
+                               precnumx_base_tmp_s, precabs, precabs_base,
+                               scavabs, precnums_base);
 
             // Convective
             const Real arainx_c = mam4::max(cldvcu_dev[next_k], small_value_2);
             Real resusp_c = mam4::wetdep::wetdep_resusp(
                 2, mam_prevap_resusp_optcc, pdel_dev[kk], evapc_dev[kk],
                 precabc, precabc_base, scavabc, precnumc_base);
-            const Real tmpa_c = mam4::max(0.0, evapc_dev[kk] * pdel_dev[kk] / gravit);
-            Real precabx_tmp_c = mam4::utils::min_max_bound(0.0, precabc_base, precabc - tmpa_c);
+            const Real tmpa_c =
+                mam4::max(0.0, evapc_dev[kk] * pdel_dev[kk] / gravit);
+            Real precabx_tmp_c =
+                mam4::utils::min_max_bound(0.0, precabc_base, precabc - tmpa_c);
             Real precabx_base_tmp_c = precabc_base;
             Real scavabx_tmp_c = scavabc;
             Real precnumx_base_tmp_c = precnumc_base;
@@ -324,11 +330,11 @@ void test_wetdepa_v2_process(const Input &input, Output &output) {
                 scavabx_tmp_c = mam4::max(0.0, scavabc - resusp_c);
               }
             }
-            wetdep_prevap_step(
-                2, mam_prevap_resusp_optcc, pdel_dev[kk], cmfdqr_dev[kk],
-                srcc, arainx_c, precabx_tmp_c, precabx_base_tmp_c,
-                scavabx_tmp_c, precnumx_base_tmp_c, precabc, precabc_base,
-                scavabc, precnumc_base);
+            wetdep_prevap_step(2, mam_prevap_resusp_optcc, pdel_dev[kk],
+                               cmfdqr_dev[kk], srcc, arainx_c, precabx_tmp_c,
+                               precabx_base_tmp_c, scavabx_tmp_c,
+                               precnumx_base_tmp_c, precabc, precabc_base,
+                               scavabc, precnumc_base);
           }
         }
       });
