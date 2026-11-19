@@ -175,7 +175,7 @@ private:
   void gas_phase_chemistry(const Atmosphere &atmosphere, const ExternalConditions &external_conditions, Real dt);
   void setsox(const Atmosphere &atmosphere, const ExternalConditions &external_conditions, Real dt);
   void modal_aero_amicphys_intr(const Atmosphere &atmosphere, Real dt);
-  void vmr2mmr_cw(State &state, Real dt);
+  //void vmr2mmr_cw(State &state, Real dt);
   //void linoz(State &state, Real dt);
 };
 
