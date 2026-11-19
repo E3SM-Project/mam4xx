@@ -6,9 +6,6 @@
 #include "mamboxx.hpp"
 #include <mam4xx/mam4_math.hpp>
 
-#define PY_SSIZE_T_CLEAN
-#include <Python.h>
-
 namespace mamboxx {
 
 namespace {

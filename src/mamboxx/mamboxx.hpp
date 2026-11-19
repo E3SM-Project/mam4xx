@@ -3,9 +3,11 @@
 // National Technology & Engineering Solutions of Sandia, LLC (NTESS)
 // SPDX-License-Identifier: BSD-3-Clause
 
-
 #include "dropmixnuc.hpp"
 #include "microphysics.hpp"
+
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
 
 #include <string>
 #include <map>
@@ -93,16 +95,21 @@ struct GasConfig {
   std::map<std::string, std::vector<Real>> mass_mixing_ratios;
 };
 
+struct VerificationConfig {
+  std::vector<PyObject *> checks;
+};
+
 struct Diagnostics {
 };
 
 struct Config {
-  std::string      name;
-  TimeConfig       time;
-  ControlConfig    control;
-  AtmosphereConfig atmosphere;
-  AerosolConfig    aerosols;
-  GasConfig        gases;
+  std::string        name;
+  TimeConfig         time;
+  ControlConfig      control;
+  AtmosphereConfig   atmosphere;
+  AerosolConfig      aerosols;
+  GasConfig          gases;
+  VerificationConfig verification;
 };
 
 struct Result {

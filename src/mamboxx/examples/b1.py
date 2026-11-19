@@ -63,10 +63,11 @@ def no_clipping_occurred(state):
 
 def mass_and_number_fractions_increase_monatonically_with_supersaturation(state):
     # this can be done by constructing sensitivities from the various runs
+    return False
 
 
 def number_fraction_is_one_half_at_critical_supersaturation_of_median_diameter(state):
-    # etc
+    return False
 
 #----------------------
 # Box model invocation
@@ -89,7 +90,17 @@ box(name = 'B1_single_mode_sulfate',
 
     # enabled processes
     control = {
-        'droplet_activation': True,
+        'aerosol_cloud_interaction': {
+            'droplet_activation': {
+                'enable': True,
+                #'supersaturation_source': 'derived_from_relative_humidity',
+                #'updraft_supersaturation_closure': False,
+                #'evaluation': 'diagnostic_only',
+                'critical_relation': 'dilute_kappa_kohler',
+                # Diameter convention: A=4*sigma*M_w/(R*T*rho_w)=2.4128472972784091e-9 m.
+                # A kernel using the radius convention must use a=A/2 with matched constants.
+            },
+        },
         'gas_chemistry': False,
         'gas_aerosol_exchange': False,
         'rename': False,
@@ -126,12 +137,6 @@ box(name = 'B1_single_mode_sulfate',
         # If the backend needs dry-air mixing ratios, divide concentrations by the
         # same diagnosed dry-air density and record that density and conversion.
 
-        # NOTE: these things are all fixed either at compile time or within mam4xx
-        #'concentration_basis': 'per_m3_air',
-        #'composition_basis': 'dry_mass_fraction',
-        #'distribution': 'untruncated_lognormal',
-        #'initialization': 'derive_species_masses_from_number_size_composition',
-
         # NOTE: these two should be policies for the driver (or not)
         #'missing_species': zero
         #'empty_modes':     exact_zero
@@ -156,21 +161,6 @@ box(name = 'B1_single_mode_sulfate',
         'so2': 0.0,
         'so4': 0.0,
         'soag': 0.0,
-    },
-
-    # Evaluate the production activation-fraction mapping at s=RH-1, bypassing
-    # maxsat and velocity gates. Report eligible N and dry mass over the entire
-    # aerosol population, without cloud-fraction weighting or reservoir updates.
-    # This is equilibrium eligibility, not finite-time growth or a flux test.
-    droplet_activation = {
-        # NOTE: These are likely fixed by mam4xx in the first place
-        #'supersaturation_source': 'derived_from_relative_humidity',
-        #'updraft_supersaturation_closure': 'disabled',
-        #'evaluation': 'diagnostic_only',
-
-        'critical_relation': 'dilute_kappa_kohler',
-        # Diameter convention: A=4*sigma*M_w/(R*T*rho_w)=2.4128472972784091e-9 m.
-        # A kernel using the radius convention must use a=A/2 with matched constants.
     },
 
     output = {

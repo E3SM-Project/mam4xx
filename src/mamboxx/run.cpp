@@ -164,6 +164,23 @@ void update_diagnostics(const Processes &processes, const State &state, Real dt,
   }
 }
 
+PyObject *create_python_prognostics(const State &state) {
+  PyObject *py_progs = _PyObject_New(&PyBaseObject_Type);
+  return py_progs;
+}
+
+PyObject *create_python_diagnostics(const State &state) {
+  PyObject *py_diags = _PyObject_New(&PyBaseObject_Type);
+  return py_diags;
+}
+
+PyObject *create_python_state(const State &state) {
+  PyObject *py_state = _PyObject_New(&PyBaseObject_Type);
+  PyObject_SetAttrString(py_state, "prognostics", create_python_prognostics(state));
+  PyObject_SetAttrString(py_state, "diagnostics", create_python_diagnostics(state));
+  return py_state;
+}
+
 void finalize(const State &state, Result &result) {
   auto host_view = create_host_column_view(mam4::nlev);
 
@@ -203,6 +220,12 @@ Result run(const Config &config) {
   for (int i = 0; i < config.time.nstep; ++i) {
     step(processes, state, config.time.dt);
     update_diagnostics(processes, state, config.time.dt, diagnostics);
+  }
+
+  // assemble a Python-sensible aerosol state and run checks on it
+  PyObject *py_state = create_python_state(state);
+  for (auto check: config.verification.checks) {
+    PyObject_Call(check, py_state, NULL);
   }
 
   Result result = {};
