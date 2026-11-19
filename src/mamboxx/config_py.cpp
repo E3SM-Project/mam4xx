@@ -4,7 +4,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 #include "mamboxx.hpp"
-#include <dictobject.h>
 #include <mam4xx/mam4_math.hpp>
 
 #define PY_SSIZE_T_CLEAN
@@ -14,27 +13,7 @@ namespace mamboxx {
 
 namespace {
 
-
-
-// Registers Python functions and objects as global objects, returning a dictionary of these
-// globals.
-PyObject* register_python_globals() {
-  Py_Initialize();
-  std::atexit(Py_Finalize);
-
-  PyObject *globals = PyDict_New();
-
-  // convenient physical constants
-  PyObject *constants ٍ= PyDict_New();
-  PyDict_SetItemString(constants, "gas_constant", PyFloat_FromDouble(8.314563841815325));
-  PyDict_SetItemString(globals, "constants", constants);
-
-  // box model function
-  // FIXME:
-  PyDict_SetItemString(globals, "box", box_model_entry_point);
-}
-
-TimeConfig read_time(const ekat::ParameterList &params) {
+TimeConfig read_time(PyObject *time) {
   TimeConfig cfg = {};
   cfg.dt = static_cast<Real>(params.get<double>("dt"));
   cfg.nstep = params.get<int>("nstep");
@@ -43,7 +22,7 @@ TimeConfig read_time(const ekat::ParameterList &params) {
   return cfg;
 }
 
-mam4::microphysics::Config read_microphysics_config(const ekat::ParameterList &params) {
+mam4::microphysics::Config read_microphysics_config(PyObject *microphys) {
   mam4::microphysics::Config config = {};
   if (params.isParameter("gas_chemistry"))
     config.gas_chemistry = params.get<bool>("gas_chemistry");
@@ -58,7 +37,7 @@ mam4::microphysics::Config read_microphysics_config(const ekat::ParameterList &p
   return config;
 }
 
-ControlConfig read_control(const ekat::ParameterList &params) {
+ControlConfig read_control(PyObject *control) {
   ControlConfig cfg = {};
   if (params.isSublist("microphysics")) {
     auto microphys = params.sublist("microphysics");
@@ -67,7 +46,7 @@ ControlConfig read_control(const ekat::ParameterList &params) {
   return cfg;
 }
 
-std::vector<Real> read_box_or_column(const ekat::ParameterList &params, const std::string &name) {
+std::vector<Real> read_box_or_column(PyObject *value, const std::string &name) {
   EKAT_REQUIRE(params.isType<double>(name) or params.isType<std::vector<double>>(name),
     params.name() << "." << name << " is neither a scalar nor a column");
   std::vector<Real> values;
@@ -83,7 +62,7 @@ std::vector<Real> read_box_or_column(const ekat::ParameterList &params, const st
   return values;
 }
 
-AtmosphereConfig read_atmosphere(const ekat::ParameterList &params) {
+AtmosphereConfig read_atmosphere(PyObject *atmosphere) {
   AtmosphereConfig cfg = {};
   EKAT_REQUIRE(params.isParameter("temperature"), "No atmosphere.temperature specified");
   EKAT_REQUIRE(params.isParameter("pressure"), "No atmosphere.pressure specified");
@@ -173,7 +152,7 @@ void compute_mass_mixing_ratios_from_mass_fractions(const AtmosphereConfig &atmo
   }
 }
 
-AerosolModeConfig read_aerosol_mode(const AtmosphereConfig &atmosphere, const ekat::ParameterList &params) {
+AerosolModeConfig read_aerosol_mode(const AtmosphereConfig &atmosphere, PyObject *mode) {
   AerosolModeConfig cfg = {};
   cfg.name = params.name();
 
@@ -218,7 +197,7 @@ AerosolModeConfig read_aerosol_mode(const AtmosphereConfig &atmosphere, const ek
   return cfg;
 }
 
-AerosolConfig read_aerosols(const AtmosphereConfig &atmosphere, const ekat::ParameterList &params) {
+AerosolConfig read_aerosols(const AtmosphereConfig &atmosphere, PyObject *aerosols) {
   AerosolConfig cfg = {};
   EKAT_REQUIRE(params.isSublist("modes"), "No aerosol.modes specified");
   auto modes = params.sublist("modes");
@@ -250,7 +229,7 @@ AerosolConfig read_aerosols(const AtmosphereConfig &atmosphere, const ekat::Para
   return cfg;
 }
 
-GasConfig read_gases(const ekat::ParameterList &params) {
+GasConfig read_gases(PyObject *gases) {
   GasConfig cfg = {};
   auto gas_names = params.param_names();
   for (const std::string &gas_name: gas_names) {
@@ -274,48 +253,96 @@ GasConfig read_gases(const ekat::ParameterList &params) {
   return cfg;
 }
 
+PyObject *box(PyObject *self, PyObject *args, PyObject *keywords) {
+  Config *config = (Config*)self;
+
+  char     *name;
+  PyObject *parameter_sweep, *time, *control, *atmosphere, *aerosols, *gases,
+           *droplet_activation, *output, *verification;
+
+  static const char *keyword_list[] = {
+    "name",
+    "parameter_sweep",
+    "time",
+    "control",
+    "atmosphere",
+    "aerosols",
+    "gases",
+    "droplet_activation",
+    "output",
+    "verification",
+    nullptr
+  };
+  if (!PyArg_ParseTupleAndKeywords(args, keywords, "$sO!O!O!O!O!O!O!O!O!", keyword_list, &name,
+                                   &PyDict_Type, &parameter_sweep, &PyDict_Type, &time,
+                                   &PyDict_Type, &control, &PyDict_Type, &atmosphere,
+                                   &PyDict_Type, &aerosols, &PyDict_Type, &gases,
+                                   &PyDict_Type, &droplet_activation, &PyDict_Type, &output,
+                                   &PyDict_Type, &verification))
+    return nullptr;
+
+  // FIXME
+  EKAT_REQUIRE(time != nullptr, "No time section found in input");
+  EKAT_REQUIRE(control != nullptr, "No control section found in input");
+  EKAT_REQUIRE(atmosphere != nullptr, "No atmosphere section found in input");
+  EKAT_REQUIRE(aerosols != nullptr, "No aerosols section found in input");
+  EKAT_REQUIRE(gases != nullptr, "No gases section found in input");
+
+  config->name = name;
+  config->time = read_time(time);
+  config->control = read_control(control);
+  config->atmosphere = read_atmosphere(atmosphere);
+  config->aerosols = read_aerosols(config->atmosphere, aerosols);
+  config->gases = read_gases(aerosols);
+
+  Py_INCREF(Py_None);
+  return Py_None;
+}
+
+const char *box_docstring = """Write lots of stuff here!!!""";
+PyMethodDef box_def = {"box", box, METH_VARARGS | METH_KEYWORDS, box_docstring};
+
+// Registers Python functions and objects as global objects, returning a dictionary of these
+// globals.
+PyObject* register_python_globals(Config &config) {
+  Py_Initialize();
+  std::atexit(Py_Finalize);
+
+  PyObject *globals = PyDict_New();
+
+  // convenient physical constants
+  PyObject *constants = PyDict_New();
+  PyDict_SetItemString(constants, "gas_constant", PyFloat_FromDouble(8.314563841815325));
+  PyDict_SetItemString(globals, "constants", constants);
+
+  // box model function
+  PyObject *box_function = PyCFunction_New(&box_def, (PyObject*)&config);
+  PyDict_SetItemString(globals, "box", box_function);
+}
+
 } // anonymous namespace
 
 Config read_config(const std::string &filename) {
+  Config config = {};
+
   EKAT_REQUIRE(not Py_IsInitialized(), "Python interpreter already initialized for some reason!");
-  auto *globals = register_python_globals();
+  auto *globals = register_python_globals(config);
 
   FILE *f = std::fopen(filename.c_str(), "r");
-  PyRun_FileEx(f, filename.c_str(), Py_file_input, globals, locals, 1);
-
-  auto params = ekat::parse_yaml_file(filename);
-
-  EKAT_REQUIRE(params.isSublist("time"), "No time section found in " << filename);
-  EKAT_REQUIRE(params.isSublist("control"), "No control section found in " << filename);
-  EKAT_REQUIRE(params.isSublist("atmosphere"), "No atmosphere section found in " << filename);
-  EKAT_REQUIRE(params.isSublist("aerosols"), "No aerosols section found in " << filename);
-  EKAT_REQUIRE(params.isSublist("gases"), "No gases section found in " << filename);
-
-  auto time = params.sublist("time");
-  auto control = params.sublist("control");
-  auto atmosphere = params.sublist("atmosphere");
-  auto aerosols = params.sublist("aerosols");
-  auto gases = params.sublist("gases");
-
-  Config cfg = {};
-  cfg.time = read_time(time);
-  cfg.control = read_control(control);
-  cfg.atmosphere = read_atmosphere(atmosphere);
-  cfg.aerosols = read_aerosols(cfg.atmosphere, aerosols);
-  cfg.gases = read_gases(aerosols);
+  PyRun_FileEx(f, filename.c_str(), Py_file_input, globals, nullptr, 1);
 
   size_t num_modes = cfg.aerosols.modes.size();
   EKAT_REQUIRE(num_modes > 0, "no aerosol modes specified");
 
   // verify that # of vertical levels is the same everywhere
-  size_t n_atm  = cfg.atmosphere.temperature.size();
-  size_t n_aero = cfg.aerosols.modes.begin()->second.number_mixing_ratio.size();
-  size_t n_gas = cfg.aerosols.modes.size();
+  size_t n_atm  = config.atmosphere.temperature.size();
+  size_t n_aero = config.aerosols.modes.begin()->second.number_mixing_ratio.size();
+  size_t n_gas = config.aerosols.modes.size();
   EKAT_REQUIRE(n_atm == n_aero == n_gas,
       "number of vertical levels differs for atmosphere (" << n_atm << "), aerosols (" << n_aero <<
       "), and gases (" << n_gas);
 
-  return cfg;
+  return config;
 }
 
 }

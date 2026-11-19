@@ -9,7 +9,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
 add_executable(mamscm
   column.cpp
-  config.cpp
+  config_py.cpp
   main.cpp
   run.cpp
   microphysics.cpp
@@ -27,7 +27,7 @@ target_include_directories(mamscm PUBLIC
 # Box model (1 vertical column)
 #-------------------------------
 
-make_directory(${CMAKE_CURRENT_BINARY_DIR}/box)
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/box)
 set(MAM4XX_NUM_VERTICAL_LEVELS 1)
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/../mam4xx/mam4_config.hpp.in
@@ -37,7 +37,7 @@ configure_file(
 
 add_executable(mamboxx
   column.cpp
-  config.cpp
+  config_py.cpp
   main.cpp
   run.cpp
   microphysics.cpp

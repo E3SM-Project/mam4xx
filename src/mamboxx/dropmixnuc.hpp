@@ -1,5 +1,5 @@
-#ifndef MAM4XX_MICROPHYSICS_HPP
-#define MAM4XX_MICROPHYSICS_HPP
+#ifndef MAM4XX_DROPMIXNUC_HPP
+#define MAM4XX_DROPMIXNUC_HPP
 
 #include <mam4_config.hpp>
 #include <mam4xx/aero_config.hpp>
