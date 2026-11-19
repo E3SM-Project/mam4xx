@@ -156,11 +156,27 @@ void aero_model_wetdep_convproc(Ensemble *ensemble) {
     // Convection processing flags: convproc_do_aer is true; convproc_do_gas
     // can be true or false (default false unless specified)
     bool convproc_do_aer = input.get_array("convproc_do_aer")[0];
-    bool convproc_do_gas = input.get_array("convproc_do_gas")[0] ;
+    bool convproc_do_gas = input.get_array("convproc_do_gas")[0];
 
-    mam4::ConvProc::Config convproc_config;
-    const int *species_class = convproc_config.species_class;
-    const int *mmtoo_prevap_resusp = convproc_config.mmtoo_prevap_resusp;
+    // Species classification and resuspension mapping from ConvProc defaults.
+    // Copy them to device views so the kernel does not dereference host
+    // memory (same approach as the EAMxx wetscav interface).
+    const mam4::ConvProc::Config convproc_config;
+    Kokkos::View<int *> species_class_dev("species_class_dev",
+                                          mam4::aero_model::pcnst);
+    Kokkos::View<int *> mmtoo_prevap_resusp_dev("mmtoo_prevap_resusp_dev",
+                                                mam4::aero_model::pcnst);
+    {
+      auto species_class_host = Kokkos::create_mirror_view(species_class_dev);
+      auto mmtoo_prevap_resusp_host =
+          Kokkos::create_mirror_view(mmtoo_prevap_resusp_dev);
+      for (int i = 0; i < mam4::aero_model::pcnst; ++i) {
+        species_class_host(i) = convproc_config.species_class[i];
+        mmtoo_prevap_resusp_host(i) = convproc_config.mmtoo_prevap_resusp[i];
+      }
+      Kokkos::deep_copy(species_class_dev, species_class_host);
+      Kokkos::deep_copy(mmtoo_prevap_resusp_dev, mmtoo_prevap_resusp_host);
+    }
 
     // outputs
     mam4::ColumnView dlf =
@@ -184,9 +200,9 @@ void aero_model_wetdep_convproc(Ensemble *ensemble) {
                                   scavimptblnum_host);
 
     View2D scavimptblnum("scavimptblnum", mam4::aero_model::nimptblgrow_total,
-                          aero_config.num_modes());
+                         aero_config.num_modes());
     View2D scavimptblvol("scavimptblvol", mam4::aero_model::nimptblgrow_total,
-                          aero_config.num_modes());
+                         aero_config.num_modes());
     Kokkos::deep_copy(scavimptblnum, scavimptblnum_host);
     Kokkos::deep_copy(scavimptblvol, scavimptblvol_host);
 
@@ -268,9 +284,10 @@ void aero_model_wetdep_convproc(Ensemble *ensemble) {
               // output
               aerdepwetis, aerdepwetcw, work, isprx, aerdepwetis_convproc,
               // Convection parameters
-              scratch1Dviews, du_icol, eu_icol, ed_icol,
-              dp_icol, p_del_dry_icol, ktop, kbot, convproc_do_aer,
-              convproc_do_gas, 1, species_class, mmtoo_prevap_resusp, aero_config);
+              scratch1Dviews, du_icol, eu_icol, ed_icol, dp_icol,
+              p_del_dry_icol, ktop, kbot, convproc_do_aer, convproc_do_gas, 1,
+              species_class_dev.data(), mmtoo_prevap_resusp_dev.data(),
+              aero_config);
 
           team.team_barrier();
           Kokkos::parallel_for(
