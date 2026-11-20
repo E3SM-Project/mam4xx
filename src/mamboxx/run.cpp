@@ -62,7 +62,8 @@ void copy_vector_to_view(mam4::ConstColumnView device_view, const std::vector<Re
   for (int k = 0; k < vec.size(); ++k) {
     host_view[k] = vec[k];
   }
-  Kokkos::deep_copy(device_view, host_view);
+  mam4::ColumnView non_const_view((Real*)device_view.data(), mam4::nlev);
+  Kokkos::deep_copy(non_const_view, host_view);
 }
 
 void copy_view_to_vector(mam4::ColumnView device_view, std::vector<Real> &vec, HostColumnView host_view) {

@@ -9,7 +9,7 @@ option(MAM4XX_ENABLE_COVERAGE  "Enable code coverage instrumentation" OFF)
 option(MAM4XX_ENABLE_SKYWALKER "Enable Skywalker cross validation" ON)
 option(MAM4XX_ENABLE_TESTS     "Enable unit tests" ON)
 option(MAM4XX_EVAL_DIAGNOSTICS "Enable evaluation diagnostics" OFF)
-option(MAM4XX_ENABLE_BOXMODEL  "Enable box model" OFF)
+option(MAM4XX_ENABLE_BOX_MODEL "Enable box model" OFF)
 
 # Single or double precision?
 if (CMAKE_VERSION GREATER_EQUAL 4.2)
@@ -186,7 +186,7 @@ if (MAM4XX_STANDALONE)
     ${ekat_SOURCE_DIR}/extern/kokkos/core/src
     ${ekat_SOURCE_DIR}/extern/Catch2/single_include
   )
-  if (MAM4XX_ENABLE_BOXMODEL)
+  if (MAM4XX_ENABLE_BOX_MODEL)
     set(EKAT_INCLUDE_DIRS ${EKAT_INCLUDE_DIRS}
       ${ekat_SOURCE_DIR}/src/core
       ${ekat_SOURCE_DIR}/src/parser

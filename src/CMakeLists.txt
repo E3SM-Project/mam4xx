@@ -11,7 +11,7 @@ if (MAM4XX_ENABLE_SKYWALKER AND MAM4XX_PRECISION STREQUAL "double")
   add_subdirectory(validation)
 endif()
 
-if (MAM4XX_ENABLE_BOXMODEL)
+if (MAM4XX_ENABLE_BOX_MODEL)
   add_subdirectory(mamboxx)
 endif()
 

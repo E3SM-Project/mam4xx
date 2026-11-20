@@ -3,7 +3,7 @@
 // National Technology & Engineering Solutions of Sandia, LLC (NTESS)
 // SPDX-License-Identifier: BSD-3-Clause
 
-#include "dropmixnuc.hpp"
+#include "aerosol_cloud_interaction.hpp"
 #include "microphysics.hpp"
 
 #define PY_SSIZE_T_CLEAN
@@ -58,8 +58,8 @@ struct TimeConfig {
 
 // aerosol process switchboard
 struct ControlConfig {
-  mam4::microphysics::Config microphysics;
-  mam4::aci::Config          aerosol_cloud_interaction;
+  mam4::microphysics::Config              microphysics;
+  mam4::aerosol_cloud_interaction::Config aerosol_cloud_interaction;
 };
 
 // prevailing atmospheric conditions (column data)

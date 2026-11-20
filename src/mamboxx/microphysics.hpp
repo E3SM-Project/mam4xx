@@ -31,23 +31,74 @@ using FixedSpeciesView            = View2D; // [nlev][nfs]
 using SingleLevelConstituentsView = View1D; // [gas_pcnst]
 using PhotolysisRatesView         = View2D; // [nlev][mam4::mo_photo::phtcnt]
 
+
+//----------------------------
+// Microphysics configuration
+//----------------------------
+
+struct AgingConfig {
+  bool enable;
+  int  n_so4_monolayers_pcage;
+};
+
+struct AqueousChemistryConfig {
+  bool enable;
+};
+
+struct CoagulationConfig {
+  bool enable;
+};
+
+struct CondensationConfig {
+  bool enable;
+};
+
+struct GasChemistryConfig {
+  bool enable;
+};
+
+struct GasAerosolExchangeConfig {
+  bool enable;
+  enum class H2SO4UptakeOption {
+    Sequential = 1,
+    Simultaneous = 2,
+  } h2so4_uptake;
+};
+
+struct NucleationConfig {
+  bool enable;
+  int  h2so4_conc_optaa; // controls how nucleation interprets H2SO4 concentrations (FIXME: unused!)
+};
+
+struct RenameConfig {
+  bool enable;
+};
+
+// NOTE: mo_setsox::Config seems to gather a bunch of parameters, whether 
+// NOTE: configurable or not. This config is for setting tunable parameters.
+struct SetSoxConfig {
+  bool enable;
+};
+
 // Config represents a complete aerosol microphysics configuration, and is bound to a specific
 // Microphysics instance.
 struct Config {
-  bool aqueous_chemistry;
-  bool gas_chemistry;
-  bool gas_aerosol_exchange;
-  bool rename;
-  bool nucleation;
-  bool coagulation;
+  AeroSpeciesView aero_species;
 
-  // parameterization-specific configurations
-  mam4::mo_setsox::Config setsox;
-  AmicPhysConfig          amicphys;
-
-  // FIXME: These could be better organized
-  int n_so4_monolayers_pcage;
+  AgingConfig              aging;
+  AqueousChemistryConfig   aqueous_chemistry;
+  CoagulationConfig        coagulation;
+  CondensationConfig       condensation;
+  GasAerosolExchangeConfig gas_aerosol_exchange;
+  GasChemistryConfig       gas_chemistry;
+  NucleationConfig         nucleation;
+  RenameConfig             rename;
+  SetSoxConfig             setsox;
 };
+
+//----------------------------------------
+// Representations of external conditions
+//----------------------------------------
 
 // ColumnLocation stores location-specific information because aerosol physics is strongly coupled
 // to solar radiation. Passed to microphysics to advance the state of a particular column.
@@ -83,6 +134,10 @@ struct ExternalConditions {
   ConstituentsView gas_chemistry_dvmrdt;      // [??], NOTE: layout: [gas_pcnst][nlev]
   ConstituentsView aqueous_chemistry_dvmrdt;  // [??], NOTE: layout: [gas_pcnst][nlev]
 };
+
+//-------------
+// Work arrays
+//-------------
 
 // WorkArrays collects all the work arrays used by the Microphysics class. These work arrays are
 // used as needed by Microphysics but ownership is not transferred. This allows Microphysics to

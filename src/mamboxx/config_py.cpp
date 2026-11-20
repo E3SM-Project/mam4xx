@@ -4,11 +4,19 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 #include "mamboxx.hpp"
+#include "mamboxx/aerosol_cloud_interaction.hpp"
+#include "mamboxx/microphysics.hpp"
 #include <mam4xx/mam4_math.hpp>
+
+#include <array>
 
 namespace mamboxx {
 
 namespace {
+
+//---------------------------
+// Reading data and metadata
+//---------------------------
 
 int get_int_field(const char *section, PyObject *dict, const char *field) {
   EKAT_REQUIRE(PyDict_ContainsString(dict, field), "section " << section << " is missing " << field);
@@ -31,35 +39,22 @@ bool get_bool_field(const char *section, PyObject *dict, const char *field) {
   return value == Py_True;
 }
 
-TimeConfig read_time(PyObject *time) {
-  TimeConfig cfg = {};
-  cfg.dt = get_real_field("time", time, "dt");
-  cfg.nstep = get_int_field("time", time, "nstep");
-  EKAT_REQUIRE(cfg.dt > 0.0, "Non-positive time.dt: " << cfg.dt);
-  EKAT_REQUIRE(cfg.nstep > 0, "Non-positive time.nstep: " << cfg.nstep);
-  return cfg;
+std::string get_string_field(const char *section, PyObject *dict, const char *field) {
+  EKAT_REQUIRE(PyDict_ContainsString(dict, field), "section " << section << " is missing " << field);
+  PyObject *value = PyDict_GetItemString(dict, field);
+  EKAT_REQUIRE(PyUnicode_Check(value), "provided " << field << " in section " << section << " is not a string");
+  return std::string(PyUnicode_AsUTF8(value));
 }
 
-mam4::microphysics::Config read_microphysics_config(PyObject *microphys) {
-  mam4::microphysics::Config config = {};
-  if (PyDict_ContainsString(microphys, "gas_chemistry"))
-    config.gas_chemistry = get_bool_field("microphysics", microphys, "gas_chemistry");
-  if (PyDict_ContainsString(microphys, "gas_aerosol_exchange"))
-    config.gas_aerosol_exchange = get_bool_field("microphysics", microphys, "gas_aerosol_exchange");
-  if (PyDict_ContainsString(microphys, "rename"))
-    config.rename = get_bool_field("microphysics", microphys, "rename");
-  if (PyDict_ContainsString(microphys, "nucleation"))
-    config.nucleation = get_bool_field("microphysics", microphys, "nucleation");
-  if (PyDict_ContainsString(microphys, "coagulation"))
-    config.nucleation = get_bool_field("microphysics", microphys, "coagulation");
-  return config;
-}
-
-ControlConfig read_control(PyObject *control) {
-  ControlConfig cfg = {};
-  if (PyDict_ContainsString(control, "microphysics"))
-    cfg.microphysics = read_microphysics_config(PyDict_GetItemString(control, "microphysics"));
-  return cfg;
+template <typename T, unsigned long N>
+T select_enum_from_string(std::string name, std::string value,
+                          std::array<std::string, N>    options) {
+  for (unsigned long i = 0; i < N; ++i) {
+    if (value == options[i])
+      return static_cast<T>(i);
+  }
+  EKAT_REQUIRE(false, "Invalid enum option for " << name << ": " << value);
+  return static_cast<T>(-1);
 }
 
 std::vector<Real> read_box_or_column_data(const char * section, PyObject *value, const std::string &name) {
@@ -79,6 +74,137 @@ std::vector<Real> read_box_or_column_data(const char * section, PyObject *value,
     Py_DECREF(seq);
   }
   return values;
+}
+
+//----------------------------
+// Timestepping configuration
+//----------------------------
+
+TimeConfig read_time(PyObject *time) {
+  TimeConfig cfg = {};
+  cfg.dt = get_real_field("time", time, "dt");
+  cfg.nstep = get_int_field("time", time, "nstep");
+  EKAT_REQUIRE(cfg.dt > 0.0, "Non-positive time.dt: " << cfg.dt);
+  EKAT_REQUIRE(cfg.nstep > 0, "Non-positive time.nstep: " << cfg.nstep);
+  return cfg;
+}
+
+//-----------------------------------------
+// Parameterization-specific configuration
+//-----------------------------------------
+
+mam4::microphysics::GasAerosolExchangeConfig
+read_gas_aerosol_exchange_config(PyObject *gas_aerosol_exchange) {
+  return mam4::microphysics::GasAerosolExchangeConfig{
+    .enable = get_bool_field("microphysics.gas_aerosol_exchange", gas_aerosol_exchange, "enable"),
+  };
+}
+
+mam4::microphysics::CoagulationConfig read_coagulation_config(PyObject *coagulation) {
+  return mam4::microphysics::CoagulationConfig{
+    .enable = get_bool_field("microphysics.coagulation", coagulation, "enable"),
+  };
+}
+
+mam4::microphysics::GasChemistryConfig read_gas_chemistry_config(PyObject *gas_chemistry) {
+  return mam4::microphysics::GasChemistryConfig{
+    .enable = get_bool_field("microphysics.gas_chemistry", gas_chemistry, "enable"),
+  };
+}
+
+mam4::microphysics::RenameConfig read_rename_config(PyObject *rename) {
+  return mam4::microphysics::RenameConfig{
+    .enable = get_bool_field("microphysics.rename", rename, "enable"),
+  };
+}
+
+mam4::microphysics::NucleationConfig read_nucleation_config(PyObject *nucleation) {
+  return mam4::microphysics::NucleationConfig{
+    .enable = get_bool_field("microphysics.nucleation", nucleation, "enable"),
+  };
+}
+
+mam4::microphysics::Config read_microphysics_config(PyObject *microphys) {
+  mam4::microphysics::Config config = {};
+  if (PyDict_ContainsString(microphys, "coagulation")) {
+    PyObject *coagulation = PyDict_GetItemString(microphys, "coagulation");
+    config.coagulation = read_coagulation_config(coagulation);
+  }
+  if (PyDict_ContainsString(microphys, "gas_aerosol_exchange")) {
+    PyObject *gas_aerosol_exchange = PyDict_GetItemString(microphys, "gas_aerosol_exchange");
+    config.gas_aerosol_exchange = read_gas_aerosol_exchange_config(gas_aerosol_exchange);
+  }
+  if (PyDict_ContainsString(microphys, "gas_chemistry")) {
+    PyObject *gas_chemistry = PyDict_GetItemString(microphys, "gas_chemistry");
+    config.gas_chemistry = read_gas_chemistry_config(gas_chemistry);
+  }
+  if (PyDict_ContainsString(microphys, "rename")) {
+    PyObject *rename = PyDict_GetItemString(microphys, "rename");
+    config.rename = read_rename_config(rename);
+  }
+  if (PyDict_ContainsString(microphys, "nucleation")) {
+    PyObject *nucleation = PyDict_GetItemString(microphys, "nucleation");
+    config.nucleation = read_nucleation_config(nucleation);
+  }
+  return config;
+}
+
+mam4::aerosol_cloud_interaction::DropletActivationConfig
+read_droplet_activation_config(PyObject *droplet_activation) {
+  using CriticalRelation = mam4::aerosol_cloud_interaction::CriticalRelation;
+  static std::array<std::string, 1> critical_relations = {
+    "dilute_kappa_kohler",
+  };
+  static std::array<CriticalRelation, 1> critical_relation_enums = {
+      CriticalRelation::DiluteKappaKohler,
+    };
+  std::string critical_relation =
+    get_string_field("aerosol_cloud_interaction.critical_relation",
+                     droplet_activation, "critical_relation");
+  return mam4::aerosol_cloud_interaction::DropletActivationConfig{
+    .enable = get_bool_field("aerosol_cloud_interaction.droplet_activation",
+                             droplet_activation, "enable"),
+    .critical_relation = select_enum_from_string<CriticalRelation>("aerosol_cloud_interaction.critical_relation",
+                                                 critical_relation, critical_relations),
+  };
+}
+
+mam4::aerosol_cloud_interaction::IceNucleationConfig
+read_ice_nucleation_config(PyObject *ice_nucleation) {
+  return mam4::aerosol_cloud_interaction::IceNucleationConfig{
+    .enable = get_bool_field("aerosol_cloud_interaction.ice_nucleation",
+                             ice_nucleation, "enable"),
+    .subgrid = get_real_field("aerosol_cloud_interaction.ice_nucleation",
+                              ice_nucleation, "subgrid"),
+    .so4_size_threshold = get_real_field("aerosol_cloud_interaction.ice_nucleation",
+                                         ice_nucleation, "so4_size_threshold"),
+  };
+}
+
+mam4::aerosol_cloud_interaction::Config read_aerosol_cloud_interaction_config(PyObject *aci) {
+  mam4::aerosol_cloud_interaction::Config config = {};
+  if (PyDict_ContainsString(aci, "droplet_activation")) {
+    PyObject *droplet_activation = PyDict_GetItemString(aci, "droplet_activation");
+    config.dropmixnuc.droplet_activation = read_droplet_activation_config(droplet_activation);
+  }
+  if (PyDict_ContainsString(aci, "ice_nucleation")) {
+    PyObject *ice_nucleation = PyDict_GetItemString(aci, "ice_nucleation");
+    config.dropmixnuc.ice_nucleation = read_ice_nucleation_config(ice_nucleation);
+  }
+  return config;
+}
+
+ControlConfig read_control(PyObject *control) {
+  ControlConfig cfg = {};
+  if (PyDict_ContainsString(control, "microphysics")) {
+    PyObject *microphysics = PyDict_GetItemString(control, "microphysics");
+    cfg.microphysics = read_microphysics_config(microphysics);
+  }
+  if (PyDict_ContainsString(control, "gas_aerosol_exchange")) {
+    PyObject *aci = PyDict_GetItemString(control, "aerosol_cloud_interaction");
+    cfg.aerosol_cloud_interaction = read_aerosol_cloud_interaction_config(aci);
+  }
+  return cfg;
 }
 
 AtmosphereConfig read_atmosphere(PyObject *atmosphere) {
@@ -292,17 +418,15 @@ PyObject *box(PyObject *self, PyObject *args, PyObject *keywords) {
     "atmosphere",
     "aerosols",
     "gases",
-    "droplet_activation",
     "output",
     "verification",
     nullptr
   };
-  if (!PyArg_ParseTupleAndKeywords(args, keywords, "$sO!O!O!O!O!O!O!O!O!", keyword_list, &name,
+  if (!PyArg_ParseTupleAndKeywords(args, keywords, "$sO!O!O!O!O!O!O!O!", keyword_list, &name,
                                    &PyDict_Type, &parameter_sweep, &PyDict_Type, &time,
                                    &PyDict_Type, &control, &PyDict_Type, &atmosphere,
                                    &PyDict_Type, &aerosols, &PyDict_Type, &gases,
-                                   &PyDict_Type, &droplet_activation, &PyDict_Type, &output,
-                                   &PyDict_Type, &verification))
+                                   &PyDict_Type, &output, &PyDict_Type, &verification))
     return nullptr;
 
   // FIXME
@@ -328,7 +452,7 @@ PyObject *column(PyObject *self, PyObject *args, PyObject *keywords) {
 
   char     *name;
   PyObject *parameter_sweep, *time, *control, *atmosphere, *aerosols, *gases,
-           *droplet_activation, *output, *verification;
+           *output, *verification;
 
   static const char *keyword_list[] = {
     "name",
@@ -338,17 +462,15 @@ PyObject *column(PyObject *self, PyObject *args, PyObject *keywords) {
     "atmosphere",
     "aerosols",
     "gases",
-    "droplet_activation",
     "output",
     "verification",
     nullptr
   };
-  if (!PyArg_ParseTupleAndKeywords(args, keywords, "$sO!O!O!O!O!O!O!O!O!", keyword_list, &name,
+  if (!PyArg_ParseTupleAndKeywords(args, keywords, "$sO!O!O!O!O!O!O!O!", keyword_list, &name,
                                    &PyDict_Type, &parameter_sweep, &PyDict_Type, &time,
                                    &PyDict_Type, &control, &PyDict_Type, &atmosphere,
                                    &PyDict_Type, &aerosols, &PyDict_Type, &gases,
-                                   &PyDict_Type, &droplet_activation, &PyDict_Type, &output,
-                                   &PyDict_Type, &verification))
+                                   &PyDict_Type, &output, &PyDict_Type, &verification))
     return nullptr;
 
   // FIXME

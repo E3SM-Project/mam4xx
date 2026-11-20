@@ -13,7 +13,7 @@ add_executable(mamscm
   main.cpp
   run.cpp
   microphysics.cpp
-  dropmixnuc.cpp
+  aerosol_cloud_interaction.cpp
 )
 target_link_libraries(mamscm PUBLIC mam4xx Python3::Python)
 target_include_directories(mamscm PUBLIC
@@ -41,7 +41,7 @@ add_executable(mamboxx
   main.cpp
   run.cpp
   microphysics.cpp
-  dropmixnuc.cpp
+  aerosol_cloud_interaction.cpp
 )
 target_link_libraries(mamboxx PUBLIC mam4xx Python3::Python)
 target_include_directories(mamboxx PUBLIC

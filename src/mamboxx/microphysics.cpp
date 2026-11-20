@@ -226,7 +226,7 @@ void Microphysics::gas_phase_chemistry(const Atmosphere &atmosphere,
   const auto& vmr0 = work_.vmr0;
   Kokkos::deep_copy(vmr0, work_.vmr);
 
-  if (config_.gas_chemistry) {
+  if (config_.gas_chemistry.enable) {
     ConstituentsView gas_phase_chemistry_dvmrdt;
     if (extra_diagnostics_.enabled) {
       gas_phase_chemistry_dvmrdt = external_conditions.gas_chemistry_dvmrdt;
@@ -292,17 +292,19 @@ void Microphysics::setsox(const Atmosphere &atmosphere,
   Kokkos::deep_copy(vmr_pregas, work_.vmr);
   Kokkos::deep_copy(vmr_precld, work_.vmrcw );
 
+  // Create mo_setsox::Config from our microphysics-wide configuration.
+  const mo_setsox::Config config_setsox;
+
   const auto vmr_bef_aq_chem = vmr_pregas;
-  const auto config_setsox = config_.setsox;
   const auto dqdt_aqso4 = work_.dqdt_aqso4;
   const auto dqdt_aqh2so4 = work_.dqdt_aqh2so4;
   const auto invariants = work_.invariants;
 
   const int offset_aerosol = mam4::utils::gasses_start_ind();
 
-  const unsigned n_so4_monolayers_pcage = config_.n_so4_monolayers_pcage;
+  const unsigned n_so4_monolayers_pcage = config_.aging.n_so4_monolayers_pcage;
 
-  if (config_.aqueous_chemistry) {
+  if (config_.aqueous_chemistry.enable) {
     Kokkos::parallel_for("Microphysics::setsox", policy, KOKKOS_LAMBDA(const ThreadTeam &team) {
         // the logic below is taken from the aero_model_gasaerexch
         // subroutine in eam/src/chemistry/modal_aero/aero_model.F90
@@ -382,7 +384,16 @@ void Microphysics::modal_aero_amicphys_intr(const Atmosphere &atmosphere, Real d
       });
   */
 
-  const auto& config_amicphys = config_.amicphys;
+  // Create an AmicPhysConfig from our microphysics configuration.
+  const AmicPhysConfig config_amicphys = {
+    .aero_species = config_.aero_species,
+    .do_cond = config_.condensation.enable,
+    .do_rename = config_.rename.enable,
+    .do_newnuc = config_.nucleation.enable,
+    .do_coag = config_.coagulation.enable,
+    .gaexch_h2so4_uptake_optaa = static_cast<int>(config_.gas_aerosol_exchange.h2so4_uptake),
+    .newnuc_h2so4_conc_optaa = config_.nucleation.h2so4_conc_optaa, // FIXME: unused!
+  };
 
   auto vmr        = work_.vmr;
   auto vmrcw      = work_.vmrcw;
@@ -390,7 +401,7 @@ void Microphysics::modal_aero_amicphys_intr(const Atmosphere &atmosphere, Real d
   auto vmr_pregas = work_.vmr_pregas;
   auto vmr_precld = work_.vmr_precld;
 
-  int n_so4_monolayers_pcage = config_.n_so4_monolayers_pcage;
+  int n_so4_monolayers_pcage = config_.aging.n_so4_monolayers_pcage;
 
   auto extra_diags_arrays = extra_diagnostics_.arrays;
 
