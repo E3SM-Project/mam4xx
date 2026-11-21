@@ -56,8 +56,6 @@ void test_wetdep_resusp_nonlinear_process(const Input &input, Output &output) {
 
   // Set the output values
   output.set("resusp_x", vals_host[0]);
-  // This is needed to check again skywalker precomputed result.
-  output.set("scavabx_new", 0);
 }
 
 void test_wetdep_resusp_nonlinear(std::unique_ptr<Ensemble> &ensemble) {

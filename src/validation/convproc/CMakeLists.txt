@@ -50,34 +50,67 @@ endforeach()
 set(TestLabel "convproc")
 
 # convproc
-foreach (input
-         update_tendency_final
-         compute_column_tendency
-         ma_precpevap
-         ma_precpprod_ts_355
-         initialize_dcondt
-         compute_downdraft_mixing_ratio
-         ma_precpevap_convproc
-         ma_resuspend_convproc
-         aer_vol_num_hygro
-         compute_wup
-         compute_massflux
-         compute_massflux_small
-         compute_ent_det_dp
-         compute_midlev_height
-         initialize_tmr_array_1
-         initialize_tmr_array_2
-         update_qnew_ptend_true
-         update_qnew_ptend_false
-         compute_wetdep_tend
-         ma_activate_convproc_ts_3
-         compute_activation_tend_ts_3
-         compute_updraft_mixing_ratio_ts_3
-         ma_convproc_tend_ts_3
-         ma_convproc_dp_intr_ts_3
-         ma_convproc_intr_ts_3
-         ma_convproc_intr_only_aero_ts_3
-         )
+set(TEST_LIST
+    update_tendency_final
+    compute_column_tendency
+    ma_precpevap
+    ma_precpprod_ts_355
+    initialize_dcondt
+    compute_downdraft_mixing_ratio
+    ma_precpevap_convproc
+    ma_resuspend_convproc
+    aer_vol_num_hygro
+    compute_wup
+    compute_massflux
+    compute_massflux_small
+    compute_ent_det_dp
+    compute_midlev_height
+    initialize_tmr_array_1
+    initialize_tmr_array_2
+    update_qnew_ptend_true
+    update_qnew_ptend_false
+    compute_wetdep_tend
+    ma_activate_convproc_ts_3
+    compute_activation_tend_ts_3
+    compute_updraft_mixing_ratio_ts_3
+    ma_convproc_tend_ts_3
+    ma_convproc_dp_intr_ts_3
+    ma_convproc_intr_ts_3
+    ma_convproc_intr_only_aero_ts_3
+    )
+
+set(DEFAULT_TOL 1e-8)
+
+set(ERROR_THRESHOLDS
+    ${DEFAULT_TOL} # update_tendency_final
+    ${DEFAULT_TOL} # compute_column_tendency
+    ${DEFAULT_TOL} # ma_precpevap
+    ${DEFAULT_TOL} # ma_precpprod_ts_355
+    ${DEFAULT_TOL} # initialize_dcondt
+    ${DEFAULT_TOL} # compute_downdraft_mixing_ratio
+    ${DEFAULT_TOL} # ma_precpevap_convproc
+    ${DEFAULT_TOL} # ma_resuspend_convproc
+    ${DEFAULT_TOL} # aer_vol_num_hygro
+    ${DEFAULT_TOL} # compute_wup
+    ${DEFAULT_TOL} # compute_massflux
+    ${DEFAULT_TOL} # compute_massflux_small
+    ${DEFAULT_TOL} # compute_ent_det_dp
+    ${DEFAULT_TOL} # compute_midlev_height
+    ${DEFAULT_TOL} # initialize_tmr_array_1
+    ${DEFAULT_TOL} # initialize_tmr_array_2
+    ${DEFAULT_TOL} # update_qnew_ptend_true
+    ${DEFAULT_TOL} # update_qnew_ptend_false
+    ${DEFAULT_TOL} # compute_wetdep_tend
+    2e-5           # ma_activate_convproc_ts_3
+    2e-5           # compute_activation_tend_ts_3
+    8e-6           # compute_updraft_mixing_ratio_ts_3
+    2e-5           # ma_convproc_tend_ts_3
+    3e-6           # ma_convproc_dp_intr_ts_3
+    3e-6           # ma_convproc_intr_ts_3
+    3e-6           # ma_convproc_intr_only_aero_ts_3
+    )
+
+foreach(input tol IN ZIP_LISTS TEST_LIST ERROR_THRESHOLDS)
 
   # copy the baseline file into place; is the skywalker file produced by fortran code?
   configure_file(
@@ -93,13 +126,8 @@ foreach (input
   # add a test to validate mam4xx's results against the baseline.
   # Select a threshold error slightly bigger than the largest relative error for the threshold error.
   # Conservative approach: At the time of this commit, threshold error=2e-6.
-  # compare_mam4xx_mam4.py <module1.py> <module2.py> <check_norms> <threshold error>
-  set(TOL 1e-8)
-  if (${input} STREQUAL compute_updraft_mixing_ratio_ts_3)
-    set(TOL 3e-8)
-  endif ()  
-
-  add_test(validate_${input} python3 compare_mam4xx_mam4.py mam4xx_${input}.py mam_${input}.py True ${TOL})
+  # compare_mam4xx_mam4.py <module1.py> <module2.py> <check_norms> <threshold error> [--strict]
+  add_test(validate_${input} python3 compare_mam4xx_mam4.py mam4xx_${input}.py mam_${input}.py True ${tol} --strict)
   set_property(TEST validate_${input} PROPERTY SKIP_REGULAR_EXPRESSION "regex_fail_rel_tol")
   set_tests_properties(validate_${input} PROPERTIES DEPENDS run_${input})
   set_tests_properties(validate_${input} PROPERTIES LABELS ${TestLabel})

@@ -38,11 +38,12 @@ void test_wetdep_resusp_process(const Input &input, Output &output) {
   const Real precnumx_base_old = input.get("precnumx_base_old");
 
   auto return_val = mam4::validation::create_column_view(1);
+
   Kokkos::parallel_for(
       "wetdep::wetdep_resusp", 1, KOKKOS_LAMBDA(const int) {
         return_val[0] = mam4::wetdep::wetdep_resusp(
-            is_st_cu, mam_prevap_resusp_optcc, pdel_ik, evapx, precabx_base_old,
-            precabx_old, scavabx_old, precnumx_base_old);
+            is_st_cu, mam_prevap_resusp_optcc, pdel_ik, evapx, precabx_old,
+            precabx_base_old, scavabx_old, precnumx_base_old);
       });
 
   // Create mirror views for output arrays
@@ -53,11 +54,6 @@ void test_wetdep_resusp_process(const Input &input, Output &output) {
 
   // Set the output values
   output.set("resusp_x", vals_host[0]);
-  // These are needed to check result against skywalker file.
-  output.set("precabx_new", 0);
-  output.set("precabx_base_new", 0);
-  output.set("scavabx_new", 0);
-  output.set("precnumx_base_new", 0);
 }
 
 void test_wetdep_resusp(std::unique_ptr<Ensemble> &ensemble) {
