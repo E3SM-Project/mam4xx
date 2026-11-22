@@ -89,9 +89,9 @@ TimeConfig read_time(PyObject *time) {
   return cfg;
 }
 
-//-----------------------------------------
-// Parameterization-specific configuration
-//-----------------------------------------
+//------------------------------------
+// Aerosol microphysics configuration
+//------------------------------------
 
 mam4::microphysics::GasAerosolExchangeConfig
 read_gas_aerosol_exchange_config(PyObject *gas_aerosol_exchange) {
@@ -149,6 +149,10 @@ mam4::microphysics::Config read_microphysics_config(PyObject *microphys) {
   return config;
 }
 
+//-----------------------------------------
+// Aerosol-Cloud interaction configuration
+//-----------------------------------------
+
 mam4::aerosol_cloud_interaction::DropletActivationConfig
 read_droplet_activation_config(PyObject *droplet_activation) {
   using CriticalRelation = mam4::aerosol_cloud_interaction::CriticalRelation;
@@ -194,6 +198,10 @@ mam4::aerosol_cloud_interaction::Config read_aerosol_cloud_interaction_config(Py
   return config;
 }
 
+//-----------------------------------------------
+// Omni-parameterization configuration (control)
+//-----------------------------------------------
+
 ControlConfig read_control(PyObject *control) {
   ControlConfig cfg = {};
   if (PyDict_ContainsString(control, "microphysics")) {
@@ -206,6 +214,10 @@ ControlConfig read_control(PyObject *control) {
   }
   return cfg;
 }
+
+//---------------------------------
+// Atmospheric state configuration
+//---------------------------------
 
 AtmosphereConfig read_atmosphere(PyObject *atmosphere) {
   AtmosphereConfig cfg = {};
@@ -237,6 +249,10 @@ AtmosphereConfig read_atmosphere(PyObject *atmosphere) {
 
   return cfg;
 }
+
+//-----------------------------
+// Aerosol state configuration
+//-----------------------------
 
 void compute_mass_mixing_ratios_from_mass_fractions(const AtmosphereConfig &atmosphere,
                                                     const std::map<std::string, std::vector<Real>> &mass_fractions,
@@ -375,6 +391,10 @@ AerosolConfig read_aerosols(const AtmosphereConfig &atmosphere, PyObject *aeroso
   return cfg;
 }
 
+//-------------------------
+// Gas state configuration
+//-------------------------
+
 GasConfig read_gases(PyObject *gases) {
   GasConfig cfg = {};
   EKAT_REQUIRE(PyDict_Check(gases), "gases must be a dict");
@@ -402,6 +422,37 @@ GasConfig read_gases(PyObject *gases) {
   }
   return cfg;
 }
+
+//----------------------------
+// Verification configuration
+//----------------------------
+
+std::vector<PyObject *> read_checks(PyObject *checks) {
+  std::vector<PyObject *> check_functions;
+  EKAT_REQUIRE(PySequence_Check(checks), "checks must be a list of functions that accept a state");
+  Py_ssize_t num_checks = PySequence_Size(checks);
+  for (Py_ssize_t i = 0; i < num_checks; ++i) {
+    PyObject *check_i = PySequence_Fast_GET_ITEM(checks, i);
+    EKAT_REQUIRE(PyCallable_Check(check_i), "Item " << i << " in verification_checks is not a callable function");
+    check_functions.push_back(check_i);
+  }
+  return check_functions;
+}
+
+VerificationConfig read_verification(PyObject *verification) {
+  VerificationConfig cfg = {};
+  EKAT_REQUIRE(PyDict_Check(verification), "verification must be a dict");
+
+  if (PyDict_ContainsString(verification, "checks")) {
+    PyObject *checks = PyDict_GetItemString(verification, "checks");
+    cfg.checks = read_checks(checks);
+  }
+  return cfg;
+}
+
+//---------------------
+// Python entry points
+//---------------------
 
 PyObject *box(PyObject *self, PyObject *args, PyObject *keywords) {
   Config *config = (Config*)self;
@@ -442,6 +493,7 @@ PyObject *box(PyObject *self, PyObject *args, PyObject *keywords) {
   config->atmosphere = read_atmosphere(atmosphere);
   config->aerosols = read_aerosols(config->atmosphere, aerosols);
   config->gases = read_gases(aerosols);
+  config->verification = read_verification(verification);
 
   Py_INCREF(Py_None);
   return Py_None;
@@ -532,6 +584,10 @@ PyObject* register_python_globals(Config &config) {
 }
 
 } // anonymous namespace
+
+//----------------------------
+// read_config implementation
+//----------------------------
 
 Config read_config(const std::string &filename) {
   Config config = {};
