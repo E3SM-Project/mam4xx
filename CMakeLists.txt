@@ -170,7 +170,7 @@ if (MAM4XX_ENABLE_SKYWALKER)
   FetchContent_Declare(
     mam_x_validation
     GIT_REPOSITORY https://github.com/E3SM-Project/mam_x_validation.git
-    GIT_TAG        096a64197d53bca7434cc7e0493465267c5fa94f # 2026/11/16
+    GIT_TAG        45d3d8fcd78fbef7e1e34fd213dbec3a2f82cbe1 # 2026/11/26
   )
   list(APPEND mam4xx_tpls mam_x_validation)
 endif()
