@@ -6,7 +6,9 @@
 #include "aerosol_cloud_interaction.hpp"
 #include "microphysics.hpp"
 
+#if Python3_VERSION_MINOR < 13
 #define PY_SSIZE_T_CLEAN
+#endif
 #include <Python.h>
 
 #include <string>

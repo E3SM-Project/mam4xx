@@ -517,8 +517,9 @@ PyObject *box(PyObject *self, PyObject *args, PyObject *keywords) {
 #else
         keyword_list,
 #endif
-        &name, &PyDict_Type, &parameter_sweep, &PyDict_Type, &time, &PyDict_Type, &control,
-        &PyDict_Type, &atmosphere, &PyDict_Type, &aerosols, &PyDict_Type, &gases,
+        &name, &PyDict_Type, &parameter_sweep, &PyDict_Type, &time,
+        &PyDict_Type, &control, &PyDict_Type, &atmosphere,
+        &PyDict_Type, &aerosols, &PyDict_Type, &gases,
         &PyDict_Type, &output, &PyDict_Type, &verification))
     return nullptr;
 
@@ -608,8 +609,11 @@ PyMethodDef column_def = {
 // Registers Python functions and objects as global objects, returning a dictionary of these
 // globals.
 PyObject* register_python_globals(Config &config) {
-  Py_Initialize();
-  std::atexit(Py_Finalize);
+  if (!Py_IsInitialized()) {
+    Py_Initialize();
+    EKAT_REQUIRE(Py_IsInitialized(), "failed to initialize Python interpreter");
+    std::atexit(Py_Finalize);
+  }
 
   PyObject *globals = PyDict_New();
 
@@ -750,11 +754,13 @@ Config read_config(const std::string &filename) {
   printf("Reading %s\n", filename.c_str());
   FILE *f = std::fopen(filename.c_str(), "r");
   PyObject *locals = PyDict_New();
-  PyObject *result = PyRun_FileEx(f, filename.c_str(), Py_file_input, globals, locals, 1);
+  int close_file = 1;
+  PyObject *result = PyRun_FileEx(f, filename.c_str(), Py_file_input, globals, locals, close_file);
   if (result == nullptr) {
     PyErr_Print();
     EKAT_REQUIRE(false, "An error occurred while reading input.");
   }
+  Py_DECREF(result);
 
   size_t num_modes = config.aerosols.modes.size();
   EKAT_REQUIRE(num_modes > 0, "no aerosol modes specified");
