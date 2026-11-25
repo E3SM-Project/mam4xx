@@ -14,6 +14,17 @@ namespace mamboxx {
 
 namespace {
 
+#if Python3_VERSION_MINOR < 13
+
+int PyDict_ContainsString(PyObject *dict, const char *field) {
+  PyObject *py_field = PyUnicode_FromString(field);
+  int result = PyDict_Contains(dict, py_field);
+  Py_DECREF(py_field);
+  return result;
+}
+
+#endif
+
 //---------------------------
 // Reading data and metadata
 //---------------------------

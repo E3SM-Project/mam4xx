@@ -22,6 +22,7 @@ target_include_directories(mamscm PUBLIC
   $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/src>
   $<INSTALL_INTERFACE:include>
 )
+target_compile_definitions(mamscm PUBLIC -DPython3_VERSION_MINOR=${Python3_VERSION_MINOR})
 
 add_test(c4_test mamscm ${CMAKE_CURRENT_SOURCE_DIR}/examples/c4.py)
 
@@ -53,3 +54,4 @@ target_include_directories(mamboxx PUBLIC
   $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/src>
   $<INSTALL_INTERFACE:include>
 )
+target_compile_definitions(mamboxx PUBLIC -DPython3_VERSION_MINOR=${Python3_VERSION_MINOR})
