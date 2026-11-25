@@ -246,9 +246,13 @@ class NucleateIce {
 public:
   // nucleate_ice-specific configuration
   struct Config {
-    // In Fortran code _nucleate_ice_subgrid is read from a file.
+    // Defaults match the E3SM (EAM) reference run used to generate the
+    // validation data (mam_x_validation/nucleate_ice/
+    // nucleate_ice_cam_calc_merged.yaml). In Fortran these are namelist
+    // parameters (nucleate_ice_nl).
+    // subgrid scaling factor for relative humidity in ice nucleation [-]
     Real _nucleate_ice_subgrid;
-    // ice nucleation SO2 size threshold for aitken mode
+    // ice nucleation SO4 size threshold for aitken mode [m]
     Real _so4_sz_thresh_icenuc;
     Config(const Real nucleate_ice_subgrid = 1.2,
            const Real so4_sz_thresh_icenuc = 8.0e-8)

@@ -4,7 +4,10 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 #include <aero_process.hpp>
+#include <ekat_assert.hpp>
 #include <validation.hpp>
+
+#include <cmath>
 
 using namespace skywalker;
 
@@ -28,13 +31,34 @@ void compute_tendencies(Ensemble *ensemble) {
     mam4::Diagnostics diags = mam4::validation::create_diagnostics(nlev);
     mam4::Tendencies tends = mam4::validation::create_tendencies(nlev);
 
+    // Use the default nucleate_ice configuration, so that this test also
+    // exercises the defaults that EAMxx relies on (EAMxx default-constructs
+    // NucleateIce::Config). Fail if the defaults differ from the values used
+    // by the Fortran reference run that produced the validation data.
+    mam4::AeroConfig mam4_config;
+    mam4::NucleateIce::Config nucleate_ice_config;
+
     const Real subgrid = input.get_array("nucleate_ice_subgrid")[0];
     const Real so4_sz_thresh_icenuc =
         input.get_array("so4_sz_thresh_icenuc")[0];
 
-    mam4::AeroConfig mam4_config;
-    mam4::NucleateIce::Config nucleate_ice_config(subgrid,
-                                                  so4_sz_thresh_icenuc);
+    // relative tolerance, so the check also holds in single precision
+    const Real rel_tol = 1e-6;
+    EKAT_REQUIRE_MSG(
+        std::abs(nucleate_ice_config._nucleate_ice_subgrid - subgrid) <=
+            rel_tol * std::abs(subgrid),
+        "NucleateIce::Config default _nucleate_ice_subgrid ("
+            << nucleate_ice_config._nucleate_ice_subgrid
+            << ") differs from nucleate_ice_subgrid in the validation input ("
+            << subgrid << ").");
+    EKAT_REQUIRE_MSG(
+        std::abs(nucleate_ice_config._so4_sz_thresh_icenuc -
+                 so4_sz_thresh_icenuc) <=
+            rel_tol * std::abs(so4_sz_thresh_icenuc),
+        "NucleateIce::Config default _so4_sz_thresh_icenuc ("
+            << nucleate_ice_config._so4_sz_thresh_icenuc
+            << ") differs from so4_sz_thresh_icenuc in the validation input ("
+            << so4_sz_thresh_icenuc << ").");
     mam4::NucleateIceProcess process(mam4_config, nucleate_ice_config);
 
     const Real pmid = input.get_array("pmid")[0];        // air pressure

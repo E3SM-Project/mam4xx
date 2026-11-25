@@ -19,11 +19,6 @@
 
 using mam4::Real;
 
-TEST_CASE("test_nucleate_ice_default_subgrid", "mam4_nucleate_ice_process") {
-  const mam4::NucleateIce::Config config;
-  REQUIRE(config._nucleate_ice_subgrid == 1.2);
-}
-
 TEST_CASE("test_wv_sat_svp_to_qsat", "mam4_nucleate_ice_process") {
   ekat::Comm comm;
   ekat::logger::Logger<> logger("nucleate_ice unit tests",
