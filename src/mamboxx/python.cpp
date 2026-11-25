@@ -23,6 +23,10 @@ int PyDict_ContainsString(PyObject *dict, const char *field) {
   return result;
 }
 
+int PyLong_AsInt(PyObject *obj) {
+  return (int)PyLong_AsLong(obj);
+}
+
 #endif
 
 //---------------------------
@@ -507,11 +511,15 @@ PyObject *box(PyObject *self, PyObject *args, PyObject *keywords) {
     "verification",
     nullptr
   };
-  if (!PyArg_ParseTupleAndKeywords(args, keywords, "$sO!O!O!O!O!O!O!O!", keyword_list, &name,
-                                   &PyDict_Type, &parameter_sweep, &PyDict_Type, &time,
-                                   &PyDict_Type, &control, &PyDict_Type, &atmosphere,
-                                   &PyDict_Type, &aerosols, &PyDict_Type, &gases,
-                                   &PyDict_Type, &output, &PyDict_Type, &verification))
+  if (!PyArg_ParseTupleAndKeywords(args, keywords, "$sO!O!O!O!O!O!O!O!",
+#if Python3_VERSION_MINOR < 13
+        (char**)keyword_list,
+#else
+        keyword_list,
+#endif
+        &name, &PyDict_Type, &parameter_sweep, &PyDict_Type, &time, &PyDict_Type, &control,
+        &PyDict_Type, &atmosphere, &PyDict_Type, &aerosols, &PyDict_Type, &gases,
+        &PyDict_Type, &output, &PyDict_Type, &verification))
     return nullptr;
 
   // FIXME
@@ -552,11 +560,16 @@ PyObject *column(PyObject *self, PyObject *args, PyObject *keywords) {
     "verification",
     nullptr
   };
-  if (!PyArg_ParseTupleAndKeywords(args, keywords, "$sO!O!O!O!O!O!O!O!", keyword_list, &name,
-                                   &PyDict_Type, &parameter_sweep, &PyDict_Type, &time,
-                                   &PyDict_Type, &control, &PyDict_Type, &atmosphere,
-                                   &PyDict_Type, &aerosols, &PyDict_Type, &gases,
-                                   &PyDict_Type, &output, &PyDict_Type, &verification)) {
+  if (!PyArg_ParseTupleAndKeywords(args, keywords, "$sO!O!O!O!O!O!O!O!",
+#if Python3_VERSION_MINOR < 13
+        (char**)keyword_list,
+#else
+        keyword_list,
+#endif
+        &name, &PyDict_Type, &parameter_sweep, &PyDict_Type, &time,
+        &PyDict_Type, &control, &PyDict_Type, &atmosphere,
+        &PyDict_Type, &aerosols, &PyDict_Type, &gases,
+        &PyDict_Type, &output, &PyDict_Type, &verification)) {
     return nullptr;
   }
 
