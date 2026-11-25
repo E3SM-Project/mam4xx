@@ -81,9 +81,6 @@ void compute_updraft_mixing_ratio(Ensemble *ensemble) {
     auto dt_arr = input.get_array("dt");
     const Real dt = dt_arr[0];
 
-    auto dz_arr = input.get_array("dz");
-    const Real dz = dz_arr[0];
-
     // Convert to C++ index by subtracting one.
     auto ktop_arr = input.get_array("ktop");
     const int ktop = static_cast<int>(ktop_arr[0]) - 1;
@@ -182,10 +179,9 @@ void compute_updraft_mixing_ratio(Ensemble *ensemble) {
           int kcldbase = xx_kcldbase;
           mam4::convproc::compute_updraft_mixing_ratio(
               team, aero_species, doconvproc_extd, nlev, ktop, kbot, iconvtype,
-              dt, dp_i, dpdry_i, cldfrac, rhoair_i, zmagl, dz, mu_i, eudp,
-              gath_dev, temperature, aqfrac, icwmr, rprd, fa_u,
-              dconudt_wetdep_dev, dconudt_activa_dev, conu_dev, wcldbase,
-              kcldbase);
+              dt, dp_i, dpdry_i, cldfrac, rhoair_i, zmagl, mu_i, eudp, gath_dev,
+              temperature, aqfrac, icwmr, rprd, fa_u, dconudt_wetdep_dev,
+              dconudt_activa_dev, conu_dev, wcldbase, kcldbase);
           scalars_dev(0) = wcldbase;
           scalars_dev(1) = kcldbase;
           for (int i = 0; i < nlev; ++i)

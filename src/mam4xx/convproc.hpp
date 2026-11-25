@@ -1965,7 +1965,6 @@ void compute_updraft_mixing_ratio(
   const Real cldfrac[/* nlev */],
   const Real rhoair[/* nlev */],
   const Real zmagl[/* nlev */],
-  const Real dz,
   const Real mu[/* nlev+1 */],
   const Real eudp[/* nlev */],
   Const_Kokkos_2D_View gath,
@@ -2003,7 +2002,6 @@ void compute_updraft_mixing_ratio(
   in :: cldfrac[nlev]        ! cloud fraction [fraction]
   in :: rhoair[nlev]         ! air density at current i [kg/m3]
   in :: zmagl[nlev]          ! height above surface [m]
-  in :: dz                   ! layer thickness [m]
   in :: mu[nlev+1]           ! mu at current i (note nlev+1 dimension, see ma_convproc_tend) [mb/s]
   in :: eudp[nlev]           ! eu(i,k)*dp(i,k) at current i [mb/s]
   in :: gath[pcnst_extd,nlev]   ! gathered tracer array [kg/kg]
@@ -2092,14 +2090,16 @@ void compute_updraft_mixing_ratio(
                                             cldfrac_i, rhoair[kk], zmagl[kk]);
             // compute lagrangian transport time (dt_u)
             // -------------------------------------------------------------------
-            // There is a bug here that dz is not vertically varying but fixed
-            // as the thickness of the lowest level calculated previously in the
-            // subroutine ma_convproc_tend. keep it here for C++ refacoring but
-            // may need to fix later
-            // found by Shuaiqi Tang, 2022
+            // Use the thickness of the current layer kk. The Fortran code (and
+            // earlier versions of this port) used a single dz computed from
+            // dpdry[0]/rhoair[0] -- i.e., the model-top layer -- for every
+            // level (bug found by Shuaiqi Tang, 2022; see mam4xx issue #612).
             // -------------------------------------------------------------------
+            const Real hund_ovr_g = 100.0 / Constants::gravity;
+            // layer thickness at level kk [m]
+            const Real dz_kk = dpdry[kk] * hund_ovr_g / rhoair[kk];
             //  lagrangian transport time in the updraft [s]
-            const Real dt_u = mam4::min(dz / wup_kk, dt);
+            const Real dt_u = mam4::min(dz_kk / wup_kk, dt);
 
             //  Now apply transformation and removal changes
 
@@ -2255,7 +2255,6 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
   // iflux_method    ! 1=as in convtran (deep), 2=simpler
   const int iflux_method = convtype == ConvProc::Deep ? 1 : 2;
 
-  const Real hund_ovr_g = 100.0 / Constants::gravity;
   const Real rair = Constants::r_gas_dry_air;
 
   //  md, mu, are all "dry" mass fluxes
@@ -2432,18 +2431,11 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
                          conu, cond);
 
     // Compute updraft mixing ratios from cloudbase to cloudtop
-    // ---------------------------------------------------------------------------
-    // there is a bug here for dz, which is not a vertically-varying profile.
-    // see the subroutine compute_updraft_mixing_ratio for the bug information
-    // by Shuaiqi Tang, 2022
-    // ---------------------------------------------------------------------------
-    const Real dz = dpdry[0] * hund_ovr_g / rhoair[0];
-
     compute_updraft_mixing_ratio(
         team, aero_species, doconvproc_extd, nlev, ktop, kbot, iconvtype, dt,
-        dp, dpdry, cldfrac, rhoair.data(), zmagl.data(), dz, mu.data(),
-        eudp.data(), gath, temperature, aqfrac, icwmr, rprd, fa_u.data(),
-        dconudt_wetdep, dconudt_activa, conu, xx_wcldbase, xx_kcldbase);
+        dp, dpdry, cldfrac, rhoair.data(), zmagl.data(), mu.data(), eudp.data(),
+        gath, temperature, aqfrac, icwmr, rprd, fa_u.data(), dconudt_wetdep,
+        dconudt_activa, conu, xx_wcldbase, xx_kcldbase);
 
     // Compute downdraft mixing ratios from cloudtop to cloudbase
     compute_downdraft_mixing_ratio(team, doconvproc_extd, ktop, kbot, md.data(),

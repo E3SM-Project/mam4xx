@@ -72,7 +72,7 @@ set(TEST_LIST
     compute_wetdep_tend
     ma_activate_convproc_ts_3
     compute_activation_tend_ts_3
-    compute_updraft_mixing_ratio_ts_3
+    bfb_compute_updraft_mixing_ratio_ts_3
     ma_convproc_tend_ts_3
     ma_convproc_dp_intr_ts_3
     ma_convproc_intr_ts_3
@@ -103,7 +103,7 @@ set(ERROR_THRESHOLDS
     ${DEFAULT_TOL} # compute_wetdep_tend
     2e-5           # ma_activate_convproc_ts_3
     2e-5           # compute_activation_tend_ts_3
-    8e-6           # compute_updraft_mixing_ratio_ts_3
+    1e-13          # compute_updraft_mixing_ratio_ts_3
     2e-5           # ma_convproc_tend_ts_3
     3e-6           # ma_convproc_dp_intr_ts_3
     3e-6           # ma_convproc_intr_ts_3
