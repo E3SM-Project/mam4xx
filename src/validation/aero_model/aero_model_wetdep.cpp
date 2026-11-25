@@ -225,7 +225,10 @@ void aero_model_wetdep(Ensemble *ensemble) {
               // Convection parameters
               scratch1Dviews, du_icol, eu_icol, ed_icol, dp_icol,
               p_del_dry_icol, ktop, kbot, convproc_do_aer, convproc_do_gas,
-              zm_activity, species_class, mmtoo_prevap_resusp, aero_config);
+              /*disable_convective_transport=*/false,
+              /*disable_convective_incloud_wetdep=*/false,
+              /*disable_convective_belowcloud_scav=*/false, zm_activity,
+              species_class, mmtoo_prevap_resusp, aero_config);
 
           team.team_barrier();
           Kokkos::parallel_for(

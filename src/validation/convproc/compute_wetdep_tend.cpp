@@ -118,9 +118,9 @@ void compute_wetdep_tend(Ensemble *ensemble) {
           }
 
           mam4::convproc::compute_wetdep_tend(
-              doconvproc_extd, dt, dt_u[kk], dp_i[kk], cldfrac_i[kk],
-              mu_p_eudp[kk], aqfrac, icwmr[kk], rprd[kk], conu[kk],
-              dconudt_wetdep[kk]);
+              doconvproc_extd, /*disable_convective_incloud_wetdep=*/false, dt,
+              dt_u[kk], dp_i[kk], cldfrac_i[kk], mu_p_eudp[kk], aqfrac,
+              icwmr[kk], rprd[kk], conu[kk], dconudt_wetdep[kk]);
           for (int i = 0; i < nlev + 1; ++i) {
             for (int j = 0; j < pcnst_extd; ++j) {
               conu_dev(i, j) = conu[i][j];
