@@ -69,6 +69,20 @@ def mass_and_number_fractions_increase_monatonically_with_supersaturation(state)
 def number_fraction_is_one_half_at_critical_supersaturation_of_median_diameter(state):
     return False
 
+def number_fractions_match_expected_values(state):
+    # NOTE: the ordering of these expected quantities is determined by the ordering of the parameters
+    # NOTE: in the sweep(s) specified in the `experiment` section. This is not practical for multiple-
+    # NOTE: parameter sweeps without further specification.
+    # FIXME: figure this out!
+    expected_number_fractions = [
+        0.0, 0.004316742447384711, 0.056258485016730392, 0.21161951810137772,
+        0.49415645356905025, 0.49999999999999667, 0.84722574433828679, 0.96491205591080664,
+    ]
+    expected_dry_mass_fractions = [
+        0.0, 0.19410272871029796, 0.57000193549259004, 0.83211216604095939,
+        0.95982958159524401, 0.96108010372429453, 0.99734800522073563, 0.99982430532297384,
+    ]
+
 #----------------------
 # Box model invocation
 #----------------------
@@ -187,23 +201,7 @@ box(name = 'B1_single_mode_sulfate',
     # At s=0 use the exact limit f_N=f_M=0 and D_c=+infinity;
     # avoid evaluating log(0). All other diagnostics must remain finite.
     verification = {
-        'reference': 'independent_lognormal_tail_integrals',
-
-        # NOTE: the ordering of these expected quantities is determined by the ordering of the parameters
-        # NOTE: in the sweep(s) specified in the `experiment` section. This is not practical for multiple-
-        # NOTE: parameter sweeps without further specification.
-        'expected_number_fractions': [
-            0.0, 0.004316742447384711, 0.056258485016730392, 0.21161951810137772,
-            0.49415645356905025, 0.49999999999999667, 0.84722574433828679, 0.96491205591080664,
-        ],
-        'expected_dry_mass_fractions': [
-            0.0, 0.19410272871029796, 0.57000193549259004, 0.83211216604095939,
-            0.95982958159524401, 0.96108010372429453, 0.99734800522073563, 0.99982430532297384,
-        ],
-
-        'tolerance': {
-            'roundoff_multiplier': 512, # multiple of floating point epsilon to use for tolerance
-        },
+        # FIXME: does anything else belong in this section?
 
         # Checks are functions that evaluate expressions of available quantities, returning true on
         # success and false on failure. The final simulation state is passed to the function in a
