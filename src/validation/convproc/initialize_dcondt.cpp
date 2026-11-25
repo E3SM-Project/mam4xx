@@ -81,6 +81,7 @@ void initialize_dcondt(Ensemble *ensemble) {
     EKAT_ASSERT(71 == kbot);
     const int iflux_method = input.get("iflux_method");
     EKAT_ASSERT(1 == iflux_method);
+    const bool disable_convective_transport = false;
 
     std::vector<Real> doconvproc_extd_host, dpdry_i_host, fa_u_host, mu_i_host,
         md_i_host, chat_host, gath_host, conu_host, cond_host,
@@ -163,18 +164,19 @@ void initialize_dcondt(Ensemble *ensemble) {
             eddp[i] = eddp_dev(i);
 
           mam4::convproc::initialize_dcondt(
-              team, doconvproc_extd, iflux_method, ktop, kbot, nlev, dpdry_i,
-              fa_u, mu_i, md_i, chat_dev, gath_dev, conu_dev, cond_dev,
-              dconudt_activa_dev, dconudt_wetdep_dev, dudp, dddp, eudp, eddp,
-              dcondt_dev);
+              team, doconvproc_extd, iflux_method, disable_convective_transport,
+              ktop, kbot, nlev, dpdry_i, fa_u, mu_i, md_i, chat_dev, gath_dev,
+              conu_dev, cond_dev, dconudt_activa_dev, dconudt_wetdep_dev, dudp,
+              dddp, eudp, eddp, dcondt_dev);
 
           const int iflux_method_2 = 2;
           // flip a bit to trip a check in initialize_dcondt
           mu_i[62] *= -1;
           md_i[62] *= -1;
           mam4::convproc::initialize_dcondt(
-              team, doconvproc_extd, iflux_method_2, ktop, kbot, nlev, dpdry_i,
-              fa_u, mu_i, md_i, chat_dev, gath_dev, conu_dev, cond_dev,
+              team, doconvproc_extd, iflux_method_2,
+              disable_convective_transport, ktop, kbot, nlev, dpdry_i, fa_u,
+              mu_i, md_i, chat_dev, gath_dev, conu_dev, cond_dev,
               dconudt_activa_dev, dconudt_wetdep_dev, dudp, dddp, eudp, eddp,
               dcondt_dev_2);
         });

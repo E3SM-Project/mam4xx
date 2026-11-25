@@ -922,19 +922,18 @@ void ma_precpevap_convproc(
 // sets a SINGLE level on output for the loop over ktop to kbot.  So, it should
 // be possible to input kk and then call in parallel from ktop to kbot.
 KOKKOS_INLINE_FUNCTION
-void initialize_dcondt(const ThreadTeam &team,
-                       const bool doconvproc_extd[ConvProc::pcnst_extd],
-                       const int iflux_method, const int ktop, const int kbot,
-                       const int nlev, const Real dpdry[/* nlev */],
-                       const Real fa_u[/* nlev */], const Real mu[/* nlev+1 */],
-                       const Real md[/* nlev+1 */], Const_Kokkos_2D_View chat,
-                       Const_Kokkos_2D_View gath, Const_Kokkos_2D_View conu,
-                       Const_Kokkos_2D_View cond,
-                       Const_Kokkos_2D_View dconudt_activa,
-                       Const_Kokkos_2D_View dconudt_wetdep,
-                       const Real dudp[/* nlev */], const Real dddp[/* nlev */],
-                       const Real eudp[/* nlev */], const Real eddp[/* nlev */],
-                       Kokkos_2D_View dcondt) {
+void initialize_dcondt(
+    const ThreadTeam &team, const bool doconvproc_extd[ConvProc::pcnst_extd],
+    const int iflux_method, const bool disable_convective_transport,
+    const int ktop, const int kbot, const int nlev,
+    const Real dpdry[/* nlev */], const Real fa_u[/* nlev */],
+    const Real mu[/* nlev+1 */], const Real md[/* nlev+1 */],
+    Const_Kokkos_2D_View chat, Const_Kokkos_2D_View gath,
+    Const_Kokkos_2D_View conu, Const_Kokkos_2D_View cond,
+    Const_Kokkos_2D_View dconudt_activa, Const_Kokkos_2D_View dconudt_wetdep,
+    const Real dudp[/* nlev */], const Real dddp[/* nlev */],
+    const Real eudp[/* nlev */], const Real eddp[/* nlev */],
+    Kokkos_2D_View dcondt) {
   // clang-format off
   // -----------------------------------------------------------------------
   //  initialize dondt and update with aerosol activation and wetdeposition
@@ -946,6 +945,7 @@ void initialize_dcondt(const ThreadTeam &team,
   /* cloudborne aerosol, so the arrays are dimensioned with pcnst_extd = pcnst*2
    in :: doconvproc_extd[pcnst_extd] ! flag for doing convective transport
    in :: iflux_method             ! 1=as in convtran (deep), 2=uwsh
+   in :: disable_convective_transport ! if true, set the convective transport (net flux) term to zero
    in :: ktop                     ! top level index
    in :: kbot                     ! bottom level index
    in :: dpdry[nlev]              ! dp [mb]
@@ -980,42 +980,49 @@ void initialize_dcondt(const ThreadTeam &team,
     // The indexing started at 2 for Fortran, so 1 for C++
     for (int icnst = 1; icnst < ConvProc::pcnst_extd; ++icnst) {
       if (doconvproc_extd[icnst]) {
-        // compute fluxes as in convtran, and also source/sink terms
-        // (version 3 limit fluxes outside convection to mass in appropriate
-        // layer (these limiters are probably only safe for positive definite
-        // quantitities (it assumes that mu and md already satify a courant
-        // number limit of 1)
-        Real fluxin = 0, fluxout = 0;
-        if (iflux_method != 2) {
-          fluxin = mu[kp1] * conu(kp1, icnst) +
-                   mu[kk] * mam4::min(chat(kk, icnst), gath(km1x, icnst)) -
-                   (md[kk] * cond(kk, icnst) +
-                    md[kp1] * mam4::min(chat(kp1, icnst), gath(kp1x, icnst)));
-          fluxout = mu[kk] * conu(kk, icnst) +
-                    mu[kp1] * mam4::min(chat(kp1, icnst), gath(kk, icnst)) -
-                    (md[kp1] * cond(kp1, icnst) +
-                     md[kk] * mam4::min(chat(kk, icnst), gath(kk, icnst)));
-        } else {
-          // new method -- simple upstream method for the env subsidence
-          // tmpa = net env mass flux (positive up) at top of layer k
-          fluxin = mu[kp1] * conu(kp1, icnst) - md[kk] * cond(kk, icnst);
-          fluxout = mu[kk] * conu(kk, icnst) - md[kp1] * cond(kp1, icnst);
-          Real tmpa = -(mu[kk] + md[kk]);
-          if (tmpa <= 0.0) {
-            fluxin -= tmpa * gath(km1x, icnst);
-          } else {
-            fluxout += tmpa * gath(kk, icnst);
-          }
-          // tmpa = net env mass flux (positive up) at base of layer k
-          tmpa = -(mu[kp1] + md[kp1]);
-          if (tmpa >= 0.0) {
-            fluxin += tmpa * gath(kp1x, icnst);
-          } else {
-            fluxout -= tmpa * gath(kk, icnst);
-          }
-        }
         //  net flux [kg/kg/s * mb]
-        const Real netflux = fluxin - fluxout;
+        //  When disable_convective_transport is true, the vertical
+        //  redistribution by up/downdrafts and environmental subsidence is
+        //  turned off and fluxin/fluxout are not computed. Activation and
+        //  in-cloud wet removal (netsrce) remain.
+        Real netflux = 0.0;
+        if (!disable_convective_transport) {
+          // compute fluxes as in convtran, and also source/sink terms
+          // (version 3 limit fluxes outside convection to mass in appropriate
+          // layer (these limiters are probably only safe for positive definite
+          // quantitities (it assumes that mu and md already satify a courant
+          // number limit of 1)
+          Real fluxin = 0, fluxout = 0;
+          if (iflux_method != 2) {
+            fluxin = mu[kp1] * conu(kp1, icnst) +
+                     mu[kk] * mam4::min(chat(kk, icnst), gath(km1x, icnst)) -
+                     (md[kk] * cond(kk, icnst) +
+                      md[kp1] * mam4::min(chat(kp1, icnst), gath(kp1x, icnst)));
+            fluxout = mu[kk] * conu(kk, icnst) +
+                      mu[kp1] * mam4::min(chat(kp1, icnst), gath(kk, icnst)) -
+                      (md[kp1] * cond(kp1, icnst) +
+                       md[kk] * mam4::min(chat(kk, icnst), gath(kk, icnst)));
+          } else {
+            // new method -- simple upstream method for the env subsidence
+            // tmpa = net env mass flux (positive up) at top of layer k
+            fluxin = mu[kp1] * conu(kp1, icnst) - md[kk] * cond(kk, icnst);
+            fluxout = mu[kk] * conu(kk, icnst) - md[kp1] * cond(kp1, icnst);
+            Real tmpa = -(mu[kk] + md[kk]);
+            if (tmpa <= 0.0) {
+              fluxin -= tmpa * gath(km1x, icnst);
+            } else {
+              fluxout += tmpa * gath(kk, icnst);
+            }
+            // tmpa = net env mass flux (positive up) at base of layer k
+            tmpa = -(mu[kp1] + md[kp1]);
+            if (tmpa >= 0.0) {
+              fluxin += tmpa * gath(kp1x, icnst);
+            } else {
+              fluxout -= tmpa * gath(kk, icnst);
+            }
+          }
+          netflux = fluxin - fluxout;
+        }
 
         // note for C++ refactoring:
         // I was trying to separate dconudt_activa and dconudt_wetdep out
@@ -2254,6 +2261,8 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
   const int iconvtype = convtype == ConvProc::Deep ? 1 : 2;
   // iflux_method    ! 1=as in convtran (deep), 2=simpler
   const int iflux_method = convtype == ConvProc::Deep ? 1 : 2;
+  // disable_convective_transport ! if true, zero the convective transport term
+  const bool disable_convective_transport = false;
 
   const Real hund_ovr_g = 100.0 / Constants::gravity;
   const Real rair = Constants::r_gas_dry_air;
@@ -2452,10 +2461,11 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
     // Now compute fluxes and tendencies
     // NOTE:  The approach used in convtran applies to inert tracers and
     //        must be modified to include source and sink terms
-    initialize_dcondt(team, doconvproc_extd, iflux_method, ktop, kbot, nlev,
-                      dpdry, fa_u.data(), mu.data(), md.data(), chat, gath,
-                      conu, cond, dconudt_activa, dconudt_wetdep, dudp.data(),
-                      dddp.data(), eudp.data(), eddp.data(), dcondt);
+    initialize_dcondt(team, doconvproc_extd, iflux_method,
+                      disable_convective_transport, ktop, kbot, nlev, dpdry,
+                      fa_u.data(), mu.data(), md.data(), chat, gath, conu, cond,
+                      dconudt_activa, dconudt_wetdep, dudp.data(), dddp.data(),
+                      eudp.data(), eddp.data(), dcondt);
 
     // compute dcondt_wetdep for next subroutine
     Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int i) {
