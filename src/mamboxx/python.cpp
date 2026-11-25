@@ -398,6 +398,7 @@ AerosolConfig read_aerosols(const AtmosphereConfig &atmosphere, PyObject *aeroso
   while (PyDict_Next(modes, &pos, &key, &mode)) {
     EKAT_REQUIRE(PyUnicode_Check(key), "At least one aerosol mode name is not a string");
     const char *mode_name = PyUnicode_AsUTF8(key);
+    printf("Reading aerosol mode %s\n", mode_name);
     cfg.modes[mode_name] = read_aerosol_mode(atmosphere, mode, mode_name);
   }
   size_t n_levels = 0;
@@ -544,8 +545,9 @@ PyObject *column(PyObject *self, PyObject *args, PyObject *keywords) {
                                    &PyDict_Type, &parameter_sweep, &PyDict_Type, &time,
                                    &PyDict_Type, &control, &PyDict_Type, &atmosphere,
                                    &PyDict_Type, &aerosols, &PyDict_Type, &gases,
-                                   &PyDict_Type, &output, &PyDict_Type, &verification))
+                                   &PyDict_Type, &output, &PyDict_Type, &verification)) {
     return nullptr;
+  }
 
   // FIXME
   EKAT_REQUIRE(time != nullptr, "No time section found in input");
@@ -592,15 +594,15 @@ PyObject* register_python_globals(Config &config) {
   PyDict_SetItemString(constants, "gas_constant", PyFloat_FromDouble(8.314563841815325));
   PyDict_SetItemString(globals, "constants", constants);
 
-#if MAM4XX_NUM_VERTICAL_LEVELS == 1
-  // box model function
-  PyObject *box_function = PyCFunction_New(&box_def, (PyObject*)&config);
-  PyDict_SetItemString(globals, "box", box_function);
-#else
-  // column model function
-  PyObject *column_function = PyCFunction_New(&column_def, (PyObject*)&config);
-  PyDict_SetItemString(globals, "column", column_function);
-#endif
+  if (mam4::nlev == 1) {
+    // box model function
+    PyObject *box_function = PyCFunction_New(&box_def, (PyObject*)&config);
+    PyDict_SetItemString(globals, "box", box_function);
+  } else {
+    // column model function
+    PyObject *column_function = PyCFunction_New(&column_def, (PyObject*)&config);
+    PyDict_SetItemString(globals, "column", column_function);
+  }
 
   return globals;
 }
@@ -721,8 +723,14 @@ Config read_config(const std::string &filename) {
   EKAT_REQUIRE(not Py_IsInitialized(), "Python interpreter already initialized for some reason!");
   auto *globals = register_python_globals(config);
 
+  printf("Reading %s\n", filename.c_str());
   FILE *f = std::fopen(filename.c_str(), "r");
-  PyRun_FileEx(f, filename.c_str(), Py_file_input, globals, nullptr, 1);
+  PyObject *locals = PyDict_New();
+  PyObject *result = PyRun_FileEx(f, filename.c_str(), Py_file_input, globals, locals, 1);
+  if (result == nullptr) {
+    PyErr_Print();
+    EKAT_REQUIRE(false, "An error occurred while reading input.");
+  }
 
   size_t num_modes = config.aerosols.modes.size();
   EKAT_REQUIRE(num_modes > 0, "no aerosol modes specified");

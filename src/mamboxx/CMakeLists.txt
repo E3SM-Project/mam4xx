@@ -23,6 +23,8 @@ target_include_directories(mamscm PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
+add_test(c4_test mamscm ${CMAKE_CURRENT_SOURCE_DIR}/examples/c4.py)
+
 #-------------------------------
 # Box model (1 vertical column)
 #-------------------------------
