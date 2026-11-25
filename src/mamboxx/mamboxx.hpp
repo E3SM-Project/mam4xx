@@ -112,6 +112,18 @@ struct Config {
   VerificationConfig verification;
 };
 
+struct State {
+  mam4::Atmosphere  atmosphere;
+  mam4::Prognostics prognostics;
+  mam4::Diagnostics diagnostics;
+
+  struct {
+    mam4::microphysics::ColumnLocation     location;
+    mam4::microphysics::ExternalConditions external_conditions;
+    mam4::microphysics::FixedSpeciesView   invariants;
+  } microphysics;
+};
+
 struct Result {
   bool          success;
   std::string   error;    // if !success

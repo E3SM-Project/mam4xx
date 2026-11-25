@@ -1,7 +1,9 @@
-#include "mam4xx/aero_config.hpp"
-#include "mam4xx/aero_modes.hpp"
-#include "mam4xx/aero_species.hpp"
 #include "mamboxx.hpp"
+#include "python.hpp"
+
+#include <mam4xx/aero_config.hpp>
+#include <mam4xx/aero_modes.hpp>
+#include <mam4xx/aero_species.hpp>
 #include <mam4xx/mam4.hpp>
 #include <mam4xx/atmosphere.hpp>
 
@@ -28,21 +30,11 @@ using ThreadTeam        = mam4::ThreadTeam;
 using TeamPolicyFactory = ekat::TeamPolicyFactory<ekat::KokkosTypes<ekat::DefaultDevice>::ExeSpace>;
 
 using Microphysics = mam4::microphysics::Microphysics;
+using DropMixNuc   = mam4::aerosol_cloud_interaction::DropMixNuc;
 
 struct Processes {
   std::unique_ptr<Microphysics> microphysics;
-};
-
-struct State {
-  mam4::Atmosphere  atmosphere;
-  mam4::Prognostics prognostics;
-  mam4::Diagnostics diagnostics;
-
-  struct {
-    mam4::microphysics::ColumnLocation     location;
-    mam4::microphysics::ExternalConditions external_conditions;
-    mam4::microphysics::FixedSpeciesView   invariants;
-  } microphysics;
+  std::unique_ptr<DropMixNuc>   dropmixnuc;
 };
 
 template <typename T>
@@ -169,110 +161,6 @@ void update_diagnostics(const Processes &processes, const State &state, Real dt,
   }
 }
 
-//-----------------------------------------------------------------
-// Construction of an aerosol state for use in verification checks
-//-----------------------------------------------------------------
-
-PyObject *create_python_column(mam4::ColumnView device_view, HostColumnView host_view) {
-  PyObject *py_col = PyList_New(mam4::nlev);
-  Kokkos::deep_copy(host_view, device_view);
-  for (auto i = 0; i < mam4::nlev; ++i) {
-    PyList_SetItem(py_col, i, PyFloat_FromDouble((double)host_view(i)));
-  }
-  return py_col;
-}
-
-PyObject *create_python_atmosphere(const mam4::Atmosphere &atmosphere, HostColumnView host_view) {
-  PyObject *py_atm = _PyObject_New(&PyBaseObject_Type);
-  return py_atm;
-}
-
-PyObject *create_python_mode(const mam4::Prognostics &prognostics, mam4::ModeIndex mode_index,
-                             HostColumnView host_view) {
-  PyObject *py_mode = _PyObject_New(&PyBaseObject_Type);
-  int m = int(mode_index);
-  switch (mode_index) {
-    case mam4::ModeIndex::Accumulation:
-      break;
-    case mam4::ModeIndex::Aitken:
-      break;
-    case mam4::ModeIndex::Coarse:
-      break;
-    case mam4::ModeIndex::PrimaryCarbon:
-      break;
-    default:
-      EKAT_REQUIRE(false, "Invalid aerosol mode index: " << m);
-  };
-  PyObject *py_interstitial = _PyObject_New(&PyBaseObject_Type);
-  PyObject *py_n_i = create_python_column(prognostics.n_mode_i[m], host_view);
-  PyObject_SetAttrString(py_interstitial, "number_density", py_n_i);
-  int num_species = mam4::AeroConfig::nspec_amode(m);
-  for (int s = 0; s < num_species; ++s) {
-    mam4::AeroId a_id = mam4::mode_aero_species(m, s);
-    PyObject *py_q_i = create_python_column(prognostics.q_aero_i[m][s], host_view);
-    std::string species_name = mam4::aero_id_str(a_id).c_str();
-    PyObject_SetAttrString(py_interstitial, species_name.c_str(), py_q_i);
-  }
-  PyObject_SetAttrString(py_mode, "interstitial", py_interstitial);
-
-  PyObject *py_cloudborne = _PyObject_New(&PyBaseObject_Type);
-  PyObject *py_n_c = create_python_column(prognostics.n_mode_c[m], host_view);
-  PyObject_SetAttrString(py_cloudborne, "number_density", py_n_c);
-  for (int s = 0; s < num_species; ++s) {
-    mam4::AeroId a_id = mam4::mode_aero_species(m, s);
-    PyObject *py_q_i = create_python_column(prognostics.q_aero_c[m][s], host_view);
-    std::string species_name = mam4::aero_id_str(a_id).c_str();
-    PyObject_SetAttrString(py_cloudborne, species_name.c_str(), py_q_i);
-  }
-  PyObject_SetAttrString(py_mode, "cloudborne", py_cloudborne);
-
-  return py_mode;
-}
-
-PyObject *create_python_gases(const mam4::Prognostics &prognostics, HostColumnView host_view) {
-  PyObject *py_gases = _PyObject_New(&PyBaseObject_Type);
-  constexpr Py_ssize_t num_gases = mam4::AeroConfig::num_gas_ids();
-  for (Py_ssize_t g = 0; g < num_gases; ++g) {
-    static std::string gas_names[num_gases] = {
-      "o3", "h2o2", "h2so4", "so2", "dms", "soag", // FIXME: ... right???
-    };
-    PyObject *py_gas = create_python_column(prognostics.q_gas[g], host_view);
-    PyObject_SetAttrString(py_gases, gas_names[g].c_str(), py_gas);
-  }
-  return py_gases;
-}
-
-PyObject *create_python_prognostics(const mam4::Prognostics &prognostics, HostColumnView host_view) {
-  PyObject *py_progs = _PyObject_New(&PyBaseObject_Type);
-  constexpr Py_ssize_t num_modes = mam4::AeroConfig::num_modes();
-  PyObject *modes = _PyObject_New(&PyBaseObject_Type);
-  for (Py_ssize_t m = 0; m < num_modes; ++m) {
-    static std::string mode_names[num_modes] = {
-      "accumulation", "aitken", "coarse", "primary carbon",
-    };
-    auto mode_index = (mam4::ModeIndex)m;
-    PyObject_SetAttrString(modes, mode_names[m].c_str(),
-                           create_python_mode(prognostics, mode_index, host_view));
-  }
-  PyObject_SetAttrString(py_progs, "modes", modes);
-  PyObject_SetAttrString(py_progs, "gases", create_python_gases(prognostics, host_view));
-  return py_progs;
-}
-
-PyObject *create_python_diagnostics(const mam4::Diagnostics &diagnostics, HostColumnView host_view) {
-  PyObject *py_diags = _PyObject_New(&PyBaseObject_Type);
-  return py_diags;
-}
-
-PyObject *create_python_state(const State &state) {
-  auto host_view = create_host_column_view(mam4::nlev);
-  PyObject *py_state = _PyObject_New(&PyBaseObject_Type);
-  PyObject_SetAttrString(py_state, "atmosphere", create_python_atmosphere(state.atmosphere, host_view));
-  PyObject_SetAttrString(py_state, "prognostics", create_python_prognostics(state.prognostics, host_view));
-  PyObject_SetAttrString(py_state, "diagnostics", create_python_diagnostics(state.diagnostics, host_view));
-  return py_state;
-}
-
 void finalize(const State &state, Result &result) {
   auto host_view = create_host_column_view(mam4::nlev);
 
@@ -314,11 +202,7 @@ Result run(const Config &config) {
     update_diagnostics(processes, state, config.time.dt, diagnostics);
   }
 
-  // assemble a Python-sensible aerosol state and run checks on it
-  PyObject *py_state = create_python_state(state);
-  for (auto check: config.verification.checks) {
-    PyObject_Call(check, py_state, NULL);
-  }
+  bool passed = run_verification_checks(config, state);
 
   Result result = {};
   finalize(state, result);

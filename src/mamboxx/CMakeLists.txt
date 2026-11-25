@@ -9,7 +9,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 
 add_executable(mamscm
   column.cpp
-  config_py.cpp
+  python.cpp
   main.cpp
   run.cpp
   microphysics.cpp
