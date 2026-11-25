@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="660" viewBox="0 0 1100 660" role="img" aria-labelledby="title desc">
+  <title id="title">Conceptual sulfur pathways in MAM4xx</title>
+  <desc id="desc">DMS oxidation produces sulfur dioxide. Sulfur dioxide oxidation produces sulfuric acid, while dissolved sulfur dioxide is oxidized by peroxide and ozone to cloud-borne sulfate. Separate sulfuric-acid uptake supplies cloud-borne sulfate or interstitial sulfate through condensation and nucleation. One DMS branch has half a mole of tracked sulfur dioxide yield.</desc>
+  <!-- Canonical editable diagram and vector export. Solid arrows carry sulfur;
+       dashed double arrow denotes diagnostic equilibrium, not transported state. -->
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4.5 L0,9" fill="#374151"/></marker>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #172b3a; }
+      .node { fill: white; stroke: #4b6477; stroke-width: 2; rx: 10; }
+      .label { font-size: 26px; font-weight: 600; text-anchor: middle; }
+      .detail { font-size: 21px; text-anchor: middle; }
+      .arrow { fill: none; stroke: #374151; stroke-width: 2.5; marker-end: url(#arrow); }
+      .lane { font-size: 20px; font-weight: 700; letter-spacing: 1px; }
+      .edge { font-size: 20px; text-anchor: middle; }
+    </style>
+  </defs>
+  <rect width="1100" height="660" fill="#fff"/>
+  <rect x="15" y="15" width="1070" height="205" rx="12" fill="#edf4fa"/>
+  <rect x="15" y="285" width="1070" height="185" rx="12" fill="#eaf4ee"/>
+  <rect x="690" y="490" width="395" height="155" rx="12" fill="#f5f0e7"/>
+  <text class="lane" x="35" y="45">GAS CHEMISTRY</text>
+  <text class="lane" x="35" y="313">CLOUD WATER</text>
+  <text class="lane" x="710" y="518">INTERSTITIAL PARTICLES</text>
+  <rect class="node" x="40" y="88" width="215" height="92"/>
+  <text class="label" x="147" y="126">DMS gas</text>
+  <text class="detail" x="147" y="158">Sulfur precursor</text>
+  <rect class="node" x="395" y="88" width="215" height="92"/>
+  <text class="label" x="502" y="126">SO₂ gas</text>
+  <text class="detail" x="502" y="158">Sulfur(IV)</text>
+  <rect class="node" x="790" y="88" width="255" height="92"/>
+  <text class="label" x="917" y="126">H₂SO₄ gas</text>
+  <text class="detail" x="917" y="158">Sulfuric acid</text>
+  <path class="arrow" d="M255 132 H395"/>
+  <text class="edge" x="325" y="79">OH, NO₃</text>
+  <text class="edge" x="325" y="205">Includes 0.5 yield</text>
+  <path class="arrow" d="M610 132 H790"/>
+  <text class="edge" x="700" y="115">OH oxidation</text>
+  <rect class="node" x="40" y="345" width="215" height="93"/>
+  <text class="label" x="147" y="382">Dissolved S(IV)</text>
+  <text class="detail" x="147" y="414">SO₂, HSO₃⁻, SO₃²⁻</text>
+  <path class="arrow" marker-start="url(#arrow)" stroke-dasharray="7 5" d="M502 183 V250 H147 V342"/>
+  <text class="edge" x="340" y="275">Henry equilibrium, pH, T</text>
+  <rect class="node" x="395" y="345" width="215" height="93"/>
+  <text class="label" x="502" y="382">Oxidation</text>
+  <text class="detail" x="502" y="414">H₂O₂ and O₃</text>
+  <path class="arrow" d="M255 390 H395"/>
+  <rect class="node" x="790" y="345" width="255" height="93"/>
+  <text class="label" x="917" y="382">Cloud-borne SO₄</text>
+  <text class="detail" x="917" y="414">Sulfate in droplets</text>
+  <path class="arrow" d="M610 390 H790"/>
+  <text class="edge" x="700" y="373">Sulfate gain</text>
+  <path class="arrow" d="M865 180 V345"/>
+  <text class="edge" x="764" y="247">Droplet uptake</text>
+  <text class="edge" x="764" y="273">First-order loss</text>
+  <path class="arrow" d="M1015 180 H1070 V570 H1045"/>
+  <rect class="node" x="710" y="540" width="335" height="83"/>
+  <text class="label" x="877" y="574">Interstitial SO₄</text>
+  <text class="detail" x="877" y="605">Condensation / nucleation</text>
+  <text font-size="22" x="40" y="526">Oxidant controls</text>
+  <text font-size="20" x="40" y="559">Gas H₂O₂: HO₂ production; OH and sunlight losses.</text>
+  <text font-size="20" x="40" y="590">Aqueous H₂O₂ is consumed; O₃ is not depleted here.</text>
+  <text font-size="20" x="40" y="629">Arrows show pathways, not the order of model calls.</text>
+</svg>
