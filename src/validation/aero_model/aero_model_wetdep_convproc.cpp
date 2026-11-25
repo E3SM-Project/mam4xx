@@ -285,7 +285,10 @@ void aero_model_wetdep_convproc(Ensemble *ensemble) {
               aerdepwetis, aerdepwetcw, work, isprx, aerdepwetis_convproc,
               // Convection parameters
               scratch1Dviews, du_icol, eu_icol, ed_icol, dp_icol,
-              p_del_dry_icol, ktop, kbot, convproc_do_aer, convproc_do_gas, 1,
+              p_del_dry_icol, ktop, kbot, convproc_do_aer, convproc_do_gas,
+              /*disable_convective_transport=*/false,
+              /*disable_convective_incloud_wetdep=*/false,
+              /*disable_convective_belowcloud_scav=*/false, 1,
               species_class_dev.data(), mmtoo_prevap_resusp_dev.data(),
               aero_config);
 

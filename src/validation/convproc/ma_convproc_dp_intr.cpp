@@ -217,9 +217,11 @@ void ma_convproc_dp_intr(Ensemble *ensemble) {
           const bool convproc_do_gas = true;
           mam4::convproc::ma_convproc_dp_intr(
               team, aero_species, scratch1Dviews, convproc_do_aer,
-              convproc_do_gas, nlev, temperature, pmid, dpdry, dt, cldfrac,
-              icwmr, rprd, evapc, du, eu, ed, dp, ktop, kbot, qnew_dev,
-              species_class, mmtoo_prevap_resusp, dqdt_view, qsrflx, dotend);
+              convproc_do_gas, /*disable_convective_transport=*/false,
+              /*disable_convective_incloud_wetdep=*/false, nlev, temperature,
+              pmid, dpdry, dt, cldfrac, icwmr, rprd, evapc, du, eu, ed, dp,
+              ktop, kbot, qnew_dev, species_class, mmtoo_prevap_resusp,
+              dqdt_view, qsrflx, dotend);
 
           for (int i = 0; i < nlev; ++i) {
             for (int j = 0; j < pcnst; ++j) {

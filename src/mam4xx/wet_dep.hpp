@@ -665,10 +665,11 @@ void wetdepa_v2(const Real deltat, const Real pdel, const Real cmfdqr,
                 const Real cldt, const Real cldc, const Real cldvcu,
                 const Real cldvst, const Real sol_factb, const Real sol_facti,
                 const Real sol_factic, const int mam_prevap_resusp_optcc,
-                const bool is_strat_cloudborne, const Real scavcoef,
-                const Real f_act_conv, const Real tracer, const Real qqcw,
-                const Real precabs, const Real precabc, const Real scavabs,
-                const Real scavabc, const Real precabs_base,
+                const bool is_strat_cloudborne,
+                const bool disable_convective_belowcloud_scav,
+                const Real scavcoef, const Real f_act_conv, const Real tracer,
+                const Real qqcw, const Real precabs, const Real precabc,
+                const Real scavabs, const Real scavabc, const Real precabs_base,
                 const Real precabc_base, const Real precnums_base,
                 const Real precnumc_base, Real &scavt, Real &bcscavt,
                 Real &rcscavt, Real &rsscavt) {
@@ -718,6 +719,9 @@ void wetdepa_v2(const Real deltat, const Real pdel, const Real cmfdqr,
 
 
   in :: is_strat_cloudborne = true if tracer is stratiform-cloudborne aerosol; else false
+  in :: disable_convective_belowcloud_scav = true to turn off scavenging by convective
+        rain (srcc = finc = 0, which removes both its below-cloud and in-cloud parts)
+        and the corresponding convective resuspension (resusp_c = 0)
 
   in :: scavcoef ! Dana and Hales coefficient [1/mm]
   in :: f_act_conv ! [fraction] ! f_act_conv = conv-cloud activation fraction when is_strat_cloudborne==.false.; else 0.0
@@ -797,6 +801,11 @@ void wetdepa_v2(const Real deltat, const Real pdel, const Real cmfdqr,
   wetdep_scavenging(2, is_strat_cloudborne, deltat, fracp, precabc, cldvcu,
                     scavcoef, sol_factb, sol_factic, tracer_incu, tracer_mean,
                     srcc, finc);
+  if (disable_convective_belowcloud_scav) {
+    // turn off scavenging by convective rain
+    srcc = 0.0;
+    finc = 0.0;
+  }
 
   // now do the stratiform scavenging
 
@@ -843,6 +852,9 @@ void wetdepa_v2(const Real deltat, const Real pdel, const Real cmfdqr,
     resusp_c = fracev_cu * scavabc;
     resusp_s = fracev_st * scavabs;
   }
+  // turn off resuspension from convective rain
+  if (disable_convective_belowcloud_scav)
+    resusp_c = 0.0;
 
   // ****************** update scavengingfor output ***************
   scavt = 0.0; // scavenging tend at current  [kg/kg/s]
@@ -1101,7 +1113,7 @@ void compute_q_tendencies(
     //     qqcw_sav,
     ConstColumnView pdel, const Real dt, const int jnummaswtr, const int jnv,
     const int mm, const int lphase, const int imode, const int lspec,
-    View2D workspace) {
+    const bool disable_convective_belowcloud_scav, View2D workspace) {
 
   team.team_barrier();
   // clang-format off
@@ -1423,7 +1435,8 @@ void compute_q_tendencies(
       // below-cloud scavenging tendency [kg/kg/s]
       const Real src2 = (sol_factb[k] * cldvcu[k] * odds * tracer_mean) / dt;
       // total stratiform or convective scavenging
-      srcc[k] = src1 + src2;
+      // (zero when scavenging by convective rain is turned off)
+      srcc[k] = disable_convective_belowcloud_scav ? 0.0 : src1 + src2;
     });
   }
 
@@ -1705,19 +1718,19 @@ void compute_q_tendencies(
             dt, pdel[k], cmfdqr[k], evapc[k], dlf[k], conicw[k], prain[k],
             evapr[k], totcond[k], cldt[k], cldcu[k], cldvcu[k], cldvst[k],
             sol_factb[k], sol_facti[k], sol_factic[k], prevap_resusp_optcc,
-            is_strat_cloudborne, scavcoef, f_act_conv[k], tracer, qqcw_tmp,
-            precabs[k], precabc[k], scavabs[k], scavabc[k], precabs_base[k],
-            precabc_base[k], precnums_base[k], precnumc_base[k], scavt[k],
-            bcscavt[k], rcscavt[k], rsscavt);
+            is_strat_cloudborne, disable_convective_belowcloud_scav, scavcoef,
+            f_act_conv[k], tracer, qqcw_tmp, precabs[k], precabc[k], scavabs[k],
+            scavabc[k], precabs_base[k], precabc_base[k], precnums_base[k],
+            precnumc_base[k], scavt[k], bcscavt[k], rcscavt[k], rsscavt);
       } else {
         wetdep::wetdepa_v2(
             dt, pdel[k], cmfdqr[k], evapc[k], dlf[k], conicw[k], prain[k],
             evapr[k], totcond[k], cldt[k], cldcu[k], cldvcu[k], cldvst[k],
             sol_factb[k], sol_facti[k], sol_factic[k], mam_prevap_resusp_optcc,
-            is_strat_cloudborne, scavcoef, f_act_conv[k], tracer, qqcw_tmp,
-            precabs[k], precabc[k], scavabs[k], scavabc[k], precabs_base[k],
-            precabc_base[k], precnums_base[k], precnumc_base[k], scavt[k],
-            bcscavt[k], rcscavt[k], rsscavt);
+            is_strat_cloudborne, disable_convective_belowcloud_scav, scavcoef,
+            f_act_conv[k], tracer, qqcw_tmp, precabs[k], precabc[k], scavabs[k],
+            scavabc[k], precabs_base[k], precabc_base[k], precnums_base[k],
+            precnumc_base[k], scavt[k], bcscavt[k], rcscavt[k], rsscavt);
       }
       // resuspension goes to coarse mode
       const bool update_dqdt = true;
@@ -1751,19 +1764,19 @@ void compute_q_tendencies(
             dt, pdel[k], cmfdqr[k], evapc[k], dlf[k], conicw[k], prain[k],
             evapr[k], totcond[k], cldt[k], cldcu[k], cldvcu[k], cldvst[k],
             sol_factb[k], sol_facti[k], sol_factic[k], prevap_resusp_optcc,
-            is_strat_cloudborne, scavcoef, f_act_conv[k], tracer, qqcw_tmp,
-            precabs[k], precabc[k], scavabs[k], scavabc[k], precabs_base[k],
-            precabc_base[k], precnums_base[k], precnumc_base[k], scavt[k],
-            bcscavt[k], rcscavt[k], rsscavt);
+            is_strat_cloudborne, disable_convective_belowcloud_scav, scavcoef,
+            f_act_conv[k], tracer, qqcw_tmp, precabs[k], precabc[k], scavabs[k],
+            scavabc[k], precabs_base[k], precabc_base[k], precnums_base[k],
+            precnumc_base[k], scavt[k], bcscavt[k], rcscavt[k], rsscavt);
       } else {
         wetdep::wetdepa_v2(
             dt, pdel[k], cmfdqr[k], evapc[k], dlf[k], conicw[k], prain[k],
             evapr[k], totcond[k], cldt[k], cldcu[k], cldvcu[k], cldvst[k],
             sol_factb[k], sol_facti[k], sol_factic[k], mam_prevap_resusp_optcc,
-            is_strat_cloudborne, scavcoef, f_act_conv[k], tracer, qqcw_tmp,
-            precabs[k], precabc[k], scavabs[k], scavabc[k], precabs_base[k],
-            precabc_base[k], precnums_base[k], precnumc_base[k], scavt[k],
-            bcscavt[k], rcscavt[k], rsscavt);
+            is_strat_cloudborne, disable_convective_belowcloud_scav, scavcoef,
+            f_act_conv[k], tracer, qqcw_tmp, precabs[k], precabc[k], scavabs[k],
+            scavabc[k], precabs_base[k], precabc_base[k], precnums_base[k],
+            precnumc_base[k], scavt[k], bcscavt[k], rcscavt[k], rsscavt);
       }
       // resuspension goes to coarse mode
       const bool update_dqdt = false;
@@ -1840,7 +1853,13 @@ void aero_model_wetdep(
     const int kbot,               // Cloud base level index
     const bool convproc_do_aer,   // Flag to process aerosols
     const bool convproc_do_gas,   // Flag to process gases
-    const int zm_activity,        // Deep convection activity flag (1/0)
+    // Flag to zero the convective transport term in convproc
+    const bool disable_convective_transport,
+    // Flag to turn off in-updraft (in-cloud) wet removal in convproc
+    const bool disable_convective_incloud_wetdep,
+    // Flag to turn off scavenging and resuspension by convective rain
+    const bool disable_convective_belowcloud_scav,
+    const int zm_activity, // Deep convection activity flag (1/0)
     const int species_class[aero_model::pcnst],       // Species classification
     const int mmtoo_prevap_resusp[aero_model::pcnst], // Resuspension mapping
     const AeroConfig &aero_config) {                  // Aerosol configuration
@@ -2258,6 +2277,7 @@ void aero_model_wetdep(
                 ptend_q,
                 // inputs
                 pdel, dt, jnummaswtr, jnv, mm, lphase, imode, lspec,
+                disable_convective_belowcloud_scav,
                 // scratchspace
                 compute_q_tendencies_workspace);
             team.team_barrier();
@@ -2312,7 +2332,8 @@ void aero_model_wetdep(
     // Call ma_convproc_intr with data pointers
     convproc::ma_convproc_intr(
         team, aero_species, scratch1Dviews, convproc_do_aer, convproc_do_gas,
-        nlev, atm.temperature.data(), atm.pressure.data(), dpdry.data(), dt,
+        disable_convective_transport, disable_convective_incloud_wetdep, nlev,
+        atm.temperature.data(), atm.pressure.data(), dpdry.data(), dt,
         dp_frac.data(), icwmrdp.data(), rprddp.data(), evapcdp.data(),
         dlf.data(), du.data(), eu.data(), ed.data(), dp.data(), ktop, kbot,
         species_class, mmtoo_prevap_resusp, state_q, ptend_q, ptend_lq,

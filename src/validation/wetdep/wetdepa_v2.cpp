@@ -188,10 +188,11 @@ void test_wetdepa_v2_process(const Input &input, Output &output) {
               conicw_dev[kk], precs_dev[kk], evaps_dev[kk], cwat_dev[kk],
               cldt_dev[kk], cldc_dev[kk], cldvcu_dev[kk], cldvst_dev[kk],
               sol_factb, sol_facti, sol_factic_dev[kk], mam_prevap_resusp_optcc,
-              is_strat_cloudborne, scavcoef_dev[kk], f_act_conv_dev[kk],
-              tracer_dev[kk], qqcw_dev[kk], precabs, precabc, scavabs, scavabc,
-              precabs_base, precabc_base, precnums_base, precnumc_base,
-              scavt_dev[kk], bcscavt_dev[kk], rcscavt_dev[kk], rsscavt_dev[kk]);
+              is_strat_cloudborne, /*disable_convective_belowcloud_scav=*/false,
+              scavcoef_dev[kk], f_act_conv_dev[kk], tracer_dev[kk],
+              qqcw_dev[kk], precabs, precabc, scavabs, scavabc, precabs_base,
+              precabc_base, precnums_base, precnumc_base, scavt_dev[kk],
+              bcscavt_dev[kk], rcscavt_dev[kk], rsscavt_dev[kk]);
 
           // Evaporation fraction
           const Real fracev_st = mam_prevap_resusp_optcc

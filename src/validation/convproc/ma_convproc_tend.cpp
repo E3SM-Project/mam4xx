@@ -248,8 +248,10 @@ void ma_convproc_tend(Ensemble *ensemble) {
           int xx_kcldbase;
 
           mam4::convproc::ma_convproc_tend(
-              team, aero_species, scratch1Dviews, nlev, convtype, dt,
-              temperature, pmid, qnew_dev, du, eu, ed, dp, dpdry, ktop, kbot,
+              team, aero_species, scratch1Dviews, nlev, convtype,
+              /*disable_convective_transport=*/false,
+              /*disable_convective_incloud_wetdep=*/false, dt, temperature,
+              pmid, qnew_dev, du, eu, ed, dp, dpdry, ktop, kbot,
               mmtoo_prevap_resusp, cldfrac, icwmr, rprd, evapc, dqdt_view,
               doconvproc, qsrflx, species_class, xx_mfup_max, xx_wcldbase,
               xx_kcldbase);

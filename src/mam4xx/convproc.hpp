@@ -1647,8 +1647,9 @@ update_qnew_ptend(const bool dotend[aero_model::pcnst],
 template <typename SubView>
 KOKKOS_INLINE_FUNCTION void
 compute_wetdep_tend(const bool doconvproc_extd[ConvProc::pcnst_extd],
-                    const Real dt, const Real dt_u, const Real dp,
-                    const Real cldfrac_i, const Real mu_p_eudp,
+                    const bool disable_convective_incloud_wetdep, const Real dt,
+                    const Real dt_u, const Real dp, const Real cldfrac_i,
+                    const Real mu_p_eudp,
                     const Real aqfrac[ConvProc::pcnst_extd], const Real icwmr,
                     const Real rprd, SubView conu, SubView dconudt_wetdep) {
   // clang-format off
@@ -1698,8 +1699,10 @@ compute_wetdep_tend(const bool doconvproc_extd[ConvProc::pcnst_extd],
   const Real clw_cut = 1.0e-6;
 
   // (in-updraft first order wet removal rate) * dt [unitless]
+  // When disable_convective_incloud_wetdep is true, cdt stays zero, so there is
+  // no in-updraft wet removal and dconudt_wetdep is left unchanged (zero).
   Real cdt = 0.0;
-  if (icwmr > clw_cut && rprd > 0.0) {
+  if (!disable_convective_incloud_wetdep && icwmr > clw_cut && rprd > 0.0) {
     const Real half_cld = 0.5 * cldfrac_i;
     cdt = (half_cld * dp / mu_p_eudp) * rprd / (half_cld * icwmr + dt * rprd);
   }
@@ -1962,6 +1965,7 @@ void compute_updraft_mixing_ratio(
   const ThreadTeam &team,
   const AeroSpeciesView &aero_species,
   const bool doconvproc_extd[ConvProc::pcnst_extd],
+  const bool disable_convective_incloud_wetdep,
   const int nlev,
   const int ktop,
   const int kbot,
@@ -2126,9 +2130,10 @@ void compute_updraft_mixing_ratio(
             // the loop over levels. This loop can NOT be parallelized over kk!
             auto dconudt_wetdep_sub =
                 Kokkos::subview(dconudt_wetdep, kk, Kokkos::ALL());
-            compute_wetdep_tend(doconvproc_extd, dt, dt_u, dp[kk], cldfrac_i,
-                                mu_p_eudp, aqfrac, icwmr[kk], rprd[kk],
-                                conu_sub, dconudt_wetdep_sub);
+            compute_wetdep_tend(doconvproc_extd,
+                                disable_convective_incloud_wetdep, dt, dt_u,
+                                dp[kk], cldfrac_i, mu_p_eudp, aqfrac, icwmr[kk],
+                                rprd[kk], conu_sub, dconudt_wetdep_sub);
 
             // compute updraft fractional area; for update fluxes use
             // *** these must obey  dt_u(k)*mu_p_eudp = dpdry(k)*fa_u(k)
@@ -2147,7 +2152,9 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
                  const Kokkos::View<Real *>
                      scratch1Dviews[ConvProc::Col1DViewInd::NumScratch],
                  const int nlev, const ConvProc::convtype convtype,
-                 const Real dt, const Real temperature[/* nlev */],
+                 const bool disable_convective_transport,
+                 const bool disable_convective_incloud_wetdep, const Real dt,
+                 const Real temperature[/* nlev */],
                  const Real pmid[/* nlev */], ConstSubView qnew,
                  const Real du[/* nlev */], const Real eu[/* nlev */],
                  const Real ed[/* nlev */], const Real dp[/* nlev */],
@@ -2261,8 +2268,6 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
   const int iconvtype = convtype == ConvProc::Deep ? 1 : 2;
   // iflux_method    ! 1=as in convtran (deep), 2=simpler
   const int iflux_method = convtype == ConvProc::Deep ? 1 : 2;
-  // disable_convective_transport ! if true, zero the convective transport term
-  const bool disable_convective_transport = false;
 
   const Real hund_ovr_g = 100.0 / Constants::gravity;
   const Real rair = Constants::r_gas_dry_air;
@@ -2449,10 +2454,11 @@ ma_convproc_tend(const ThreadTeam &team, const AeroSpeciesView &aero_species,
     const Real dz = dpdry[0] * hund_ovr_g / rhoair[0];
 
     compute_updraft_mixing_ratio(
-        team, aero_species, doconvproc_extd, nlev, ktop, kbot, iconvtype, dt,
-        dp, dpdry, cldfrac, rhoair.data(), zmagl.data(), dz, mu.data(),
-        eudp.data(), gath, temperature, aqfrac, icwmr, rprd, fa_u.data(),
-        dconudt_wetdep, dconudt_activa, conu, xx_wcldbase, xx_kcldbase);
+        team, aero_species, doconvproc_extd, disable_convective_incloud_wetdep,
+        nlev, ktop, kbot, iconvtype, dt, dp, dpdry, cldfrac, rhoair.data(),
+        zmagl.data(), dz, mu.data(), eudp.data(), gath, temperature, aqfrac,
+        icwmr, rprd, fa_u.data(), dconudt_wetdep, dconudt_activa, conu,
+        xx_wcldbase, xx_kcldbase);
 
     // Compute downdraft mixing ratios from cloudtop to cloudbase
     compute_downdraft_mixing_ratio(team, doconvproc_extd, ktop, kbot, md.data(),
@@ -2552,7 +2558,9 @@ KOKKOS_INLINE_FUNCTION void ma_convproc_dp_intr(
     const ThreadTeam &team, const AeroSpeciesView &aero_species,
     const Kokkos::View<Real *>
         scratch1Dviews[ConvProc::Col1DViewInd::NumScratch],
-    const bool convproc_do_aer, const bool convproc_do_gas, const int nlev,
+    const bool convproc_do_aer, const bool convproc_do_gas,
+    const bool disable_convective_transport,
+    const bool disable_convective_incloud_wetdep, const int nlev,
     const Real temperature[/* nlev */], const Real pmid[/* nlev */],
     const Real dpdry[/* nlev */], const Real dt, const Real cldfrac[/* nlev */],
     const Real icwmr[/* nlev */], const Real rprddp[/* nlev */],
@@ -2647,11 +2655,12 @@ KOKKOS_INLINE_FUNCTION void ma_convproc_dp_intr(
   //
   // clang-format on
 
-  ma_convproc_tend(team, aero_species, scratch1Dviews, nlev, ConvProc::Deep, dt,
-                   temperature, pmid, qnew, du, eu, ed, dp, dpdry, ktop, kbot,
-                   mmtoo_prevap_resusp, cldfrac, icwmr, rprddp, evapcdp, dqdt,
-                   dotend, qsrflx, species_class, xx_mfup_max, xx_wcldbase,
-                   xx_kcldbase);
+  ma_convproc_tend(team, aero_species, scratch1Dviews, nlev, ConvProc::Deep,
+                   disable_convective_transport,
+                   disable_convective_incloud_wetdep, dt, temperature, pmid,
+                   qnew, du, eu, ed, dp, dpdry, ktop, kbot, mmtoo_prevap_resusp,
+                   cldfrac, icwmr, rprddp, evapcdp, dqdt, dotend, qsrflx,
+                   species_class, xx_mfup_max, xx_wcldbase, xx_kcldbase);
 }
 
 // =========================================================================================
@@ -2660,7 +2669,9 @@ void ma_convproc_intr(
     const ThreadTeam &team, const AeroSpeciesView &aero_species,
     const Kokkos::View<Real *>
         scratch1Dviews[ConvProc::Col1DViewInd::NumScratch],
-    const bool convproc_do_aer, const bool convproc_do_gas, const int nlev,
+    const bool convproc_do_aer, const bool convproc_do_gas,
+    const bool disable_convective_transport,
+    const bool disable_convective_incloud_wetdep, const int nlev,
     const Real temperature[/* nlev */], const Real pmid[/* nlev */],
     const Real dpdry[/* nlev */], const Real dt, const Real dp_frac[/* nlev */],
     const Real icwmrdp[/* nlev */], const Real rprddp[/* nlev */],
@@ -2785,10 +2796,11 @@ void ma_convproc_intr(
     });
     team.team_barrier();
     ma_convproc_dp_intr(team, aero_species, scratch1Dviews, convproc_do_aer,
-                        convproc_do_gas, nlev, temperature, pmid, dpdry, dt,
-                        dp_frac, icwmrdp, rprddp, evapcdp, du, eu, ed, dp, ktop,
-                        kbot, qnew, species_class, mmtoo_prevap_resusp, dqdt,
-                        qsrflx, dotend);
+                        convproc_do_gas, disable_convective_transport,
+                        disable_convective_incloud_wetdep, nlev, temperature,
+                        pmid, dpdry, dt, dp_frac, icwmrdp, rprddp, evapcdp, du,
+                        eu, ed, dp, ktop, kbot, qnew, species_class,
+                        mmtoo_prevap_resusp, dqdt, qsrflx, dotend);
     team.team_barrier();
     // apply deep conv processing tendency
     Kokkos::parallel_for(Kokkos::TeamVectorRange(team, nlev), [&](int kk) {
