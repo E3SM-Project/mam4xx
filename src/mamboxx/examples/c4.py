@@ -72,11 +72,13 @@ column(name = 'C4_uniform_state_without_mixing',
         'initial_cloud_borne_species_mass': 0.0,  # all mode/species pairs, kg/m^3
         'modes': {
             'accumulation': {
-                'number_concentration':         1.0e+8,  # m^-3
-                'dry_number_median_diameter':   1.0e-7,  # m; diameter, NOT radius
-                'geometric_standard_deviation': 1.8,     # dimensionless; used in initialization AND activation
-                'mass_fractions': {
-                    'so4': 1.0,
+                'interstitial': {
+                    'number_concentration':         1.0e+8,  # m^-3
+                    'dry_number_median_diameter':   1.0e-7,  # m; diameter, NOT radius
+                    'geometric_standard_deviation': 1.8,     # dimensionless; used in initialization AND activation
+                    'mass_fractions': {
+                        'so4': 1.0,
+                    },
                 },
             'aitken': {'number_concentration': 0.},
             'coarse': {'number_concentration': 0.},

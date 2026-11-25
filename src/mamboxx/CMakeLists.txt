@@ -8,12 +8,12 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 #-------------------------------------------------------------
 
 add_executable(mamscm
-  column.cpp
-  python.cpp
-  main.cpp
-  run.cpp
-  microphysics.cpp
   aerosol_cloud_interaction.cpp
+  column.cpp
+  main.cpp
+  microphysics.cpp
+  python.cpp
+  run.cpp
 )
 target_link_libraries(mamscm PUBLIC mam4xx Python3::Python)
 target_include_directories(mamscm PUBLIC
@@ -36,12 +36,12 @@ configure_file(
 )
 
 add_executable(mamboxx
-  column.cpp
-  config_py.cpp
-  main.cpp
-  run.cpp
-  microphysics.cpp
   aerosol_cloud_interaction.cpp
+  column.cpp
+  main.cpp
+  microphysics.cpp
+  python.cpp
+  run.cpp
 )
 target_link_libraries(mamboxx PUBLIC mam4xx Python3::Python)
 target_include_directories(mamboxx PUBLIC

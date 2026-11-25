@@ -71,18 +71,19 @@ struct AtmosphereConfig {
   Real pblh; // planetary boundary layer height;
 };
 
-// aerosol mode (column) data
-struct AerosolModeConfig {
-  // symbolic name of the mode
-  std::string name;
+struct AerosolMixingRatiosConfig {
   // modal number mixing ratio [# particles / kg dry air]
   std::vector<Real> number_mixing_ratio;
   // mapping of aerosol species names to mass mixing ratios [kg aerosol / kg dry air]
   std::map<std::string, std::vector<Real>> mass_mixing_ratios;
 };
 
-// FIXME: need to distinguish between XConfig (using vectors, maps) and
-// FIXME: XState (using views)
+// aerosol mode (column) data
+struct AerosolModeConfig {
+  std::string               name; // symbolic name of the mode
+  AerosolMixingRatiosConfig interstitial;
+  AerosolMixingRatiosConfig cloudborne;
+};
 
 struct AerosolConfig {
   // mapping of aerosol mode names to their data

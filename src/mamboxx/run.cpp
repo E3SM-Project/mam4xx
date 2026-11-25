@@ -70,6 +70,21 @@ void copy_view_to_vector(mam4::ColumnView device_view, std::vector<Real> &vec, H
   }
 }
 
+void copy_mixing_ratios_to_device(State& state, int m, const std::string &mode_name,
+                                  const AerosolMixingRatiosConfig &mixing_ratios, HostColumnView host_view) {
+  auto aero_species_names = gather_names_from_mapped_ids(aero_ids_for_names);
+  copy_vector_to_view(state.prognostics.n_mode_i[m], mixing_ratios.number_mixing_ratio, host_view);
+  for (int s = 0; s < 7; ++s) {
+    auto aero_id = mam4::mode_aero_species(m, s);
+    auto aero_name = aero_species_names[int(aero_id)];
+    auto s_iter = mixing_ratios.mass_mixing_ratios.find(aero_name);
+    EKAT_REQUIRE(s_iter != mixing_ratios.mass_mixing_ratios.end(),
+        "Missing aerosol species in mode " << mode_name << ": " << aero_name);
+    copy_vector_to_view(state.prognostics.q_aero_i[m][s], s_iter->second, host_view);
+    // FIXME: what about cloudborne aerosols?
+  }
+}
+
 std::tuple<Processes, State> initialize(const Config &config) {
   int nlev = config.atmosphere.temperature.size();
   EKAT_REQUIRE(nlev == mam4::nlev,
@@ -112,7 +127,6 @@ std::tuple<Processes, State> initialize(const Config &config) {
   }
 
   auto mode_names         = gather_names_from_mapped_ids(mode_indices_for_names);
-  auto aero_species_names = gather_names_from_mapped_ids(aero_ids_for_names);
   auto gas_species_names  = gather_names_from_mapped_ids(gas_ids_for_names);
 
   // copy data to the device
@@ -121,20 +135,13 @@ std::tuple<Processes, State> initialize(const Config &config) {
   copy_vector_to_view(state.atmosphere.pressure, config.atmosphere.pressure, host_view);
   copy_vector_to_view(state.atmosphere.vapor_mixing_ratio, config.atmosphere.vapor_mixing_ratio, host_view);
   // FIXME: etc
+
   for (int m = 0; m < mam4::AeroConfig::num_modes(); ++m) {
     auto m_iter = config.aerosols.modes.find(mode_names[m]);
     EKAT_REQUIRE(m_iter != config.aerosols.modes.end(),
         "Missing aerosol mode: " << mode_names[m]);
-    copy_vector_to_view(state.prognostics.n_mode_i[m], m_iter->second.number_mixing_ratio, host_view);
-    for (int s = 0; s < 7; ++s) {
-      auto aero_id = mam4::mode_aero_species(m, s);
-      auto aero_name = aero_species_names[int(aero_id)];
-      auto s_iter = m_iter->second.mass_mixing_ratios.find(aero_name);
-      EKAT_REQUIRE(s_iter != m_iter->second.mass_mixing_ratios.end(),
-          "Missing aerosol species in mode " << mode_names[m] << ": " << aero_name);
-      copy_vector_to_view(state.prognostics.q_aero_i[m][s], s_iter->second, host_view);
-      // FIXME: what about cloudborne aerosols?
-    }
+    copy_mixing_ratios_to_device(state, m, mode_names[m], m_iter->second.interstitial, host_view);
+    copy_mixing_ratios_to_device(state, m, mode_names[m], m_iter->second.cloudborne, host_view);
     for (int g = 0; g < int(mam4::GasId::NumSpecies); ++g) {
       auto gas_name = gas_species_names[g];
       auto g_iter = config.gases.mass_mixing_ratios.find(gas_name);
@@ -169,16 +176,20 @@ void finalize(const State &state, Result &result) {
     std::string     mode_name = iter->first;
     mam4::ModeIndex mode_index = iter->second;
     copy_view_to_vector(state.prognostics.n_mode_i[int(mode_index)],
-                        result.aerosols.modes[mode_name].number_mixing_ratio,
+                        result.aerosols.modes[mode_name].interstitial.number_mixing_ratio,
                         host_view);
-    // FIXME: what about cloudborne aerosols?
+    copy_view_to_vector(state.prognostics.n_mode_c[int(mode_index)],
+                        result.aerosols.modes[mode_name].cloudborne.number_mixing_ratio,
+                        host_view);
     for (auto iter = aero_ids_for_names.begin(); iter != aero_ids_for_names.end(); ++iter) {
       std::string  aero_name = iter->first;
       mam4::AeroId aero_id = iter->second;
       copy_view_to_vector(state.prognostics.q_aero_i[int(mode_index)][int(aero_id)],
-                          result.aerosols.modes[mode_name].mass_mixing_ratios[aero_name],
+                          result.aerosols.modes[mode_name].interstitial.mass_mixing_ratios[aero_name],
                           host_view);
-      // FIXME: what about cloudborne aerosols?
+      copy_view_to_vector(state.prognostics.q_aero_i[int(mode_index)][int(aero_id)],
+                          result.aerosols.modes[mode_name].cloudborne.mass_mixing_ratios[aero_name],
+                          host_view);
     }
     for (auto iter = gas_ids_for_names.begin(); iter != gas_ids_for_names.end(); ++iter) {
       std::string gas_name = iter->first;

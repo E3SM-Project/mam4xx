@@ -256,7 +256,8 @@ AtmosphereConfig read_atmosphere(PyObject *atmosphere) {
 
 void compute_mass_mixing_ratios_from_mass_fractions(const AtmosphereConfig &atmosphere,
                                                     const std::map<std::string, std::vector<Real>> &mass_fractions,
-                                                    AerosolModeConfig &mode) {
+                                                    const std::string &mode_name,
+                                                    AerosolMixingRatiosConfig &mixing_ratios) {
 
   // FIXME: need to check these quantities
   const std::map<std::string, Real> modal_geometric_mean_diameters = {
@@ -281,18 +282,20 @@ void compute_mass_mixing_ratios_from_mass_fractions(const AtmosphereConfig &atmo
     {"so4", mam4::defaults::mam4_density_so4},
   };
 
-  Real gmd = modal_geometric_mean_diameters.find(mode.name)->second;
-  Real sigma = modal_geometric_mean_std_dev.find(mode.name)->second;
-  size_t nlev = mode.number_mixing_ratio.size();
+  Real gmd = modal_geometric_mean_diameters.find(mode_name)->second;
+  Real sigma = modal_geometric_mean_std_dev.find(mode_name)->second;
+  size_t nlev = mixing_ratios.number_mixing_ratio.size();
 
   for (auto iter = aero_ids_for_names.begin(); iter != aero_ids_for_names.end(); ++iter) {
     std::string aero_name = iter->first;
-    mode.mass_mixing_ratios[aero_name] = std::vector<Real>(nlev);
+    mixing_ratios.mass_mixing_ratios[aero_name] = std::vector<Real>(nlev);
+    mixing_ratios.mass_mixing_ratios[aero_name] = std::vector<Real>(nlev);
   }
+
 
   // this isn't performant, but we don't care in a box/column model
   for (size_t k = 0; k < nlev; ++k) {
-    Real total_aero_volume = mode.number_mixing_ratio[k] * 
+    Real total_aero_volume = mixing_ratios.number_mixing_ratio[k] * 
                              mam4::cube(gmd) * (M_PI/6.0) * mam4::exp(4.5*sigma*sigma);
     Real inv_total_aero_density = 0.0;
     for (auto iter = aero_ids_for_names.begin(); iter != aero_ids_for_names.end(); ++iter) {
@@ -311,27 +314,29 @@ void compute_mass_mixing_ratios_from_mass_fractions(const AtmosphereConfig &atmo
       std::string  aero_name = iter->first;
       mam4::AeroId aero_id = iter->second;
       const std::vector<Real> &aero_mass_fractions = mass_fractions.find(aero_name)->second;
-      mode.mass_mixing_ratios[aero_name][k] = aero_mass_fractions[k] * total_aero_mass_mixing_ratio;
+      mixing_ratios.mass_mixing_ratios[aero_name][k] =
+        aero_mass_fractions[k] * total_aero_mass_mixing_ratio;
     }
   }
 }
 
-AerosolModeConfig read_aerosol_mode(const AtmosphereConfig &atmosphere, PyObject *mode,
-                                    const char *mode_name) {
-  AerosolModeConfig cfg = {};
-  cfg.name = mode_name;
-
-  EKAT_REQUIRE(PyDict_Check(mode), "aerosols.modes." << mode_name << " must be a dict");
-  EKAT_REQUIRE(PyDict_ContainsString(mode, "number_concentration"),
+AerosolMixingRatiosConfig read_aerosol_mixing_ratios(const AtmosphereConfig &atmosphere,
+                                                     PyObject *mixing_ratios, const char *which,
+                                                     const char *mode_name) {
+  AerosolMixingRatiosConfig cfg = {};
+  EKAT_REQUIRE(PyDict_Check(mixing_ratios), std::string(which) << "mixing ratios must be a dict");
+  EKAT_REQUIRE(PyDict_ContainsString(mixing_ratios, "number_concentration"),
                "aerosols.modes." << mode_name << ".number_concentration not specified");
-  std::vector<Real> numc = read_box_or_column_data("aerosols.modes", mode, "number_concentration");
+  auto ratios_label = std::string("aerosols.modes.") + std::string(which);
+  std::vector<Real> numc = read_box_or_column_data(ratios_label.c_str(), mixing_ratios, "number_concentration");
   size_t nlev = numc.size();
 
   // calculate number mixing ratio from number concentration
   cfg.number_mixing_ratio.resize(nlev);
   for (size_t k = 0; k < nlev; ++k) {
     EKAT_REQUIRE(numc[k] >= 0.0,
-        "Negative aerosol number concentration at level " << k << " in mode " << cfg.name);
+        "Negative " << which << " aerosol number concentration at level " << k <<
+        " in mode " << mode_name);
     // # of moles air / volume = pressure / (R x temperature) by the ideal gas law
     Real air_molar_concentration = atmosphere.pressure[k] / (mam4::Constants::r_gas_dry_air * atmosphere.temperature[k]);
     cfg.number_mixing_ratio[k] = numc[k] / air_molar_concentration / mam4::Constants::molec_weight_dry_air;
@@ -340,15 +345,15 @@ AerosolModeConfig read_aerosol_mode(const AtmosphereConfig &atmosphere, PyObject
   // read aerosol species mass fractions
   std::map<std::string, std::vector<Real>> mass_fractions;
   std::vector total_mass_fraction(nlev, 0.0);
-  EKAT_REQUIRE(PyDict_ContainsString(mode, "mass_fractions"),
-               "aerosols." << mode_name << ".mass_fractions not specified");
-  PyObject *mf = PyDict_GetItemString(mode, "mass_fractions");
+  EKAT_REQUIRE(PyDict_ContainsString(mixing_ratios, "mass_fractions"),
+               ratios_label << ".mass_fractions not specified");
+  PyObject *mf = PyDict_GetItemString(mixing_ratios, "mass_fractions");
   Py_ssize_t pos = 0;
   PyObject *key, *mf_value;
   while (PyDict_Next(mf, &pos, &key, &mf_value)) {
     EKAT_REQUIRE(PyUnicode_Check(key), "At least one aerosol mode name is not a string");
     std::string species_name = PyUnicode_AsUTF8(key);
-    auto section_name = std::string("aerosols.") + mode_name + "." + species_name;
+    auto section_name = std::string("aerosols.") + mode_name + "." + which + "." + species_name;
     auto mass_fraction = read_box_or_column_data(section_name.c_str(), mf_value, species_name);
     for (size_t k = 0; k < mass_fraction.size(); ++k) {
       EKAT_REQUIRE(mass_fraction[k] >= 0.0,
@@ -361,8 +366,25 @@ AerosolModeConfig read_aerosol_mode(const AtmosphereConfig &atmosphere, PyObject
         "Total aerosol mass fraction in mode " << mode_name << " exceeds 1");
   }
 
-  compute_mass_mixing_ratios_from_mass_fractions(atmosphere, mass_fractions, cfg);
+  compute_mass_mixing_ratios_from_mass_fractions(atmosphere, mass_fractions, mode_name, cfg);
   
+  return cfg;
+}
+
+AerosolModeConfig read_aerosol_mode(const AtmosphereConfig &atmosphere,
+                                    PyObject *mode, const char *mode_name) {
+  EKAT_REQUIRE(PyDict_Check(mode), "aerosols.modes." << mode_name << " must be a dict");
+
+  AerosolModeConfig cfg = {};
+  cfg.name = mode_name;
+
+  PyObject *interstitial = PyDict_GetItemString(mode, "interstitial");
+  EKAT_REQUIRE(interstitial != nullptr, "interstitial composition is not specified");
+  cfg.interstitial = read_aerosol_mixing_ratios(atmosphere, interstitial, "interstitial", mode_name);
+
+  PyObject *cloudborne = PyDict_GetItemString(mode, "cloudborne");
+  EKAT_REQUIRE(cloudborne != nullptr, "cloudborne composition is not specified");
+  cfg.cloudborne = read_aerosol_mixing_ratios(atmosphere, cloudborne, "cloudborne", mode_name);
   return cfg;
 }
 
@@ -380,7 +402,7 @@ AerosolConfig read_aerosols(const AtmosphereConfig &atmosphere, PyObject *aeroso
   }
   size_t n_levels = 0;
   for (auto iter = cfg.modes.begin(); iter != cfg.modes.end(); ++iter) {
-    size_t n = iter->second.number_mixing_ratio.size();
+    size_t n = iter->second.interstitial.number_mixing_ratio.size();
     if (n_levels == 0) {
       n_levels = n;
     } else {
@@ -706,12 +728,13 @@ Config read_config(const std::string &filename) {
   EKAT_REQUIRE(num_modes > 0, "no aerosol modes specified");
 
   // verify that # of vertical levels is the same everywhere
-  size_t n_atm  = config.atmosphere.temperature.size();
-  size_t n_aero = config.aerosols.modes.begin()->second.number_mixing_ratio.size();
-  size_t n_gas = config.aerosols.modes.size();
-  EKAT_REQUIRE(n_atm == n_aero == n_gas,
-      "number of vertical levels differs for atmosphere (" << n_atm << "), aerosols (" << n_aero <<
-      "), and gases (" << n_gas);
+  size_t n_atm    = config.atmosphere.temperature.size();
+  size_t n_aero_i = config.aerosols.modes.begin()->second.interstitial.number_mixing_ratio.size();
+  size_t n_aero_c = config.aerosols.modes.begin()->second.cloudborne.number_mixing_ratio.size();
+  size_t n_gas    = config.aerosols.modes.size();
+  EKAT_REQUIRE(n_atm == n_aero_i == n_aero_c == n_gas,
+      "number of vertical levels differs for atmosphere (" << n_atm << "), aerosols (" <<
+      n_aero_i << ", " << n_aero_c << "), and gases (" << n_gas);
 
   return config;
 }
